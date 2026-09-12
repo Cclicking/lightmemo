@@ -270,17 +270,40 @@ private fun NutritionSummaryCard(total: Nutrition, calorieTarget: Float) {
 
 @Composable
 private fun MacroRing(label: String, value: Double, target: Float, color: Color, modifier: Modifier = Modifier) {
-    val density = LocalDensity.current
-    var ringSize by remember { mutableStateOf(40.dp) }
-
     Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
         CircularProgressIndicator(
             progress = (value / target).toFloat().coerceIn(0f, 1f),
             colors = ProgressIndicatorDefaults.progressIndicatorColors(foregroundColor = color),
-            size = ringSize,
-            strokeWidth = (ringSize.value * 6f / 50f).dp.coerceAtLeast(3.dp),
+            size = 50.dp,
+            strokeWidth = 6.dp,
         )
         Spacer(Modifier.width(7.dp))
+        Column {
+            Text(label, style = MiuixTheme.textStyles.footnote1, maxLines = 1)
+            Text("${value.toInt()}g", style = MiuixTheme.textStyles.body1, fontWeight = FontWeight.Bold)
+            Text("/${target.toInt()}g", style = MiuixTheme.textStyles.footnote2, color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
+        }
+    }
+}
+
+/** 与识别结果页总览一致的紧凑宏量环（仅两行文案，圆环随文字高度） */
+@Composable
+private fun CompactMacroRing(label: String, value: Double, target: Float, color: Color, modifier: Modifier = Modifier) {
+    val density = LocalDensity.current
+    var ringSize by remember { mutableStateOf(32.dp) }
+
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center,
+    ) {
+        CircularProgressIndicator(
+            progress = (value / target).toFloat().coerceIn(0f, 1f),
+            colors = ProgressIndicatorDefaults.progressIndicatorColors(foregroundColor = color),
+            size = ringSize,
+            strokeWidth = (ringSize.value * 4f / 36f).dp.coerceAtLeast(3.dp),
+        )
+        Spacer(Modifier.width(6.dp))
         Column(
             Modifier.onSizeChanged { coords ->
                 val textHeight = with(density) { coords.height.toDp() }
@@ -289,12 +312,14 @@ private fun MacroRing(label: String, value: Double, target: Float, color: Color,
                 }
             },
         ) {
-            Text(label, style = MiuixTheme.textStyles.footnote1, maxLines = 1)
-            Text("${value.toInt()}g", style = MiuixTheme.textStyles.body1, fontWeight = FontWeight.Bold)
-            Text("/${target.toInt()}g", style = MiuixTheme.textStyles.footnote2, color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
+            Text(label, style = MiuixTheme.textStyles.footnote2, maxLines = 1)
+            Text("${value.formatMacro()}g", style = MiuixTheme.textStyles.body1, fontWeight = FontWeight.Bold)
         }
     }
 }
+
+private fun Double.formatMacro(): String =
+    if (this % 1.0 == 0.0) toInt().toString() else "%.1f".format(this)
 
 @Composable
 private fun FoodCardRow(left: @Composable () -> Unit, right: (@Composable () -> Unit)? = null) {
@@ -412,22 +437,34 @@ private fun FoodDetailOverlay(entry: FoodLog, onDismiss: () -> Unit) {
                     }
                 }
             }
-            Column {
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("热量", style = MiuixTheme.textStyles.title4)
-                    Text("${entry.nutrition.caloriesKcal.toInt()} kcal", style = MiuixTheme.textStyles.title4)
+            // 与识别结果页总览卡片保持一致
+            Column(verticalArrangement = Arrangement.spacedBy(27.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text("热量", style = MiuixTheme.textStyles.title4, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            "${entry.nutrition.caloriesKcal.toInt()} kcal",
+                            style = MiuixTheme.textStyles.title4,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
+                    LinearProgressIndicator(
+                        progress = (entry.nutrition.caloriesKcal / 1800.0).toFloat().coerceIn(0f, 1f),
+                        modifier = Modifier.fillMaxWidth(),
+                        height = 8.dp,
+                    )
                 }
-                Spacer(Modifier.height(3.dp))
-                LinearProgressIndicator(
-                    progress = (entry.nutrition.caloriesKcal / 1800.0).toFloat().coerceIn(0f, 1f),
+                Row(
                     modifier = Modifier.fillMaxWidth(),
-                    height = 8.dp,
-                )
-                Spacer(Modifier.height(15.dp))
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    MacroRing("蛋白质", entry.nutrition.proteinG, ProteinTarget, ProteinColor, Modifier.weight(1f))
-                    MacroRing("碳水", entry.nutrition.carbsG, CarbsTarget, CarbsColor, Modifier.weight(1f))
-                    MacroRing("脂肪", entry.nutrition.fatG, FatTarget, FatColor, Modifier.weight(1f))
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                ) {
+                    CompactMacroRing("蛋白质", entry.nutrition.proteinG, ProteinTarget, ProteinColor, Modifier.weight(1f))
+                    CompactMacroRing("碳水", entry.nutrition.carbsG, CarbsTarget, CarbsColor, Modifier.weight(1f))
+                    CompactMacroRing("脂肪", entry.nutrition.fatG, FatTarget, FatColor, Modifier.weight(1f))
                 }
             }
             SmallTitle(
