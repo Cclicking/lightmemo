@@ -414,7 +414,12 @@ private fun ReviewContent(
         modifier = Modifier
             .fillMaxSize()
             .padding(padding),
-        contentPadding = PaddingValues(16.dp),
+        contentPadding = PaddingValues(
+            start = 16.dp,
+            end = 16.dp,
+            top = 8.dp,
+            bottom = 24.dp,
+        ),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         item { MealTypeSelector(mealType, onMealType) }

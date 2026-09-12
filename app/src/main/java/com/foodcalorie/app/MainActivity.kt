@@ -8,13 +8,16 @@ import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -50,6 +53,7 @@ import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Home
 import top.yukonga.miuix.kmp.icon.os4.Image
 import top.yukonga.miuix.kmp.icon.os4.Settings
+import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 val LocalGlassSupported = staticCompositionLocalOf { true }
 
@@ -73,11 +77,6 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-/**
- * Glass chrome must sit *outside* the layerBackdrop recording.
- * Sampling a backdrop that contains the glass node creates a render-tree cycle
- * and overflows the native HWUI stack.
- */
 @Composable
 fun FoodAppRoot() {
     val todayVm: TodayViewModel = viewModel()
@@ -92,11 +91,11 @@ fun FoodAppRoot() {
             var showAdd by remember { mutableStateOf(false) }
             val backdrop = rememberLayerBackdrop()
             val density = LocalDensity.current
-            val navInset = with(density) { WindowInsets.navigationBars.getBottom(this).toDp() }
-            val bottomPad = (navInset + 16.dp).coerceAtLeast(20.dp)
+            val navInset = with(density) { WindowInsets.navigationBars.getBottom(density).toDp() }
+            // Match source-system spacing: bar sits above the gesture area with a small gap.
+            val barBottomMargin = if (navInset < 24.dp) 24.dp else navInset + 8.dp
 
             Box(modifier = Modifier.fillMaxSize()) {
-                // Only the page body is recorded. Glass nav draws on top, outside this layer.
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -105,14 +104,13 @@ fun FoodAppRoot() {
                     Scaffold(
                         modifier = Modifier.fillMaxSize(),
                         bottomBar = {
-                            // Reserve space so content is not under the floating glass bar.
+                            // Spacer only — the floating bar is drawn outside this recorded layer.
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .navigationBarsPadding()
-                                    .padding(bottom = bottomPad)
-                                    .padding(horizontal = 16.dp)
-                                    .padding(top = 54.dp),
+                                    .padding(
+                                        bottom = barBottomMargin + GlassNavHeight,
+                                    ),
                             )
                         },
                     ) { padding ->
@@ -142,13 +140,14 @@ fun FoodAppRoot() {
                 }
 
                 if (!showAdd) {
-                    Box(
+                    Column(
                         modifier = Modifier
                             .align(Alignment.BottomCenter)
+                            .fillMaxWidth()
                             .navigationBarsPadding()
-                            .padding(bottom = bottomPad)
-                            .padding(horizontal = 16.dp),
-                        contentAlignment = Alignment.BottomCenter,
+                            .padding(start = 24.dp, end = 24.dp, bottom = barBottomMargin),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
                         if (glassSupported) {
                             val items = listOf(
@@ -161,9 +160,18 @@ fun FoodAppRoot() {
                                 selectedIndex = selectedTab,
                                 onSelect = { selectedTab = it },
                                 backdrop = backdrop,
+                                // Defaults paint selected/unselected the same tint; differ them so
+                                // selection is obvious even when the indicator is subtle.
+                                selectedColor = MiuixTheme.colorScheme.onSurface,
+                                unselectedColor = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                                indicatorColor = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.14f),
+                                indicatorPressedColor = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.22f),
+                                modifier = Modifier.widthIn(max = 344.dp),
                             )
                         } else {
-                            FloatingNavigationBar {
+                            FloatingNavigationBar(
+                                modifier = Modifier.widthIn(max = 344.dp),
+                            ) {
                                 FloatingNavigationBarItem(
                                     selected = selectedTab == 0,
                                     onClick = { selectedTab = 0 },
@@ -190,3 +198,5 @@ fun FoodAppRoot() {
         }
     }
 }
+
+private val GlassNavHeight = 54.dp

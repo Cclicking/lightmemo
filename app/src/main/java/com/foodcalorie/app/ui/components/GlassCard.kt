@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.foodcalorie.app.LocalGlassSupported
@@ -16,7 +17,7 @@ import top.yukonga.miuix.kmp.glass.GlassStyle
 import top.yukonga.miuix.kmp.glass.GlassStyles
 import top.yukonga.miuix.kmp.glass.glassPanel
 
-/** Glass card with readable fallback when the device has no runtime shaders. */
+/** Glass card with readable, rounded fallback when not sampling a backdrop. */
 @Composable
 fun GlassCard(
     backdrop: Backdrop?,
@@ -41,10 +42,10 @@ fun GlassCard(
                         backdrop = backdrop,
                         shape = shape,
                         style = style,
-                        fallback = Modifier.background(resolvedFallback),
+                        fallback = Modifier.clip(shape).background(resolvedFallback),
                     )
                 } else {
-                    Modifier.background(resolvedFallback)
+                    Modifier.clip(shape).background(resolvedFallback)
                 },
             )
             .padding(contentPadding),
