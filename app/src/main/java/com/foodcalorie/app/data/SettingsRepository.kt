@@ -41,6 +41,10 @@ data class AppSettings(
     val activePresetId: String = apiPresets.firstOrNull()?.id.orEmpty(),
     val systemBackground: String = "",
     val dailyCalorieTarget: Float = 1800f,
+    /** 营养素目标；<=0 表示跟随推荐值 */
+    val proteinTargetG: Float = 0f,
+    val fatTargetG: Float = 0f,
+    val carbsTargetG: Float = 0f,
     val heightCm: Float = 0f,
     val weightKg: Float = 0f,
     val ageYears: Int = 0,
@@ -105,6 +109,16 @@ data class AppSettings(
                 carbsG = carbsG,
             )
         }
+
+    /** 手动营养目标；未设置时回落到推荐值 */
+    val effectiveProteinG: Float
+        get() = if (proteinTargetG > 0f) proteinTargetG else (recommendedNutrients?.proteinG ?: 0f)
+
+    val effectiveFatG: Float
+        get() = if (fatTargetG > 0f) fatTargetG else (recommendedNutrients?.fatG ?: 0f)
+
+    val effectiveCarbsG: Float
+        get() = if (carbsTargetG > 0f) carbsTargetG else (recommendedNutrients?.carbsG ?: 0f)
 }
 
 class SettingsRepository(private val context: Context) {
@@ -121,6 +135,9 @@ class SettingsRepository(private val context: Context) {
         val PRESETS = stringPreferencesKey("api_presets")
         val ACTIVE_PRESET = stringPreferencesKey("active_preset_id")
         val SYSTEM_BG = stringPreferencesKey("system_background")
+        val PROTEIN = floatPreferencesKey("protein_target_g")
+        val FAT = floatPreferencesKey("fat_target_g")
+        val CARBS = floatPreferencesKey("carbs_target_g")
     }
 
     val settings: Flow<AppSettings> = context.settingsStore.data.map { prefs ->
@@ -139,6 +156,9 @@ class SettingsRepository(private val context: Context) {
             activePresetId = activeId,
             systemBackground = prefs[Keys.SYSTEM_BG] ?: "",
             dailyCalorieTarget = prefs[Keys.TARGET] ?: 1800f,
+            proteinTargetG = prefs[Keys.PROTEIN] ?: 0f,
+            fatTargetG = prefs[Keys.FAT] ?: 0f,
+            carbsTargetG = prefs[Keys.CARBS] ?: 0f,
             heightCm = prefs[Keys.HEIGHT] ?: 0f,
             weightKg = prefs[Keys.WEIGHT] ?: 0f,
             ageYears = prefs[Keys.AGE] ?: 0,
@@ -267,6 +287,18 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun updateDailyTarget(value: Float) {
         context.settingsStore.edit { it[Keys.TARGET] = value.coerceIn(500f, 10000f) }
+    }
+
+    suspend fun updateProteinTarget(value: Float) {
+        context.settingsStore.edit { it[Keys.PROTEIN] = value.coerceIn(0f, 500f) }
+    }
+
+    suspend fun updateFatTarget(value: Float) {
+        context.settingsStore.edit { it[Keys.FAT] = value.coerceIn(0f, 300f) }
+    }
+
+    suspend fun updateCarbsTarget(value: Float) {
+        context.settingsStore.edit { it[Keys.CARBS] = value.coerceIn(0f, 800f) }
     }
 
     suspend fun updateHeight(value: Float) {

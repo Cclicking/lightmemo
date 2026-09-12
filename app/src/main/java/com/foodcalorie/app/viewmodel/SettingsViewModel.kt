@@ -41,6 +41,12 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setTarget(value: Float) = viewModelScope.launch { repo.updateDailyTarget(value) }
 
+    fun setProteinTarget(value: Float) = viewModelScope.launch { repo.updateProteinTarget(value) }
+
+    fun setFatTarget(value: Float) = viewModelScope.launch { repo.updateFatTarget(value) }
+
+    fun setCarbsTarget(value: Float) = viewModelScope.launch { repo.updateCarbsTarget(value) }
+
     fun setHeight(value: Float) = viewModelScope.launch { repo.updateHeight(value) }
 
     fun setWeight(value: Float) = viewModelScope.launch { repo.updateWeight(value) }
@@ -51,9 +57,12 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setActivityLevel(value: ActivityLevel) = viewModelScope.launch { repo.updateActivityLevel(value) }
 
-    /** 将推荐热量写入每日目标。 */
+    /** 将推荐热量与营养素写入目标。 */
     fun applyRecommendedTarget() = viewModelScope.launch {
-        val recommended = settings.value.recommendedCalories ?: return@launch
-        repo.updateDailyTarget(recommended)
+        val nutrients = settings.value.recommendedNutrients ?: return@launch
+        repo.updateDailyTarget(nutrients.calories)
+        repo.updateProteinTarget(nutrients.proteinG)
+        repo.updateFatTarget(nutrients.fatG)
+        repo.updateCarbsTarget(nutrients.carbsG)
     }
 }
