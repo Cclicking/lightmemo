@@ -3,5 +3,6 @@
     <string name="app_name">轻食记</string>
     <string name="nav_today">今日</string>
     <string name="nav_stats">统计</string>
+    <string name="nav_mine">我的</string>
     <string name="nav_settings">设置</string>
 </resources>

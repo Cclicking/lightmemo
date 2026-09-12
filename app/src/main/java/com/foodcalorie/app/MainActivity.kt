@@ -10,13 +10,14 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -41,8 +42,10 @@ import com.foodcalorie.app.viewmodel.AddFoodViewModel
 import com.foodcalorie.app.viewmodel.SettingsViewModel
 import com.foodcalorie.app.viewmodel.StatsViewModel
 import com.foodcalorie.app.viewmodel.TodayViewModel
+import top.yukonga.miuix.kmp.basic.FloatingActionButton
 import top.yukonga.miuix.kmp.basic.FloatingNavigationBar
 import top.yukonga.miuix.kmp.basic.FloatingNavigationBarItem
+import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.blur.isRuntimeShaderSupported
 import top.yukonga.miuix.kmp.blur.layerBackdrop
@@ -50,9 +53,10 @@ import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
 import top.yukonga.miuix.kmp.glass.GlassNavigationBar
 import top.yukonga.miuix.kmp.glass.GlassNavigationItem
 import top.yukonga.miuix.kmp.icon.MiuixIcons
-import top.yukonga.miuix.kmp.icon.extended.Home
-import top.yukonga.miuix.kmp.icon.os4.Image
-import top.yukonga.miuix.kmp.icon.os4.Settings
+import top.yukonga.miuix.kmp.icon.extended.Add
+import top.yukonga.miuix.kmp.icon.extended.Album
+import top.yukonga.miuix.kmp.icon.extended.ContactsCircle
+import top.yukonga.miuix.kmp.icon.extended.Years
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 val LocalGlassSupported = staticCompositionLocalOf { true }
@@ -92,7 +96,6 @@ fun FoodAppRoot() {
             val backdrop = rememberLayerBackdrop()
             val density = LocalDensity.current
             val navInset = with(density) { WindowInsets.navigationBars.getBottom(density).toDp() }
-            // Match source-system spacing: bar sits above the gesture area with a small gap.
             val barBottomMargin = if (navInset < 24.dp) 24.dp else navInset + 8.dp
 
             Box(modifier = Modifier.fillMaxSize()) {
@@ -104,13 +107,10 @@ fun FoodAppRoot() {
                     Scaffold(
                         modifier = Modifier.fillMaxSize(),
                         bottomBar = {
-                            // Spacer only — the floating bar is drawn outside this recorded layer.
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(
-                                        bottom = barBottomMargin + GlassNavHeight,
-                                    ),
+                                    .padding(bottom = barBottomMargin + BottomChromeHeight),
                             )
                         },
                     ) { padding ->
@@ -140,57 +140,70 @@ fun FoodAppRoot() {
                 }
 
                 if (!showAdd) {
-                    Column(
+                    Row(
                         modifier = Modifier
                             .align(Alignment.BottomCenter)
                             .fillMaxWidth()
                             .navigationBarsPadding()
-                            .padding(start = 24.dp, end = 24.dp, bottom = barBottomMargin),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
+                            .padding(start = 20.dp, end = 20.dp, bottom = barBottomMargin),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally),
                     ) {
-                        if (glassSupported) {
-                            val items = listOf(
-                                GlassNavigationItem(MiuixIcons.Home, "今日"),
-                                GlassNavigationItem(MiuixIcons.Os4.Image, "统计"),
-                                GlassNavigationItem(MiuixIcons.Os4.Settings, "设置"),
-                            )
-                            GlassNavigationBar(
-                                items = items,
-                                selectedIndex = selectedTab,
-                                onSelect = { selectedTab = it },
-                                backdrop = backdrop,
-                                // Defaults paint selected/unselected the same tint; differ them so
-                                // selection is obvious even when the indicator is subtle.
-                                selectedColor = MiuixTheme.colorScheme.onSurface,
-                                unselectedColor = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.5f),
-                                indicatorColor = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.14f),
-                                indicatorPressedColor = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.22f),
-                                modifier = Modifier.widthIn(max = 344.dp),
-                            )
-                        } else {
-                            FloatingNavigationBar(
-                                modifier = Modifier.widthIn(max = 344.dp),
-                            ) {
-                                FloatingNavigationBarItem(
-                                    selected = selectedTab == 0,
-                                    onClick = { selectedTab = 0 },
-                                    icon = MiuixIcons.Home,
-                                    label = "今日",
+                        Box(modifier = Modifier.weight(1f, fill = false)) {
+                            if (glassSupported) {
+                                GlassNavigationBar(
+                                    items = listOf(
+                                        GlassNavigationItem(MiuixIcons.Album, "今日"),
+                                        GlassNavigationItem(MiuixIcons.Years, "统计"),
+                                        GlassNavigationItem(MiuixIcons.ContactsCircle, "我的"),
+                                    ),
+                                    selectedIndex = selectedTab,
+                                    onSelect = { selectedTab = it },
+                                    backdrop = backdrop,
+                                    // Same tint for all items; only the indicator marks selection.
+                                    selectedColor = MiuixTheme.colorScheme.onSurface,
+                                    unselectedColor = MiuixTheme.colorScheme.onSurface,
+                                    modifier = Modifier.widthIn(max = 300.dp),
                                 )
-                                FloatingNavigationBarItem(
-                                    selected = selectedTab == 1,
-                                    onClick = { selectedTab = 1 },
-                                    icon = MiuixIcons.Os4.Image,
-                                    label = "统计",
-                                )
-                                FloatingNavigationBarItem(
-                                    selected = selectedTab == 2,
-                                    onClick = { selectedTab = 2 },
-                                    icon = MiuixIcons.Os4.Settings,
-                                    label = "设置",
-                                )
+                            } else {
+                                FloatingNavigationBar {
+                                    FloatingNavigationBarItem(
+                                        selected = selectedTab == 0,
+                                        onClick = { selectedTab = 0 },
+                                        icon = MiuixIcons.Album,
+                                        label = "今日",
+                                    )
+                                    FloatingNavigationBarItem(
+                                        selected = selectedTab == 1,
+                                        onClick = { selectedTab = 1 },
+                                        icon = MiuixIcons.Years,
+                                        label = "统计",
+                                    )
+                                    FloatingNavigationBarItem(
+                                        selected = selectedTab == 2,
+                                        onClick = { selectedTab = 2 },
+                                        icon = MiuixIcons.ContactsCircle,
+                                        label = "我的",
+                                    )
+                                }
                             }
+                        }
+
+                        // Blue circular add, right of the floating bar (reference layout).
+                        FloatingActionButton(
+                            onClick = { showAdd = true },
+                            containerColor = MiuixTheme.colorScheme.primary,
+                            shadowElevation = 6.dp,
+                            minWidth = 52.dp,
+                            minHeight = 52.dp,
+                            modifier = Modifier.size(52.dp),
+                        ) {
+                            Icon(
+                                imageVector = MiuixIcons.Add,
+                                contentDescription = "添加",
+                                tint = MiuixTheme.colorScheme.onPrimary,
+                                modifier = Modifier.size(28.dp),
+                            )
                         }
                     }
                 }
@@ -199,4 +212,4 @@ fun FoodAppRoot() {
     }
 }
 
-private val GlassNavHeight = 54.dp
+private val BottomChromeHeight = 56.dp
