@@ -189,7 +189,7 @@ fun TodayScreen(
                     item {
                         SmallTitle(
                             text = meal.label,
-                            insideMargin = PaddingValues(top = 8.dp, bottom = 0.dp),
+                            insideMargin = PaddingValues(start = 12.dp, top = 8.dp, end = 12.dp, bottom = 0.dp),
                         )
                     }
                     if (recognizingHere) item { FoodCardRow(left = { RecognitionCard() }) }
