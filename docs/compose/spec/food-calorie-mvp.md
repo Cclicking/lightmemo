@@ -3,7 +3,7 @@ feature: food-calorie-mvp
 status: delivered
 updated: 2026-09-12
 branch: feature/food-calorie-mvp
-commits: 2aac7c6..a19a6a7
+commits: 2aac7c6..7d5accc
 ---
 
 # 食物热量识别与统计 MVP
