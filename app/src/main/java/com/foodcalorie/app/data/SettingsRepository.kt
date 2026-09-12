@@ -40,6 +40,7 @@ data class AppSettings(
     val apiPresets: List<ApiPreset> = listOf(ApiPreset()),
     val activePresetId: String = apiPresets.firstOrNull()?.id.orEmpty(),
     val systemBackground: String = "",
+    val foodDataCentralApiKey: String = "",
     val dailyCalorieTarget: Float = 1800f,
     /** 营养素目标；<=0 表示跟随推荐值 */
     val proteinTargetG: Float = 0f,
@@ -135,6 +136,7 @@ class SettingsRepository(private val context: Context) {
         val PRESETS = stringPreferencesKey("api_presets")
         val ACTIVE_PRESET = stringPreferencesKey("active_preset_id")
         val SYSTEM_BG = stringPreferencesKey("system_background")
+        val FDC_API_KEY = stringPreferencesKey("food_data_central_api_key")
         val PROTEIN = floatPreferencesKey("protein_target_g")
         val FAT = floatPreferencesKey("fat_target_g")
         val CARBS = floatPreferencesKey("carbs_target_g")
@@ -155,6 +157,7 @@ class SettingsRepository(private val context: Context) {
             apiPresets = presets,
             activePresetId = activeId,
             systemBackground = prefs[Keys.SYSTEM_BG] ?: "",
+            foodDataCentralApiKey = prefs[Keys.FDC_API_KEY] ?: "",
             dailyCalorieTarget = prefs[Keys.TARGET] ?: 1800f,
             proteinTargetG = prefs[Keys.PROTEIN] ?: 0f,
             fatTargetG = prefs[Keys.FAT] ?: 0f,
@@ -283,6 +286,10 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun updateSystemBackground(value: String) {
         context.settingsStore.edit { it[Keys.SYSTEM_BG] = value }
+    }
+
+    suspend fun updateFoodDataCentralApiKey(value: String) {
+        context.settingsStore.edit { it[Keys.FDC_API_KEY] = value.trim() }
     }
 
     suspend fun updateDailyTarget(value: Float) {

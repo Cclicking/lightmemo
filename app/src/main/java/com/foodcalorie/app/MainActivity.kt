@@ -76,7 +76,9 @@ import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.basic.Close
 import top.yukonga.miuix.kmp.icon.os4.ChevronBackward
+import top.yukonga.miuix.kmp.icon.os4.GridView
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import java.time.LocalDate
 
 val LocalGlassSupported = staticCompositionLocalOf { true }
 
@@ -154,8 +156,11 @@ fun FoodAppRoot() {
         CompositionLocalProvider(LocalGlassSupported provides glassSupported, LocalOverScrollState provides remember { OverScrollState() }) {
             var selectedTab by rememberSaveable { mutableIntStateOf(0) }
             var showAdd by remember { mutableStateOf(false) }
+            var showDatePicker by remember { mutableStateOf(false) }
+            var todayManagement by rememberSaveable { mutableStateOf(false) }
             var mineSection by rememberSaveable { mutableStateOf(MineSection.HUB) }
             val addState by addVm.uiState.collectAsState()
+            val selectedDate by todayVm.date.collectAsState()
             val backdrop = rememberLayerBackdrop()
 
             val appBarState = rememberCollapsibleTopAppBarState()
@@ -168,7 +173,13 @@ fun FoodAppRoot() {
             val profileList = rememberLazyListState()
             val addList = rememberLazyListState()
 
-            LaunchedEffect(selectedTab, mineSection) {
+            LaunchedEffect(selectedTab, mineSection, todayManagement) {
+                appBarState.heightOffset = 0f
+                appBarState.contentOffset = 0f
+            }
+
+            LaunchedEffect(selectedDate) {
+                todayList.scrollToItem(0)
                 appBarState.heightOffset = 0f
                 appBarState.contentOffset = 0f
             }
@@ -182,9 +193,18 @@ fun FoodAppRoot() {
             BackHandler(enabled = selectedTab == 2 && mineSection != MineSection.HUB) {
                 mineSection = MineSection.HUB
             }
+            BackHandler(enabled = selectedTab == 0 && todayManagement) {
+                todayManagement = false
+            }
 
-            val showBack = selectedTab == 2 && mineSection != MineSection.HUB
+            val showBack = (selectedTab == 2 && mineSection != MineSection.HUB) || (selectedTab == 0 && todayManagement)
             val largeTitle = when {
+                selectedTab == 0 && todayManagement -> "管理食物卡片"
+                selectedTab == 0 -> when (selectedDate) {
+                    LocalDate.now() -> "今日"
+                    LocalDate.now().minusDays(1) -> "昨日"
+                    else -> "${selectedDate.monthValue}月${selectedDate.dayOfMonth}日"
+                }
                 selectedTab == 2 -> when (mineSection) {
                     MineSection.HUB -> "我的"
                     MineSection.PROFILE -> "个人信息"
@@ -194,6 +214,8 @@ fun FoodAppRoot() {
                 else -> AppTab.entries[selectedTab].title
             }
             val compactTitle = when {
+                selectedTab == 0 && todayManagement -> "管理食物卡片"
+                selectedTab == 0 -> "今日"
                 selectedTab == 2 && mineSection == MineSection.API -> "识别 API"
                 selectedTab == 2 && mineSection == MineSection.TARGET -> "每日目标"
                 selectedTab == 2 && mineSection == MineSection.PROFILE -> "个人信息"
@@ -207,12 +229,27 @@ fun FoodAppRoot() {
                         title = compactTitle,
                         largeTitle = largeTitle,
                         scrollBehavior = scrollBehavior,
-                        startAction = if (showBack) { { glassAlpha, shadowAlpha ->
-                            LiquidTopBarButton(
-                                onClick = { mineSection = MineSection.HUB },
+                        startAction = when {
+                            showBack -> { { glassAlpha: Float, shadowAlpha: Float ->
+                                LiquidTopBarButton(
+                                onClick = {
+                                    if (selectedTab == 0) todayManagement = false else mineSection = MineSection.HUB
+                                },
                                 backdrop = backdrop,
                                 icon = MiuixIcons.Os4.ChevronBackward,
                                 contentDescription = "返回",
+                                backdropAlpha = glassAlpha,
+                                shadowAlpha = shadowAlpha,
+                                )
+                            } }
+                            else -> null
+                        },
+                        endAction = if (selectedTab == 0 && !todayManagement) { { glassAlpha, shadowAlpha ->
+                            LiquidTopBarButton(
+                                onClick = { todayManagement = true },
+                                backdrop = backdrop,
+                                icon = MiuixIcons.Os4.GridView,
+                                contentDescription = "管理食物卡片",
                                 backdropAlpha = glassAlpha,
                                 shadowAlpha = shadowAlpha,
                             )
@@ -224,12 +261,17 @@ fun FoodAppRoot() {
                         selectedTab = selectedTab,
                         onTabSelected = {
                             selectedTab = it
+                            todayManagement = false
+                            showDatePicker = false
                             if (it == 2) mineSection = MineSection.HUB
                         },
                         liquidGlassBackdrop = backdrop,
                         addButton = {
                             LiquidAddButton(
-                                onClick = { showAdd = true },
+                                onClick = {
+                                    addVm.setTargetDate(if (selectedTab == 0) selectedDate else LocalDate.now())
+                                    showAdd = true
+                                },
                                 backdrop = backdrop
                             )
                         }
@@ -256,7 +298,15 @@ fun FoodAppRoot() {
                                 contentPadding = padding,
                                 scrollBehavior = scrollBehavior,
                                 listState = todayList,
-                                onAddClick = { showAdd = true },
+                                addState = addState,
+                                managementMode = todayManagement,
+                                showDatePicker = showDatePicker,
+                                onShowDatePicker = { showDatePicker = true },
+                                onDismissDatePicker = { showDatePicker = false },
+                                onAddClick = {
+                                    addVm.setTargetDate(selectedDate)
+                                    showAdd = true
+                                },
                             )
                             selectedTab == 1 -> StatsScreen(
                                 viewModel = statsVm,

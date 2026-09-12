@@ -11,7 +11,9 @@ import com.foodcalorie.app.FoodApp
 import com.foodcalorie.app.domain.FoodLog
 import com.foodcalorie.app.domain.MealType
 import com.foodcalorie.app.domain.Nutrition
-import com.foodcalorie.app.domain.RecognizedFood
+import com.foodcalorie.app.domain.FoodComponent
+import com.foodcalorie.app.domain.MealRecognition
+import com.foodcalorie.app.domain.RecognizedDish
 import com.foodcalorie.app.network.RecognitionException
 import java.io.ByteArrayOutputStream
 import java.time.LocalDate
@@ -30,7 +32,7 @@ sealed interface AddStep {
     data object PickSource : AddStep
     data class Review(
         val imageUri: String?,
-        val items: List<RecognizedFood>,
+        val result: MealRecognition,
     ) : AddStep
 
     data object Manual : AddStep
@@ -42,6 +44,9 @@ data class AddFoodUiState(
     val error: String? = null,
     val mealType: MealType = defaultMealType(),
     val manualNutrition: Nutrition? = null,
+    val plateSize: String = "",
+    val photoDescription: String = "",
+    val targetDateEpochDay: Long = LocalDate.now().toEpochDay(),
 )
 
 fun defaultMealType(): MealType {
@@ -59,6 +64,7 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = foodApp.foodLogRepository
     private val settingsRepo = foodApp.settingsRepository
     private val client = foodApp.recognitionClient
+    private val nutritionDatabase = foodApp.nutritionDatabase
 
     private val _uiState = MutableStateFlow(AddFoodUiState())
     val uiState: StateFlow<AddFoodUiState> = _uiState.asStateFlow()
@@ -78,6 +84,18 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setMealType(type: MealType) {
         _uiState.value = _uiState.value.copy(mealType = type)
+    }
+
+    fun setPlateSize(value: String) {
+        _uiState.value = _uiState.value.copy(plateSize = value)
+    }
+
+    fun setPhotoDescription(value: String) {
+        _uiState.value = _uiState.value.copy(photoDescription = value)
+    }
+
+    fun setTargetDate(date: LocalDate) {
+        _uiState.value = _uiState.value.copy(targetDateEpochDay = date.toEpochDay())
     }
 
     fun openManual() {
@@ -114,17 +132,17 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
             _uiState.value = _uiState.value.copy(recognizing = true, error = null)
             notify("已开始识别营养，完成后自动回填")
             try {
-                val item = client.recognizeText(
+                val query = client.normalizeFoodQuery(
                     baseUrl = current.baseUrl,
                     apiKey = current.apiKey,
                     model = current.model,
                     foodName = trimmedName,
-                    grams = grams,
-                    systemBackground = current.systemBackground,
                 )
+                val reference = nutritionDatabase.lookup(query, current.foodDataCentralApiKey)
+                    ?: throw RecognitionException("USDA 数据库中未找到该食物，请尝试更具体的名称")
                 _uiState.value = _uiState.value.copy(
                     recognizing = false,
-                    manualNutrition = item.nutrition,
+                    manualNutrition = reference.per100g * (grams / 100.0),
                 )
                 notify("营养识别完成，已自动回填")
             } catch (e: RecognitionException) {
@@ -149,17 +167,26 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
             notify("已开始识别食物，结果将在后台返回")
             try {
                 val base64 = withContext(Dispatchers.IO) { encodeImage(uri) }
-                val items = client.recognize(
+                val visualResult = client.recognize(
                     baseUrl = current.baseUrl,
                     apiKey = current.apiKey,
                     model = current.model,
                     imageBase64 = base64,
                     mimeType = "image/jpeg",
-                    systemBackground = current.systemBackground,
+                    userDescription = buildList {
+                        current.systemBackground.takeIf { it.isNotBlank() }?.let { add("用户背景：$it") }
+                        _uiState.value.photoDescription.takeIf { it.isNotBlank() }?.let { add("本餐说明：$it") }
+                    }.joinToString("\n"),
+                    mealType = _uiState.value.mealType.label,
+                    plateSize = _uiState.value.plateSize,
                 )
+                if (!visualResult.isFoodImage || visualResult.dishes.isEmpty()) {
+                    throw RecognitionException("图片中没有识别到可记录的食物")
+                }
+                val result = nutritionDatabase.enrich(visualResult, current.foodDataCentralApiKey)
                 _uiState.value = _uiState.value.copy(
                     recognizing = false,
-                    step = AddStep.Review(imageUri = uri.toString(), items = items),
+                    step = AddStep.Review(imageUri = uri.toString(), result = result),
                 )
                 notify("食物识别完成，请确认结果")
             } catch (e: RecognitionException) {
@@ -180,7 +207,7 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
                     mealType = _uiState.value.mealType,
                     grams = grams,
                     nutrition = nutrition,
-                    dateEpochDay = LocalDate.now().toEpochDay(),
+                    dateEpochDay = _uiState.value.targetDateEpochDay,
                 ),
             )
             _uiState.value = _uiState.value.copy(step = AddStep.PickSource, error = null)
@@ -188,17 +215,30 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun saveRecognized(items: List<RecognizedFood>, imageUri: String?) {
+    fun updateComponentWeight(componentId: String, grams: Double) {
+        val step = _uiState.value.step as? AddStep.Review ?: return
+        val safeGrams = grams.coerceAtLeast(0.0)
+        _uiState.value = _uiState.value.copy(
+            step = step.copy(
+                result = step.result.copy(
+                    dishes = step.result.dishes.map { it.updateWeight(componentId, safeGrams) },
+                ),
+            ),
+        )
+    }
+
+    fun saveRecognized(result: MealRecognition, imageUri: String?) {
         viewModelScope.launch {
             val meal = _uiState.value.mealType
-            val day = LocalDate.now().toEpochDay()
-            items.forEach { item ->
+            val day = _uiState.value.targetDateEpochDay
+            result.dishes.forEach { dish ->
                 repo.insert(
                     FoodLog(
-                        name = item.name,
+                        name = dish.name,
                         mealType = meal,
-                        grams = item.grams,
-                        nutrition = item.nutrition,
+                        grams = dish.grams,
+                        nutrition = dish.nutrition,
+                        components = dish.allComponents,
                         imageUri = imageUri,
                         dateEpochDay = day,
                     ),
@@ -229,4 +269,22 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
         bitmap.compress(Bitmap.CompressFormat.JPEG, 85, os)
         Base64.encodeToString(os.toByteArray(), Base64.NO_WRAP)
     }
+}
+
+private fun RecognizedDish.updateWeight(componentId: String, grams: Double): RecognizedDish = copy(
+    components = components.map { component ->
+        if (component.id == componentId) component.withWeight(grams) else component
+    },
+    children = children.map { it.updateWeight(componentId, grams) },
+)
+
+private fun FoodComponent.withWeight(grams: Double): FoodComponent {
+    val oldEstimate = estimatedWeightG.takeIf { it > 0.0 } ?: 1.0
+    val minRatio = weightMinG / oldEstimate
+    val maxRatio = weightMaxG / oldEstimate
+    return copy(
+        estimatedWeightG = grams,
+        weightMinG = (grams * minRatio).coerceAtMost(grams),
+        weightMaxG = (grams * maxRatio).coerceAtLeast(grams),
+    )
 }

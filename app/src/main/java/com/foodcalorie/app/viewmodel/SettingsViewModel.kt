@@ -29,6 +29,10 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setSystemBackground(value: String) = viewModelScope.launch { repo.updateSystemBackground(value) }
 
+    fun setFoodDataCentralApiKey(value: String) = viewModelScope.launch {
+        repo.updateFoodDataCentralApiKey(value)
+    }
+
     fun selectPreset(id: String) = viewModelScope.launch { repo.selectPreset(id) }
 
     fun addPreset(name: String = "新配置") = viewModelScope.launch { repo.addPreset(name) }

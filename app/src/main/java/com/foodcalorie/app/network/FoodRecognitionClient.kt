@@ -1,17 +1,18 @@
 package com.foodcalorie.app.network
 
-import com.foodcalorie.app.domain.Nutrition
-import com.foodcalorie.app.domain.RecognizedFood
+import com.foodcalorie.app.domain.ComponentSource
+import com.foodcalorie.app.domain.DishType
+import com.foodcalorie.app.domain.FoodComponent
+import com.foodcalorie.app.domain.MealRecognition
+import com.foodcalorie.app.domain.RecognizedDish
 import java.io.IOException
+import java.util.UUID
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -26,15 +27,12 @@ class RecognitionException(message: String, cause: Throwable? = null) : Exceptio
 data class ChatRequest(
     val model: String,
     val messages: List<ChatMessage>,
-    val temperature: Double = 0.2,
-    val max_tokens: Int = 800,
+    val temperature: Double = 0.1,
+    val max_tokens: Int = 3000,
 )
 
 @Serializable
-data class ChatMessage(
-    val role: String,
-    val content: List<ContentPart>,
-)
+data class ChatMessage(val role: String, val content: List<ContentPart>)
 
 @Serializable
 data class ContentPart(
@@ -46,192 +44,254 @@ data class ContentPart(
 @Serializable
 data class ImageUrl(val url: String)
 
+@Serializable
+internal data class VisualMealDto(
+    @SerialName("is_food_image") val isFoodImage: Boolean = false,
+    @SerialName("meal_name") val mealName: String = "餐食",
+    val dishes: List<VisualDishDto> = emptyList(),
+    @SerialName("overall_confidence") val overallConfidence: Double = 0.0,
+    @SerialName("confirmation_questions") val confirmationQuestions: List<String> = emptyList(),
+    @SerialName("image_quality_issues") val imageQualityIssues: List<String> = emptyList(),
+)
+
+@Serializable
+internal data class VisualDishDto(
+    @SerialName("dish_name") val dishName: String,
+    @SerialName("dish_type") val dishType: String = "other",
+    @SerialName("dish_confidence") val dishConfidence: Double = 0.0,
+    val components: List<VisualComponentDto> = emptyList(),
+    val children: List<VisualDishDto> = emptyList(),
+    @SerialName("needs_confirmation") val needsConfirmation: Boolean = false,
+    @SerialName("uncertainty_reason") val uncertaintyReason: String? = null,
+)
+
+@Serializable
+internal data class VisualComponentDto(
+    val name: String,
+    @SerialName("database_query") val databaseQuery: String,
+    @SerialName("china_database_query") val chinaDatabaseQuery: String? = null,
+    val source: String = "visible",
+    @SerialName("estimated_weight_g") val estimatedWeightG: Double,
+    @SerialName("weight_min_g") val weightMinG: Double,
+    @SerialName("weight_max_g") val weightMaxG: Double,
+    val confidence: Double = 0.0,
+    @SerialName("needs_confirmation") val needsConfirmation: Boolean = false,
+)
+
 class FoodRecognitionClient(
     private val httpClient: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(90, TimeUnit.SECONDS)
         .build(),
-    private val json: Json = Json {
-        ignoreUnknownKeys = true
-        isLenient = true
-    },
+    private val json: Json = Json { ignoreUnknownKeys = true; isLenient = true },
 ) {
+    suspend fun normalizeFoodQuery(
+        baseUrl: String,
+        apiKey: String,
+        model: String,
+        foodName: String,
+    ): String = withContext(Dispatchers.IO) {
+        val content = complete(
+            baseUrl,
+            apiKey,
+            model,
+            listOf(
+                textMessage(
+                    "system",
+                    "将食物名称转换成适合 USDA FoodData Central 检索的简洁英文词组，包含生熟和烹饪方式。只输出 {\"database_query\":\"...\"}。不要输出营养值。",
+                ),
+                textMessage("user", foodName),
+            ),
+        )
+        json.parseToJsonElement(extractJson(content)).jsonObject["database_query"]
+            ?.jsonPrimitive?.content?.takeIf { it.isNotBlank() }
+            ?: throw RecognitionException("无法标准化食物名称")
+    }
+
     suspend fun recognize(
         baseUrl: String,
         apiKey: String,
         model: String,
         imageBase64: String,
         mimeType: String = "image/jpeg",
-        systemBackground: String = "",
-    ): List<RecognizedFood> = withContext(Dispatchers.IO) {
-        if (baseUrl.isBlank() || apiKey.isBlank()) {
-            throw RecognitionException("请先在设置中填写 API Base URL 与 API Key")
-        }
-        if (imageBase64.isBlank()) {
-            throw RecognitionException("图片数据为空")
-        }
-        val endpoint = baseUrl.trimEnd('/') + "/chat/completions"
+        userDescription: String = "",
+        mealType: String = "",
+        plateSize: String = "",
+    ): MealRecognition = withContext(Dispatchers.IO) {
+        validate(baseUrl, apiKey, imageBase64)
         val dataUrl = "data:$mimeType;base64,$imageBase64"
-        val prompt = """
-            你是营养分析助手。识别图片中的食物，并估算整份摄入的营养。
-            只输出 JSON，不要 markdown，格式：
-            {"items":[{"name":"食物名","grams":123.0,"caloriesKcal":200.0,"proteinG":10.0,"carbsG":20.0,"fatG":5.0}]}
-            grams 为估算克数；热量单位 kcal；蛋白质/碳水/脂肪单位 g。若图中无食物，items 为空数组。
-        """.trimIndent()
-        val bodyObj = ChatRequest(
-            model = model.ifBlank { "gpt-4o-mini" },
-            messages = listOf(
+        val initialContent = complete(
+            baseUrl,
+            apiKey,
+            model,
+            listOf(
+                textMessage("system", SYSTEM_PROMPT),
                 ChatMessage(
-                    role = "system",
-                    content = listOf(
-                        ContentPart(
-                            type = "text",
-                            text = buildSystemPrompt(systemBackground),
+                    "user",
+                    listOf(
+                        ContentPart(type = "text", text = runtimePrompt(plateSize, userDescription, mealType)),
+                        ContentPart(type = "image_url", image_url = ImageUrl(dataUrl)),
+                    ),
+                ),
+            ),
+        )
+        val initialJson = extractJson(initialContent)
+        val initial = parseVisualJson(initialJson)
+        if (!initial.isFoodImage || initial.dishes.isEmpty()) return@withContext initial
+
+        // 审核服务失败时保留第一阶段结果，营养查询仍可继续。
+        runCatching {
+            val reviewed = complete(
+                baseUrl,
+                apiKey,
+                model,
+                listOf(
+                    textMessage("system", REVIEW_PROMPT),
+                    ChatMessage(
+                        "user",
+                        listOf(
+                            ContentPart(type = "text", text = "待审核结果：$initialJson"),
+                            ContentPart(type = "image_url", image_url = ImageUrl(dataUrl)),
                         ),
                     ),
                 ),
-                ChatMessage(
-                    role = "user",
-                    content = listOf(
-                        ContentPart(type = "text", text = prompt),
-                        ContentPart(type = "image_url", image_url = ImageUrl(url = dataUrl)),
-                    ),
-                ),
-            ),
-        )
-        val bodyText = json.encodeToString(ChatRequest.serializer(), bodyObj)
-        val request = Request.Builder()
-            .url(endpoint)
-            .addHeader("Authorization", "Bearer $apiKey")
-            .addHeader("Content-Type", "application/json")
-            .post(bodyText.toRequestBody("application/json".toMediaType()))
-            .build()
-
-        val response = httpClient.newCall(request).execute()
-        val raw = response.body?.string().orEmpty()
-        if (!response.isSuccessful) {
-            throw RecognitionException("识别失败 HTTP ${response.code}: ${raw.take(200)}")
-        }
-        parseChatCompletion(raw)
+            )
+            parseVisualJson(extractJson(reviewed))
+        }.getOrDefault(initial)
     }
 
-    suspend fun recognizeText(
+    internal fun parseChatCompletion(raw: String): MealRecognition = try {
+        parseVisualJson(extractJson(chatContent(raw)))
+    } catch (e: RecognitionException) {
+        throw e
+    } catch (e: Exception) {
+        throw RecognitionException("无法解析识别结果", e)
+    }
+
+    internal fun parseVisualJson(payload: String): MealRecognition = try {
+        json.decodeFromString<VisualMealDto>(payload).toDomain()
+    } catch (e: Exception) {
+        throw RecognitionException("视觉模型返回的结构不完整", e)
+    }
+
+    private fun complete(
         baseUrl: String,
         apiKey: String,
         model: String,
-        foodName: String,
-        grams: Double,
-        systemBackground: String = "",
-    ): RecognizedFood = withContext(Dispatchers.IO) {
-        if (baseUrl.isBlank() || apiKey.isBlank()) {
-            throw RecognitionException("请先在设置中填写 API Base URL 与 API Key")
-        }
-        if (foodName.isBlank()) {
-            throw RecognitionException("请输入食物名称")
-        }
-
-        val amount = grams.takeIf { it > 0.0 } ?: 100.0
-        val prompt = """
-            你是营养分析助手。请根据食物名称和摄入克数，估算这一份食物的营养。
-            食物名称：$foodName
-            摄入克数：${amount.formatForPrompt()} 克
-            只输出 JSON，不要 markdown，格式：
-            {"items":[{"name":"食物名","grams":${amount.formatForPrompt()},"caloriesKcal":200.0,"proteinG":10.0,"carbsG":20.0,"fatG":5.0}]}
-            caloriesKcal 为这${amount.formatForPrompt()}克的热量，单位 kcal；蛋白质/碳水/脂肪为这份食物的含量，单位 g。
-            只能返回一个 items 元素；无法判断时也要给出合理估算，不要返回空数组。
-        """.trimIndent()
-        val bodyObj = ChatRequest(
-            model = model.ifBlank { "gpt-4o-mini" },
-            messages = listOf(
-                ChatMessage(
-                    role = "system",
-                    content = listOf(
-                        ContentPart(type = "text", text = buildSystemPrompt(systemBackground)),
-                    ),
-                ),
-                ChatMessage(
-                    role = "user",
-                    content = listOf(ContentPart(type = "text", text = prompt)),
-                ),
-            ),
+        messages: List<ChatMessage>,
+    ): String {
+        val body = json.encodeToString(
+            ChatRequest.serializer(),
+            ChatRequest(model = model.ifBlank { "gpt-4o-mini" }, messages = messages),
         )
-        val bodyText = json.encodeToString(ChatRequest.serializer(), bodyObj)
         val request = Request.Builder()
             .url(baseUrl.trimEnd('/') + "/chat/completions")
             .addHeader("Authorization", "Bearer $apiKey")
             .addHeader("Content-Type", "application/json")
-            .post(bodyText.toRequestBody("application/json".toMediaType()))
+            .post(body.toRequestBody("application/json".toMediaType()))
             .build()
-
-        val response = httpClient.newCall(request).execute()
-        val raw = response.body?.string().orEmpty()
-        if (!response.isSuccessful) {
-            throw RecognitionException("识别失败 HTTP ${response.code}: ${raw.take(200)}")
-        }
-        parseChatCompletion(raw).firstOrNull()
-            ?: throw RecognitionException("无法识别该食物，请检查名称后重试")
-    }
-
-    internal fun parseChatCompletion(raw: String): List<RecognizedFood> {
-        return try {
-            val root = json.parseToJsonElement(raw).jsonObject
-            val content = root["choices"]!!.jsonArray[0]
-                .jsonObject["message"]!!
-                .jsonObject["content"]!!
-                .jsonPrimitive.content
-            parseItemsJson(extractJson(content))
-        } catch (e: RecognitionException) {
-            throw e
-        } catch (e: Exception) {
-            throw RecognitionException("无法解析识别结果", e)
+        httpClient.newCall(request).execute().use { response ->
+            val raw = response.body?.string().orEmpty()
+            if (!response.isSuccessful) {
+                throw RecognitionException("识别失败 HTTP ${response.code}: ${raw.take(200)}")
+            }
+            return chatContent(raw)
         }
     }
 
-    internal fun parseItemsJson(payload: String): List<RecognizedFood> {
-        val root = json.parseToJsonElement(payload).jsonObject
-        val items = root["items"] as? JsonArray ?: JsonArray(emptyList())
-        return items.mapNotNull { element ->
-            val obj = element as? JsonObject ?: return@mapNotNull null
-            val name = (obj["name"] as? JsonPrimitive)?.contentOrNull.orEmpty()
-            if (name.isBlank()) return@mapNotNull null
-            RecognizedFood(
-                name = name,
-                grams = obj.double("grams"),
-                nutrition = Nutrition(
-                    caloriesKcal = obj.double("caloriesKcal"),
-                    proteinG = obj.double("proteinG"),
-                    carbsG = obj.double("carbsG"),
-                    fatG = obj.double("fatG"),
-                ),
-            )
-        }
+    private fun chatContent(raw: String): String = try {
+        json.parseToJsonElement(raw).jsonObject["choices"]!!.jsonArray[0]
+            .jsonObject["message"]!!.jsonObject["content"]!!.jsonPrimitive.content
+    } catch (e: Exception) {
+        throw RecognitionException("接口响应中没有有效内容", e)
     }
 
-    private fun JsonObject.double(key: String): Double {
-        val prim = this[key] as? JsonPrimitive ?: return 0.0
-        return prim.contentOrNull?.toDoubleOrNull() ?: 0.0
+    private fun validate(baseUrl: String, apiKey: String, imageBase64: String) {
+        if (baseUrl.isBlank() || apiKey.isBlank()) throw RecognitionException("请先配置识别 API")
+        if (imageBase64.isBlank()) throw RecognitionException("图片数据为空")
     }
+
+    private fun textMessage(role: String, text: String) =
+        ChatMessage(role, listOf(ContentPart(type = "text", text = text)))
 
     private fun extractJson(content: String): String {
-        val trimmed = content.trim()
-        val start = trimmed.indexOf('{')
-        val end = trimmed.lastIndexOf('}')
-        if (start < 0 || end <= start) {
-            throw IOException("响应中没有 JSON 对象")
-        }
-        return trimmed.substring(start, end + 1)
+        val start = content.indexOf('{')
+        val end = content.lastIndexOf('}')
+        if (start < 0 || end <= start) throw IOException("响应中没有 JSON 对象")
+        return content.substring(start, end + 1)
     }
 
-    private fun buildSystemPrompt(systemBackground: String): String {
-        val base = "You output strict JSON only."
-        val bg = systemBackground.trim()
-        return if (bg.isEmpty()) {
-            base
-        } else {
-            "$base\n用户背景信息（估算时参考，勿输出）：$bg"
-        }
-    }
+    private fun runtimePrompt(plateSize: String, userDescription: String, mealType: String) = """
+        分析这张食物照片。先识别完整菜品，再拆解主要组成并估计可食用重量。
+        餐具尺寸：${plateSize.ifBlank { "未提供" }}
+        用户补充说明：${userDescription.ifBlank { "未提供" }}
+        用餐类型：${mealType.ifBlank { "未提供" }}
+        空缺信息仅根据图片判断，不要擅自当作已知事实。严格返回系统规定的 JSON。
+    """.trimIndent()
 
-    private fun Double.formatForPrompt(): String =
-        if (this % 1.0 == 0.0) toInt().toString() else this.toString()
+    private companion object {
+        val SYSTEM_PROMPT = """
+            你是专业的食物视觉识别系统。你只负责看图、分层和估重；营养数据库负责计算。
+            严格执行：图片质量检查 → 完整菜品识别 → 组成拆解 → 重量范围估计。
+            一级必须是用户认知中的完整菜品。套餐放在一级，子餐品放 children，不得把全部原料平铺。
+            只拆对营养有明显影响的组成。油、酱汁、糖、奶油、芝士、汤底等可合理推测，但 source 必须为 inferred。
+            每个组成提供适合 USDA FoodData Central 检索的简洁英文 database_query，需包含生熟状态和烹饪方式。
+            禁止输出或猜测任何热量、蛋白质、碳水、脂肪数值。重量使用合理整值并给上下界。
+            低置信度时使用更宽泛名称。最多提出 3 个真正影响热量的确认问题。
+            只输出合法 JSON，不要 Markdown：
+            {"is_food_image":true,"meal_name":"午餐","overall_confidence":0.82,
+             "image_quality_issues":[],"confirmation_questions":[],"dishes":[{
+             "dish_name":"牛肉盖饭","dish_type":"staple_with_toppings","dish_confidence":0.9,
+             "needs_confirmation":true,"uncertainty_reason":"油量不可见","children":[],"components":[{
+             "name":"熟白米饭","database_query":"rice white cooked","china_database_query":"米饭（蒸）","source":"visible",
+             "estimated_weight_g":200,"weight_min_g":160,"weight_max_g":240,
+             "confidence":0.9,"needs_confirmation":false}]}]}
+            dish_type 只能为 single_food、mixed_dish、staple_with_toppings、soup_or_noodle、salad、
+            sandwich_or_burger、combo_meal、beverage、dessert、other。
+            source 只能为 visible、inferred、user_provided。
+            china_database_query 应是适合《中国食物成分表》检索的简洁中文标准食物名，保留关键烹饪状态。
+        """.trimIndent()
+
+        val REVIEW_PROMPT = """
+            你是食物视觉识别质量审核模块。对照原图审核给定结果，只在有充分视觉依据时修正。
+            检查漏菜、层级、重复、不可食部分、烹饪方式、相对重量、餐具体积、隐藏油酱和过度具体判断。
+            输出与输入完全相同的合法 JSON 结构；不要输出审核说明、营养值或 Markdown。
+        """.trimIndent()
+    }
+}
+
+private fun VisualMealDto.toDomain() = MealRecognition(
+    isFoodImage = isFoodImage,
+    mealName = mealName,
+    dishes = dishes.map { it.toDomain() },
+    overallConfidence = overallConfidence.coerceIn(0.0, 1.0),
+    confirmationQuestions = confirmationQuestions.take(3),
+    imageQualityIssues = imageQualityIssues,
+)
+
+private fun VisualDishDto.toDomain(): RecognizedDish = RecognizedDish(
+    id = UUID.randomUUID().toString(),
+    name = dishName,
+    type = runCatching { DishType.valueOf(dishType.uppercase()) }.getOrDefault(DishType.OTHER),
+    confidence = dishConfidence.coerceIn(0.0, 1.0),
+    components = components.map { it.toDomain() },
+    needsConfirmation = needsConfirmation,
+    uncertaintyReason = uncertaintyReason,
+    children = children.map { it.toDomain() },
+)
+
+private fun VisualComponentDto.toDomain(): FoodComponent {
+    val estimate = estimatedWeightG.coerceAtLeast(0.0)
+    return FoodComponent(
+        id = UUID.randomUUID().toString(),
+        name = name,
+        databaseQuery = databaseQuery,
+        chinaDatabaseQuery = chinaDatabaseQuery?.takeIf { it.isNotBlank() } ?: name,
+        source = runCatching { ComponentSource.valueOf(source.uppercase()) }.getOrDefault(ComponentSource.INFERRED),
+        estimatedWeightG = estimate,
+        weightMinG = weightMinG.coerceIn(0.0, estimate),
+        weightMaxG = weightMaxG.coerceAtLeast(estimate),
+        confidence = confidence.coerceIn(0.0, 1.0),
+        needsConfirmation = needsConfirmation,
+    )
 }

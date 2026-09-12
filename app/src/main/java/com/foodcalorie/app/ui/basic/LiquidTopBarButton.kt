@@ -25,6 +25,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
@@ -112,6 +114,7 @@ fun LiquidTopBarButton(
             modifier = Modifier
                 .size(buttonHeight)
                 .clip(CircleShape)
+                .semantics { this.contentDescription = contentDescription }
                 .clickable(
                     interactionSource = interactionSource,
                     role = Role.Button,

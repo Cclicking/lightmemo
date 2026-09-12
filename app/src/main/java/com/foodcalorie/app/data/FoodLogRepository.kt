@@ -5,6 +5,9 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.foodcalorie.app.domain.FoodLog
+import com.foodcalorie.app.domain.FoodComponent
+import com.foodcalorie.app.domain.ComponentSource
+import com.foodcalorie.app.domain.NutritionReference
 import com.foodcalorie.app.domain.MealType
 import com.foodcalorie.app.domain.Nutrition
 import kotlinx.coroutines.flow.Flow
@@ -51,6 +54,9 @@ class FoodLogRepository(private val context: Context) {
                     put("proteinG", log.nutrition.proteinG)
                     put("carbsG", log.nutrition.carbsG)
                     put("fatG", log.nutrition.fatG)
+                    put("components", JSONArray().apply {
+                        log.components.forEach { component -> put(component.toJson()) }
+                    })
                     if (log.imageUri == null) put("imageUri", JSONObject.NULL) else put("imageUri", log.imageUri)
                     put("dateEpochDay", log.dateEpochDay)
                     put("createdAtMillis", log.createdAtMillis)
@@ -78,12 +84,76 @@ class FoodLogRepository(private val context: Context) {
                             carbsG = o.getDouble("carbsG"),
                             fatG = o.getDouble("fatG"),
                         ),
+                        components = o.optJSONArray("components")?.let(::parseComponents).orEmpty(),
                         imageUri = image,
                         dateEpochDay = o.getLong("dateEpochDay"),
                         createdAtMillis = o.getLong("createdAtMillis"),
                     ),
                 )
             }
+        }
+    }
+
+    private fun FoodComponent.toJson(): JSONObject = JSONObject().apply {
+        put("id", id)
+        put("name", name)
+        put("databaseQuery", databaseQuery)
+        put("chinaDatabaseQuery", chinaDatabaseQuery)
+        put("source", source.name)
+        put("estimatedWeightG", estimatedWeightG)
+        put("weightMinG", weightMinG)
+        put("weightMaxG", weightMaxG)
+        put("confidence", confidence)
+        put("needsConfirmation", needsConfirmation)
+        nutritionReference?.let { reference ->
+            put("nutritionReference", JSONObject().apply {
+                put("sourceId", reference.sourceId)
+                put("description", reference.description)
+                put("dataType", reference.dataType)
+                put("caloriesKcal", reference.per100g.caloriesKcal)
+                put("proteinG", reference.per100g.proteinG)
+                put("carbsG", reference.per100g.carbsG)
+                put("fatG", reference.per100g.fatG)
+            })
+        }
+    }
+
+    private fun parseComponents(array: JSONArray): List<FoodComponent> = buildList {
+        for (index in 0 until array.length()) {
+            val component = array.getJSONObject(index)
+            val reference = component.optJSONObject("nutritionReference")?.let { value ->
+                NutritionReference(
+                    sourceId = value.optString("sourceId").ifBlank {
+                        value.optLong("fdcId").toString()
+                    },
+                    description = value.optString("description"),
+                    dataType = value.optString("dataType"),
+                    per100g = Nutrition(
+                        caloriesKcal = value.optDouble("caloriesKcal"),
+                        proteinG = value.optDouble("proteinG"),
+                        carbsG = value.optDouble("carbsG"),
+                        fatG = value.optDouble("fatG"),
+                    ),
+                )
+            }
+            add(
+                FoodComponent(
+                    id = component.optString("id"),
+                    name = component.optString("name"),
+                    databaseQuery = component.optString("databaseQuery"),
+                    chinaDatabaseQuery = component.optString("chinaDatabaseQuery")
+                        .ifBlank { component.optString("name") },
+                    source = runCatching {
+                        ComponentSource.valueOf(component.optString("source"))
+                    }.getOrDefault(ComponentSource.VISIBLE),
+                    estimatedWeightG = component.optDouble("estimatedWeightG"),
+                    weightMinG = component.optDouble("weightMinG"),
+                    weightMaxG = component.optDouble("weightMaxG"),
+                    confidence = component.optDouble("confidence"),
+                    needsConfirmation = component.optBoolean("needsConfirmation"),
+                    nutritionReference = reference,
+                ),
+            )
         }
     }
 }

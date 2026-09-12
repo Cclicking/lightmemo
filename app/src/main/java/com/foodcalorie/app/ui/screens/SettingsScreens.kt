@@ -73,6 +73,9 @@ fun ApiSettingsScreen(
     var systemBackground by remember(settings.activePresetId) {
         mutableStateOf(settings.systemBackground)
     }
+    var foodDataCentralApiKey by remember(settings.foodDataCentralApiKey) {
+        mutableStateOf(settings.foodDataCentralApiKey)
+    }
 
     LazyColumn(
         modifier = Modifier
@@ -193,6 +196,30 @@ fun ApiSettingsScreen(
                     singleLine = true,
                     visualTransformation = PasswordVisualTransformation(),
                     modifier = Modifier.fillMaxWidth(),
+                )
+
+                Spacer(Modifier.height(FieldToTitleSpacing))
+                SmallTitle(
+                    text = "USDA FoodData Central API Key",
+                    modifier = Modifier.offset(x = (-16).dp),
+                )
+                Spacer(Modifier.height(TitleToFieldSpacing))
+                TextField(
+                    value = foodDataCentralApiKey,
+                    onValueChange = {
+                        foodDataCentralApiKey = it
+                        viewModel.setFoodDataCentralApiKey(it)
+                    },
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    text = "查询顺序：USDA 离线库 → USDA 在线 API → 中国食物成分离线库。此 Key 可留空。",
+                    style = MiuixTheme.textStyles.footnote2,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    modifier = Modifier.padding(horizontal = FootnoteHorizontalPadding),
                 )
 
                 Spacer(Modifier.height(FieldToTitleSpacing))

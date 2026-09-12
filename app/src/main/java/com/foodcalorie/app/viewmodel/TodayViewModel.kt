@@ -50,6 +50,10 @@ class TodayViewModel(app: Application) : AndroidViewModel(app) {
 
     fun nextDay() = _date.update { it.plusDays(1) }
 
+    fun selectDate(date: LocalDate) {
+        _date.value = date
+    }
+
     fun delete(id: Long) {
         viewModelScope.launch { repo.deleteById(id) }
     }

@@ -14,6 +14,94 @@ data class Nutrition(
         carbsG = carbsG + other.carbsG,
         fatG = fatG + other.fatG,
     )
+
+    operator fun times(factor: Double): Nutrition = Nutrition(
+        caloriesKcal = caloriesKcal * factor,
+        proteinG = proteinG * factor,
+        carbsG = carbsG * factor,
+        fatG = fatG * factor,
+    )
+}
+
+enum class DishType {
+    SINGLE_FOOD,
+    MIXED_DISH,
+    STAPLE_WITH_TOPPINGS,
+    SOUP_OR_NOODLE,
+    SALAD,
+    SANDWICH_OR_BURGER,
+    COMBO_MEAL,
+    BEVERAGE,
+    DESSERT,
+    OTHER,
+}
+
+enum class ComponentSource {
+    VISIBLE,
+    INFERRED,
+    USER_PROVIDED,
+}
+
+data class NutritionReference(
+    val sourceId: String,
+    val description: String,
+    val dataType: String,
+    val per100g: Nutrition,
+)
+
+data class FoodComponent(
+    val id: String,
+    val name: String,
+    val databaseQuery: String,
+    val chinaDatabaseQuery: String = name,
+    val source: ComponentSource,
+    val estimatedWeightG: Double,
+    val weightMinG: Double,
+    val weightMaxG: Double,
+    val confidence: Double,
+    val needsConfirmation: Boolean = false,
+    val nutritionReference: NutritionReference? = null,
+) {
+    val nutrition: Nutrition
+        get() = nutritionReference?.per100g?.times(estimatedWeightG / 100.0) ?: Nutrition()
+
+    val nutritionMin: Nutrition
+        get() = nutritionReference?.per100g?.times(weightMinG / 100.0) ?: Nutrition()
+
+    val nutritionMax: Nutrition
+        get() = nutritionReference?.per100g?.times(weightMaxG / 100.0) ?: Nutrition()
+}
+
+data class RecognizedDish(
+    val id: String,
+    val name: String,
+    val type: DishType,
+    val confidence: Double,
+    val components: List<FoodComponent>,
+    val needsConfirmation: Boolean = false,
+    val uncertaintyReason: String? = null,
+    val children: List<RecognizedDish> = emptyList(),
+) {
+    val allComponents: List<FoodComponent>
+        get() = components + children.flatMap { it.allComponents }
+
+    val grams: Double get() = allComponents.sumOf { it.estimatedWeightG }
+    val nutrition: Nutrition get() = allComponents.fold(Nutrition()) { total, item -> total + item.nutrition }
+    val nutritionMin: Nutrition get() = allComponents.fold(Nutrition()) { total, item -> total + item.nutritionMin }
+    val nutritionMax: Nutrition get() = allComponents.fold(Nutrition()) { total, item -> total + item.nutritionMax }
+}
+
+data class MealRecognition(
+    val isFoodImage: Boolean,
+    val mealName: String,
+    val dishes: List<RecognizedDish>,
+    val overallConfidence: Double,
+    val confirmationQuestions: List<String>,
+    val imageQualityIssues: List<String> = emptyList(),
+) {
+    val nutrition: Nutrition get() = dishes.fold(Nutrition()) { total, dish -> total + dish.nutrition }
+    val nutritionMin: Nutrition get() = dishes.fold(Nutrition()) { total, dish -> total + dish.nutritionMin }
+    val nutritionMax: Nutrition get() = dishes.fold(Nutrition()) { total, dish -> total + dish.nutritionMax }
 }
 
 enum class MealType(val label: String) {
@@ -29,15 +117,10 @@ data class FoodLog(
     val mealType: MealType,
     val grams: Double,
     val nutrition: Nutrition,
+    val components: List<FoodComponent> = emptyList(),
     val imageUri: String? = null,
     val dateEpochDay: Long = LocalDate.now().toEpochDay(),
     val createdAtMillis: Long = System.currentTimeMillis(),
-)
-
-data class RecognizedFood(
-    val name: String,
-    val grams: Double,
-    val nutrition: Nutrition,
 )
 
 data class DayNutritionSummary(

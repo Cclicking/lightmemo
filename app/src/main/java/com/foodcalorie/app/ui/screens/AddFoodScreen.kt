@@ -19,7 +19,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -41,7 +41,9 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import com.foodcalorie.app.domain.MealType
 import com.foodcalorie.app.domain.Nutrition
-import com.foodcalorie.app.domain.RecognizedFood
+import com.foodcalorie.app.domain.FoodComponent
+import com.foodcalorie.app.domain.MealRecognition
+import com.foodcalorie.app.domain.RecognizedDish
 import com.foodcalorie.app.viewmodel.AddFoodViewModel
 import com.foodcalorie.app.viewmodel.AddStep
 import java.io.File
@@ -137,6 +139,10 @@ fun AddFoodRoute(
                 recognizing = state.recognizing,
                 mealType = state.mealType,
                 onMealType = viewModel::setMealType,
+                plateSize = state.plateSize,
+                onPlateSizeChange = viewModel::setPlateSize,
+                photoDescription = state.photoDescription,
+                onPhotoDescriptionChange = viewModel::setPhotoDescription,
                 error = state.error,
                 permissionHint = if (cameraPermissionDenied) {
                     "相机权限被拒绝，请在系统设置中开启，或改用相册"
@@ -171,12 +177,13 @@ fun AddFoodRoute(
 
             is AddStep.Review -> ReviewContent(
                 padding = contentPadding,
-                items = step.items,
+                result = step.result,
                 recognizing = state.recognizing,
                 mealType = state.mealType,
                 onMealType = viewModel::setMealType,
-                onSave = { edited ->
-                    viewModel.saveRecognized(edited, step.imageUri)
+                onWeightChange = viewModel::updateComponentWeight,
+                onSave = {
+                    viewModel.saveRecognized(step.result, step.imageUri)
                     onDone()
                 },
                 scrollBehavior = scrollBehavior,
@@ -194,6 +201,10 @@ private fun PickSourceContent(
     recognizing: Boolean,
     mealType: MealType,
     onMealType: (MealType) -> Unit,
+    plateSize: String,
+    onPlateSizeChange: (String) -> Unit,
+    photoDescription: String,
+    onPhotoDescriptionChange: (String) -> Unit,
     error: String?,
     permissionHint: String?,
     onGallery: () -> Unit,
@@ -218,6 +229,21 @@ private fun PickSourceContent(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         MealTypeSelector(mealType, onMealType)
+
+        TextField(
+            value = plateSize,
+            onValueChange = onPlateSizeChange,
+            label = "餐具尺寸（可选，如直径 24cm）",
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        TextField(
+            value = photoDescription,
+            onValueChange = onPhotoDescriptionChange,
+            label = "本餐说明（可选，如少油、无糖）",
+            singleLine = false,
+            modifier = Modifier.fillMaxWidth(),
+        )
 
         if (!configured) {
             Card(cornerRadius = 20.dp, modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(16.dp)) {
@@ -441,15 +467,15 @@ private fun Double.formatInput(): String =
 @Composable
 private fun ReviewContent(
     padding: PaddingValues,
-    items: List<RecognizedFood>,
+    result: MealRecognition,
     recognizing: Boolean,
     mealType: MealType,
     onMealType: (MealType) -> Unit,
-    onSave: (List<RecognizedFood>) -> Unit,
+    onWeightChange: (String, Double) -> Unit,
+    onSave: () -> Unit,
     scrollBehavior: ScrollBehavior?,
     listState: LazyListState,
 ) {
-    val editable = remember(items) { items.toMutableStateList() }
     val connection = scrollBehavior?.nestedScrollConnection
 
     LazyColumn(
@@ -469,104 +495,126 @@ private fun ReviewContent(
     ) {
         item { MealTypeSelector(mealType, onMealType) }
         item {
-            Text("识别结果（可修改后再保存）", style = MiuixTheme.textStyles.title4)
+            Text("${result.mealName} · 约 ${result.nutrition.caloriesKcal.toInt()} kcal", style = MiuixTheme.textStyles.title4)
         }
-        if (editable.isEmpty()) {
+        item {
+            Text(
+                text = "估计范围 ${result.nutritionMin.caloriesKcal.toInt()}–${result.nutritionMax.caloriesKcal.toInt()} kcal · 识别可信度 ${(result.overallConfidence * 100).toInt()}%",
+                style = MiuixTheme.textStyles.subtitle,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+            )
+        }
+        if (result.imageQualityIssues.isNotEmpty()) {
             item {
                 Card(cornerRadius = 20.dp, modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(16.dp)) {
-                    Text("没有识别到食物，请重拍或手动录入")
+                    Text("图片质量：${result.imageQualityIssues.joinToString("；")}")
                 }
             }
         }
-        itemsIndexed(editable) { index, item ->
-            var name by remember(item) { mutableStateOf(item.name) }
-            var grams by remember(item) { mutableStateOf(item.grams.toInt().toString()) }
-            var kcal by remember(item) { mutableStateOf(item.nutrition.caloriesKcal.toInt().toString()) }
-            var protein by remember(item) { mutableStateOf(item.nutrition.proteinG.toInt().toString()) }
-            var carbs by remember(item) { mutableStateOf(item.nutrition.carbsG.toInt().toString()) }
-            var fat by remember(item) { mutableStateOf(item.nutrition.fatG.toInt().toString()) }
-
-            fun commit() {
-                editable[index] = item.copy(
-                    name = name.trim().ifEmpty { item.name },
-                    grams = grams.toDoubleOrNull() ?: item.grams,
-                    nutrition = Nutrition(
-                        caloriesKcal = kcal.toDoubleOrNull() ?: item.nutrition.caloriesKcal,
-                        proteinG = protein.toDoubleOrNull() ?: item.nutrition.proteinG,
-                        carbsG = carbs.toDoubleOrNull() ?: item.nutrition.carbsG,
-                        fatG = fat.toDoubleOrNull() ?: item.nutrition.fatG,
-                    ),
-                )
-            }
-
+        items(result.dishes, key = { it.id }) { dish ->
             Card(cornerRadius = 20.dp, modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(16.dp)) {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    TextField(
-                        value = name,
-                        onValueChange = { name = it; commit() },
-                        label = "名称",
-                        singleLine = true,
-            colors = TextFieldDefaults.textFieldColors(backgroundColor = Color.White),
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    TextField(
-                        value = grams,
-                        onValueChange = { grams = it; commit() },
-                        label = "克数",
-                        singleLine = true,
-            colors = TextFieldDefaults.textFieldColors(backgroundColor = Color.White),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    TextField(
-                        value = kcal,
-                        onValueChange = { kcal = it; commit() },
-                        label = "热量 kcal",
-                        singleLine = true,
-            colors = TextFieldDefaults.textFieldColors(backgroundColor = Color.White),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    TextField(
-                        value = protein,
-                        onValueChange = { protein = it; commit() },
-                        label = "蛋白质 g",
-                        singleLine = true,
-            colors = TextFieldDefaults.textFieldColors(backgroundColor = Color.White),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    TextField(
-                        value = carbs,
-                        onValueChange = { carbs = it; commit() },
-                        label = "碳水 g",
-                        singleLine = true,
-            colors = TextFieldDefaults.textFieldColors(backgroundColor = Color.White),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    TextField(
-                        value = fat,
-                        onValueChange = { fat = it; commit() },
-                        label = "脂肪 g",
-                        singleLine = true,
-            colors = TextFieldDefaults.textFieldColors(backgroundColor = Color.White),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                        modifier = Modifier.fillMaxWidth(),
-                    )
+                DishReview(dish = dish, onWeightChange = onWeightChange)
+            }
+        }
+        if (result.confirmationQuestions.isNotEmpty()) {
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("建议确认", style = MiuixTheme.textStyles.title4)
+                    result.confirmationQuestions.forEach { question ->
+                        Text(
+                            text = "• $question",
+                            style = MiuixTheme.textStyles.subtitle,
+                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                        )
+                    }
                 }
             }
         }
         item {
             Button(
-                onClick = { onSave(editable.toList()) },
-                enabled = !recognizing && editable.isNotEmpty(),
+                onClick = onSave,
+                enabled = !recognizing && result.dishes.isNotEmpty() && result.dishes.all { dish ->
+                    dish.allComponents.all { it.nutritionReference != null }
+                },
                 modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.buttonColorsPrimary(color = Color(0xFF0A84FF), contentColor = Color.White),
+                colors = ButtonDefaults.buttonColorsPrimary(),
             ) {
-                Text("保存 ${editable.size} 项")
+                Text("保存 ${result.dishes.size} 道菜")
             }
         }
+    }
+}
+
+@Composable
+private fun DishReview(
+    dish: RecognizedDish,
+    onWeightChange: (String, Double) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(dish.name, style = MiuixTheme.textStyles.title4)
+            Text("约 ${dish.nutrition.caloriesKcal.toInt()} kcal", fontWeight = FontWeight.SemiBold)
+        }
+        Text(
+            text = "蛋白质 ${dish.nutrition.proteinG.formatInput()}g · 碳水 ${dish.nutrition.carbsG.formatInput()}g · 脂肪 ${dish.nutrition.fatG.formatInput()}g",
+            style = MiuixTheme.textStyles.subtitle,
+            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+        )
+        dish.components.forEach { component ->
+            ComponentReview(component = component, onWeightChange = onWeightChange)
+        }
+        dish.children.forEach { child ->
+            Text(child.name, style = MiuixTheme.textStyles.subtitle, fontWeight = FontWeight.SemiBold)
+            child.components.forEach { component ->
+                ComponentReview(component = component, onWeightChange = onWeightChange)
+            }
+        }
+        if (dish.uncertaintyReason != null) {
+            Text(
+                text = "主要误差：${dish.uncertaintyReason}",
+                style = MiuixTheme.textStyles.footnote2,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+            )
+        }
+    }
+}
+
+@Composable
+private fun ComponentReview(
+    component: FoodComponent,
+    onWeightChange: (String, Double) -> Unit,
+) {
+    var input by remember(component.id) { mutableStateOf(component.estimatedWeightG.formatInput()) }
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(component.name)
+            Text(
+                text = component.nutritionReference?.let {
+                    "${it.description} · ${it.dataType} #${it.sourceId}"
+                } ?: "未匹配到营养数据",
+                style = MiuixTheme.textStyles.footnote2,
+                color = if (component.nutritionReference == null) {
+                    MiuixTheme.colorScheme.error
+                } else {
+                    MiuixTheme.colorScheme.onSurfaceVariantSummary
+                },
+            )
+        }
+        TextField(
+            value = input,
+            onValueChange = { value ->
+                input = value
+                value.toDoubleOrNull()?.let { onWeightChange(component.id, it) }
+            },
+            label = "克",
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+            modifier = Modifier.weight(0.55f),
+        )
+        Text("${component.nutrition.caloriesKcal.toInt()} kcal")
     }
 }
 
@@ -581,10 +629,4 @@ fun MealTypeSelector(
         selectedTabIndex = types.indexOf(selected).coerceAtLeast(0),
         onTabSelected = { index -> onSelect(types[index]) },
     )
-}
-
-private fun <T> List<T>.toMutableStateList(): androidx.compose.runtime.snapshots.SnapshotStateList<T> {
-    val list = androidx.compose.runtime.mutableStateListOf<T>()
-    list.addAll(this)
-    return list
 }
