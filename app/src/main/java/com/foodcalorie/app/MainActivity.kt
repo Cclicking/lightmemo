@@ -18,9 +18,12 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -46,13 +49,18 @@ import top.yukonga.miuix.kmp.basic.FloatingActionButton
 import top.yukonga.miuix.kmp.basic.FloatingNavigationBar
 import top.yukonga.miuix.kmp.basic.FloatingNavigationBarItem
 import top.yukonga.miuix.kmp.basic.Icon
+import top.yukonga.miuix.kmp.basic.IconButton
+import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.Scaffold
-import top.yukonga.miuix.kmp.basic.SmallTopAppBar
+import top.yukonga.miuix.kmp.basic.ScrollBehavior
+import top.yukonga.miuix.kmp.basic.TopAppBar
+import top.yukonga.miuix.kmp.basic.rememberTopAppBarState
 import top.yukonga.miuix.kmp.blur.isRuntimeShaderSupported
 import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
 import top.yukonga.miuix.kmp.glass.GlassNavigationBar
 import top.yukonga.miuix.kmp.glass.GlassNavigationItem
+import top.yukonga.miuix.kmp.glass.GlassTopAppBar
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Add
 import top.yukonga.miuix.kmp.icon.extended.Album
@@ -102,10 +110,8 @@ private enum class MineSection {
 }
 
 /**
- * Miuix [Scaffold] shell:
- * - [SmallTopAppBar] is the only page title
- * - bottom chrome (glass nav + FAB) in bottomBar
- * - content records backdrop for glass sampling (not a wallpaper)
+ * Miuix Scaffold shell with large title [TopAppBar] / [GlassTopAppBar]
+ * that collapses on scroll via [MiuixScrollBehavior].
  */
 @Composable
 fun FoodAppRoot() {
@@ -121,7 +127,17 @@ fun FoodAppRoot() {
             var showAdd by remember { mutableStateOf(false) }
             var mineSection by remember { mutableStateOf(MineSection.HUB) }
             val backdrop = rememberLayerBackdrop()
-            val tab = AppTab.entries[selectedTab]
+
+            val appBarState = rememberTopAppBarState()
+            val scrollBehavior = MiuixScrollBehavior(state = appBarState)
+            val todayList = rememberLazyListState()
+            val statsList = rememberLazyListState()
+            val mineList = rememberLazyListState()
+            val addList = rememberLazyListState()
+
+            LaunchedEffect(selectedTab, showAdd, mineSection) {
+                appBarState.heightOffset = 0f
+            }
 
             BackHandler(enabled = showAdd || (selectedTab == 2 && mineSection != MineSection.HUB)) {
                 when {
@@ -130,37 +146,60 @@ fun FoodAppRoot() {
                 }
             }
 
-            val topBarTitle = when {
+            val showBack = showAdd || (selectedTab == 2 && mineSection != MineSection.HUB)
+            val largeTitle = when {
                 showAdd -> "记录食物"
                 selectedTab == 2 -> when (mineSection) {
                     MineSection.HUB -> "我的"
                     MineSection.API -> "识别 API"
                     MineSection.TARGET -> "每日目标"
                 }
-                else -> tab.title
+                else -> AppTab.entries[selectedTab].title
+            }
+            val compactTitle = when {
+                showAdd -> "记录食物"
+                selectedTab == 2 && mineSection == MineSection.API -> "识别 API"
+                selectedTab == 2 && mineSection == MineSection.TARGET -> "每日目标"
+                else -> AppTab.entries[selectedTab].title
             }
 
             Scaffold(
                 modifier = Modifier.fillMaxSize(),
                 topBar = {
-                    SmallTopAppBar(
-                        title = topBarTitle,
-                        navigationIcon = {
-                            val showBack = showAdd || (selectedTab == 2 && mineSection != MineSection.HUB)
-                            if (showBack) {
-                                IconButtonBack(
-                                    onBack = {
-                                        when {
-                                            showAdd -> showAdd = false
-                                            selectedTab == 2 && mineSection != MineSection.HUB -> {
-                                                mineSection = MineSection.HUB
-                                            }
-                                        }
-                                    },
+                    val navIcon: @Composable () -> Unit = {
+                        if (showBack) {
+                            IconButton(onClick = {
+                                when {
+                                    showAdd -> showAdd = false
+                                    selectedTab == 2 && mineSection != MineSection.HUB -> {
+                                        mineSection = MineSection.HUB
+                                    }
+                                }
+                            }) {
+                                Icon(
+                                    MiuixIcons.Os4.ChevronBackward,
+                                    contentDescription = "返回",
+                                    tint = MiuixTheme.colorScheme.onSurface,
                                 )
                             }
-                        },
-                    )
+                        }
+                    }
+                    if (glassSupported) {
+                        GlassTopAppBar(
+                            title = compactTitle,
+                            largeTitle = largeTitle,
+                            scrollBehavior = scrollBehavior,
+                            backdrop = backdrop,
+                            navigationIcon = navIcon,
+                        )
+                    } else {
+                        TopAppBar(
+                            title = compactTitle,
+                            largeTitle = largeTitle,
+                            scrollBehavior = scrollBehavior,
+                            navigationIcon = navIcon,
+                        )
+                    }
                 },
                 bottomBar = {
                     if (!showAdd) {
@@ -176,7 +215,15 @@ fun FoodAppRoot() {
                     }
                 },
                 content = { padding ->
-                    // Surface + page content feed the glass nav backdrop (no wallpaper).
+                    val activeList: LazyListState = when {
+                        showAdd -> addList
+                        selectedTab == 0 -> todayList
+                        selectedTab == 1 -> statsList
+                        else -> mineList
+                    }
+                    @Suppress("UNUSED_VARIABLE")
+                    val contentScrolled = activeList.canScrollBackward
+
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
@@ -187,32 +234,42 @@ fun FoodAppRoot() {
                             showAdd -> AddFoodRoute(
                                 viewModel = addVm,
                                 contentPadding = padding,
+                                scrollBehavior = scrollBehavior,
+                                listState = addList,
                                 onDone = { showAdd = false },
                             )
                             selectedTab == 0 -> TodayScreen(
                                 viewModel = todayVm,
                                 contentPadding = padding,
+                                scrollBehavior = scrollBehavior,
+                                listState = todayList,
                                 onAddClick = { showAdd = true },
-                                backdrop = null,
                             )
                             selectedTab == 1 -> StatsScreen(
                                 viewModel = statsVm,
                                 contentPadding = padding,
-                                backdrop = null,
+                                scrollBehavior = scrollBehavior,
+                                listState = statsList,
                             )
                             else -> when (mineSection) {
                                 MineSection.HUB -> MineHubScreen(
                                     contentPadding = padding,
+                                    scrollBehavior = scrollBehavior,
+                                    listState = mineList,
                                     onApi = { mineSection = MineSection.API },
                                     onTarget = { mineSection = MineSection.TARGET },
                                 )
                                 MineSection.API -> ApiSettingsScreen(
                                     viewModel = settingsVm,
                                     contentPadding = padding,
+                                    scrollBehavior = scrollBehavior,
+                                    listState = mineList,
                                 )
                                 MineSection.TARGET -> CalorieTargetScreen(
                                     viewModel = settingsVm,
                                     contentPadding = padding,
+                                    scrollBehavior = scrollBehavior,
+                                    listState = mineList,
                                 )
                             }
                         }
@@ -220,17 +277,6 @@ fun FoodAppRoot() {
                 },
             )
         }
-    }
-}
-
-@Composable
-private fun IconButtonBack(onBack: () -> Unit) {
-    top.yukonga.miuix.kmp.basic.IconButton(onClick = onBack) {
-        Icon(
-            imageVector = MiuixIcons.Os4.ChevronBackward,
-            contentDescription = "返回",
-            tint = MiuixTheme.colorScheme.onSurface,
-        )
     }
 }
 

@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
@@ -22,11 +23,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.foodcalorie.app.domain.MealType
-import com.foodcalorie.app.ui.components.GlassCard
 import com.foodcalorie.app.viewmodel.TodayViewModel
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
@@ -34,14 +35,15 @@ import top.yukonga.miuix.kmp.basic.Button
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
+import top.yukonga.miuix.kmp.basic.ScrollBehavior
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.blur.Backdrop
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.os4.ChevronBackward
 import top.yukonga.miuix.kmp.icon.os4.ChevronForward
 import top.yukonga.miuix.kmp.icon.os4.Delete
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import top.yukonga.miuix.kmp.utils.overScrollVertical
 
 private val dateFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("M月d日 EEEE")
 
@@ -49,20 +51,30 @@ private val dateFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("M月
 fun TodayScreen(
     viewModel: TodayViewModel,
     contentPadding: PaddingValues,
+    scrollBehavior: ScrollBehavior?,
+    listState: LazyListState,
     onAddClick: () -> Unit,
-    backdrop: Backdrop? = null,
 ) {
     val state by viewModel.uiState.collectAsState()
     val date by viewModel.date.collectAsState()
     val isToday = date == LocalDate.now()
 
     LazyColumn(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier
+            .fillMaxSize()
+            .overScrollVertical()
+            .then(
+                if (scrollBehavior != null) {
+                    Modifier.nestedScroll(scrollBehavior.nestedScrollConnection)
+                } else {
+                    Modifier
+                },
+            ),
+        state = listState,
         contentPadding = PaddingValues(
             start = 16.dp,
             end = 16.dp,
-            // Scaffold already includes system bar insets in contentPadding.
-            top = contentPadding.calculateTopPadding() + 16.dp,
+            top = 8.dp,
             bottom = contentPadding.calculateBottomPadding() + 12.dp,
         ),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -79,7 +91,7 @@ fun TodayScreen(
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
                         text = if (isToday) "今天" else date.format(dateFormatter),
-                        style = MiuixTheme.textStyles.title2,
+                        style = MiuixTheme.textStyles.title4,
                     )
                     Text(
                         text = date.format(dateFormatter),
@@ -94,7 +106,7 @@ fun TodayScreen(
         }
 
         item {
-            GlassCard(backdrop = backdrop, modifier = Modifier.fillMaxWidth()) {
+            Card(modifier = Modifier.fillMaxWidth()) {
                 Column {
                     Text(text = "热量", style = MiuixTheme.textStyles.subtitle)
                     Spacer(Modifier.height(4.dp))
@@ -125,7 +137,7 @@ fun TodayScreen(
                                 .fillMaxWidth(state.progress)
                                 .height(10.dp)
                                 .clip(CircleShape)
-                                .background(Color(0xFF34C759)),
+                                .background(MiuixTheme.colorScheme.primary),
                         )
                     }
                     Spacer(Modifier.height(14.dp))
@@ -177,10 +189,7 @@ fun TodayScreen(
                         SmallTitle(text = meal.label)
                     }
                     items(mealItems, key = { it.id }) { entry ->
-                        GlassCard(
-                            backdrop = backdrop,
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
+                        Card(modifier = Modifier.fillMaxWidth()) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 verticalAlignment = Alignment.CenterVertically,
@@ -188,7 +197,7 @@ fun TodayScreen(
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(entry.name, style = MiuixTheme.textStyles.body1)
                                     Text(
-                                        text = "${entry.grams.toInt()}g · 蛋 ${entry.nutrition.proteinG.toInt()}g · 碳 ${entry.nutrition.carbsG.toInt()}g · 脂 ${entry.nutrition.fatG.toInt()}g",
+                                        text = "${entry.grams.toInt()}g · 蛋白 ${entry.nutrition.proteinG.toInt()}g · 碳水 ${entry.nutrition.carbsG.toInt()}g · 脂肪 ${entry.nutrition.fatG.toInt()}g",
                                         style = MiuixTheme.textStyles.subtitle,
                                         color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                                     )

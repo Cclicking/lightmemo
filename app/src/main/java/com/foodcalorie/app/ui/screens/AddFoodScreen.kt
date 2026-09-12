@@ -19,8 +19,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
@@ -34,6 +34,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -43,12 +44,13 @@ import androidx.core.content.FileProvider
 import com.foodcalorie.app.domain.MealType
 import com.foodcalorie.app.domain.Nutrition
 import com.foodcalorie.app.domain.RecognizedFood
-import com.foodcalorie.app.ui.components.GlassCard
 import com.foodcalorie.app.viewmodel.AddFoodViewModel
 import com.foodcalorie.app.viewmodel.AddStep
 import java.io.File
 import top.yukonga.miuix.kmp.basic.Button
+import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Icon
+import top.yukonga.miuix.kmp.basic.ScrollBehavior
 import top.yukonga.miuix.kmp.basic.TabRowWithContour
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextField
@@ -57,11 +59,14 @@ import top.yukonga.miuix.kmp.icon.os4.Edit
 import top.yukonga.miuix.kmp.icon.os4.Image
 import top.yukonga.miuix.kmp.icon.os4.Photos
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import top.yukonga.miuix.kmp.utils.overScrollVertical
 
 @Composable
 fun AddFoodRoute(
     viewModel: AddFoodViewModel,
     contentPadding: PaddingValues,
+    scrollBehavior: ScrollBehavior?,
+    listState: LazyListState,
     onDone: () -> Unit,
 ) {
     val state by viewModel.uiState.collectAsState()
@@ -142,6 +147,7 @@ fun AddFoodRoute(
                 },
                 onCamera = ::onCameraClick,
                 onManual = viewModel::openManual,
+                scrollBehavior = scrollBehavior,
             )
 
             is AddStep.Manual -> ManualEntryContent(
@@ -152,6 +158,7 @@ fun AddFoodRoute(
                     viewModel.saveManual(name, grams, nutrition)
                     onDone()
                 },
+                scrollBehavior = scrollBehavior,
             )
 
             is AddStep.Review -> ReviewContent(
@@ -164,6 +171,8 @@ fun AddFoodRoute(
                     viewModel.saveRecognized(edited, step.imageUri)
                     onDone()
                 },
+                scrollBehavior = scrollBehavior,
+                listState = listState,
             )
         }
 
@@ -179,9 +188,9 @@ fun AddFoodRoute(
                     ),
                 contentAlignment = Alignment.Center,
             ) {
-                GlassCard(backdrop = null, modifier = Modifier.padding(24.dp)) {
+                Card(modifier = Modifier.padding(24.dp)) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("正在识别食物…", style = MiuixTheme.textStyles.title3)
+                        Text("正在识别食物...", style = MiuixTheme.textStyles.title3)
                         Spacer(Modifier.height(8.dp))
                         Text(
                             text = "图片将发送到你配置的视觉 API",
@@ -206,28 +215,32 @@ private fun PickSourceContent(
     onGallery: () -> Unit,
     onCamera: () -> Unit,
     onManual: () -> Unit,
+    scrollBehavior: ScrollBehavior?,
 ) {
+    val connection = scrollBehavior?.nestedScrollConnection
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .overScrollVertical()
+            .then(if (connection != null) Modifier.nestedScroll(connection) else Modifier)
+            .verticalScroll(rememberScrollState())
             .padding(
                 start = 16.dp,
                 end = 16.dp,
-                top = padding.calculateTopPadding() + 12.dp,
+                top = 8.dp,
                 bottom = padding.calculateBottomPadding() + 12.dp,
-            )
-            .verticalScroll(rememberScrollState()),
+            ),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         MealTypeSelector(mealType, onMealType)
 
         if (!configured) {
-            GlassCard(backdrop = null, modifier = Modifier.fillMaxWidth()) {
+            Card(modifier = Modifier.fillMaxWidth()) {
                 Column {
                     Text("尚未配置识别 API", style = MiuixTheme.textStyles.title4)
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        text = "请到「设置」填写 Base URL 与 API Key。手动录入不依赖网络。",
+                        text = "请到「我的 → 识别 API」填写 Base URL 与 API Key。手动录入不依赖网络。",
                         style = MiuixTheme.textStyles.subtitle,
                         color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                     )
@@ -288,6 +301,7 @@ private fun ManualEntryContent(
     mealType: MealType,
     onMealType: (MealType) -> Unit,
     onSave: (String, Double, Nutrition) -> Unit,
+    scrollBehavior: ScrollBehavior?,
 ) {
     var name by remember { mutableStateOf("") }
     var grams by remember { mutableStateOf("") }
@@ -295,17 +309,20 @@ private fun ManualEntryContent(
     var protein by remember { mutableStateOf("") }
     var carbs by remember { mutableStateOf("") }
     var fat by remember { mutableStateOf("") }
+    val connection = scrollBehavior?.nestedScrollConnection
 
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .overScrollVertical()
+            .then(if (connection != null) Modifier.nestedScroll(connection) else Modifier)
+            .verticalScroll(rememberScrollState())
             .padding(
                 start = 16.dp,
                 end = 16.dp,
-                top = padding.calculateTopPadding() + 12.dp,
+                top = 8.dp,
                 bottom = padding.calculateBottomPadding() + 12.dp,
-            )
-            .verticalScroll(rememberScrollState()),
+            ),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         MealTypeSelector(mealType, onMealType)
@@ -387,15 +404,22 @@ private fun ReviewContent(
     mealType: MealType,
     onMealType: (MealType) -> Unit,
     onSave: (List<RecognizedFood>) -> Unit,
+    scrollBehavior: ScrollBehavior?,
+    listState: LazyListState,
 ) {
     val editable = remember(items) { items.toMutableStateList() }
+    val connection = scrollBehavior?.nestedScrollConnection
 
     LazyColumn(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier
+            .fillMaxSize()
+            .overScrollVertical()
+            .then(if (connection != null) Modifier.nestedScroll(connection) else Modifier),
+        state = listState,
         contentPadding = PaddingValues(
             start = 16.dp,
             end = 16.dp,
-            top = padding.calculateTopPadding() + 12.dp,
+            top = 8.dp,
             bottom = padding.calculateBottomPadding() + 12.dp,
         ),
         verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -406,7 +430,7 @@ private fun ReviewContent(
         }
         if (editable.isEmpty()) {
             item {
-                GlassCard(backdrop = null, modifier = Modifier.fillMaxWidth()) {
+                Card(modifier = Modifier.fillMaxWidth()) {
                     Text("没有识别到食物，请重拍或手动录入")
                 }
             }
@@ -432,7 +456,7 @@ private fun ReviewContent(
                 )
             }
 
-            GlassCard(backdrop = null, modifier = Modifier.fillMaxWidth()) {
+            Card(modifier = Modifier.fillMaxWidth()) {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     TextField(
                         value = name,

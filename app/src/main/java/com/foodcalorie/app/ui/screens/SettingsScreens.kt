@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -18,19 +19,26 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.foodcalorie.app.viewmodel.SettingsViewModel
+import top.yukonga.miuix.kmp.basic.BasicComponent
 import top.yukonga.miuix.kmp.basic.Card
+import top.yukonga.miuix.kmp.basic.ScrollBehavior
+import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import top.yukonga.miuix.kmp.utils.overScrollVertical
 
 @Composable
 fun ApiSettingsScreen(
     viewModel: SettingsViewModel,
     contentPadding: PaddingValues,
+    scrollBehavior: ScrollBehavior?,
+    listState: LazyListState,
 ) {
     val settings by viewModel.settings.collectAsState()
     var baseUrl by remember { mutableStateOf(settings.baseUrl) }
@@ -44,23 +52,35 @@ fun ApiSettingsScreen(
     }
 
     LazyColumn(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier
+            .fillMaxSize()
+            .overScrollVertical()
+            .then(
+                if (scrollBehavior != null) {
+                    Modifier.nestedScroll(scrollBehavior.nestedScrollConnection)
+                } else {
+                    Modifier
+                },
+            ),
+        state = listState,
         contentPadding = PaddingValues(
             start = 16.dp,
             end = 16.dp,
-            top = contentPadding.calculateTopPadding() + 12.dp,
+            top = 8.dp,
             bottom = contentPadding.calculateBottomPadding() + 12.dp,
         ),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
+            SmallTitle(text = "服务配置")
+        }
+        item {
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     if (!settings.isRecognitionConfigured) {
-                        Text(
-                            text = "填写 Base URL 与 API Key 后才能拍照识别",
-                            style = MiuixTheme.textStyles.subtitle,
-                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                        BasicComponent(
+                            title = "尚未配置识别服务",
+                            summary = "填写 Base URL 与 API Key 后才能拍照识别",
                         )
                     }
                     TextField(
@@ -107,6 +127,8 @@ fun ApiSettingsScreen(
 fun CalorieTargetScreen(
     viewModel: SettingsViewModel,
     contentPadding: PaddingValues,
+    scrollBehavior: ScrollBehavior?,
+    listState: LazyListState,
 ) {
     val settings by viewModel.settings.collectAsState()
     var target by remember { mutableStateOf(settings.dailyCalorieTarget.toInt().toString()) }
@@ -116,19 +138,35 @@ fun CalorieTargetScreen(
     }
 
     LazyColumn(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier
+            .fillMaxSize()
+            .overScrollVertical()
+            .then(
+                if (scrollBehavior != null) {
+                    Modifier.nestedScroll(scrollBehavior.nestedScrollConnection)
+                } else {
+                    Modifier
+                },
+            ),
+        state = listState,
         contentPadding = PaddingValues(
             start = 16.dp,
             end = 16.dp,
-            top = contentPadding.calculateTopPadding() + 12.dp,
+            top = 8.dp,
             bottom = contentPadding.calculateBottomPadding() + 12.dp,
         ),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
+            SmallTitle(text = "目标设定")
+        }
+        item {
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("热量目标", style = MiuixTheme.textStyles.title4)
+                    BasicComponent(
+                        title = "每日热量目标",
+                        summary = "用于进度条与达标统计",
+                    )
                     TextField(
                         value = target,
                         onValueChange = { value ->

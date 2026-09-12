@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -20,33 +21,46 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.foodcalorie.app.ui.components.GlassCard
 import com.foodcalorie.app.viewmodel.StatsViewModel
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
+import top.yukonga.miuix.kmp.basic.Card
+import top.yukonga.miuix.kmp.basic.ScrollBehavior
 import top.yukonga.miuix.kmp.basic.TabRow
 import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.blur.Backdrop
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import top.yukonga.miuix.kmp.utils.overScrollVertical
 
 @Composable
 fun StatsScreen(
     viewModel: StatsViewModel,
     contentPadding: PaddingValues,
-    backdrop: Backdrop? = null,
+    scrollBehavior: ScrollBehavior?,
+    listState: LazyListState,
 ) {
     val state by viewModel.uiState.collectAsState()
     val dayLabel = DateTimeFormatter.ofPattern("M/d")
 
     LazyColumn(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier
+            .fillMaxSize()
+            .overScrollVertical()
+            .then(
+                if (scrollBehavior != null) {
+                    Modifier.nestedScroll(scrollBehavior.nestedScrollConnection)
+                } else {
+                    Modifier
+                },
+            ),
+        state = listState,
         contentPadding = PaddingValues(
             start = 16.dp,
             end = 16.dp,
-            top = contentPadding.calculateTopPadding() + 16.dp,
+            top = 8.dp,
             bottom = contentPadding.calculateBottomPadding() + 12.dp,
         ),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -63,7 +77,7 @@ fun StatsScreen(
         }
 
         item {
-            GlassCard(backdrop = backdrop, modifier = Modifier.fillMaxWidth()) {
+            Card(modifier = Modifier.fillMaxWidth()) {
                 Column {
                     Text(text = "日均热量", style = MiuixTheme.textStyles.subtitle)
                     Spacer(Modifier.height(4.dp))
@@ -83,7 +97,7 @@ fun StatsScreen(
         }
 
         item {
-            GlassCard(backdrop = backdrop, modifier = Modifier.fillMaxWidth()) {
+            Card(modifier = Modifier.fillMaxWidth()) {
                 Column {
                     Text(text = "每日热量", style = MiuixTheme.textStyles.subtitle)
                     Spacer(Modifier.height(12.dp))
@@ -120,7 +134,7 @@ private fun WeeklyBars(
         val date = today.minusDays((rangeDays - 1 - offset).toLong())
         date to (map[date.toEpochDay()] ?: 0.0)
     }
-    val barColor = Color(0xFF34C759)
+    val barColor = MiuixTheme.colorScheme.primary
     Row(
         modifier = Modifier
             .fillMaxWidth()
