@@ -17,8 +17,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.unit.dp
-import top.yukonga.miuix.kmp.basic.ScrollBehavior
-import top.yukonga.miuix.kmp.utils.overScrollVertical
+import com.foodcalorie.app.ui.basic.SharedScrollBehavior as ScrollBehavior
+import com.foodcalorie.app.ui.utils.overScrollVertical
 
 /**
  * Shared page body: miuix overscroll + TopAppBar nested-scroll, padding from [Scaffold].

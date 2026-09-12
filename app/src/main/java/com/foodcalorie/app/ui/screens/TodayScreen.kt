@@ -1,5 +1,8 @@
 package com.foodcalorie.app.ui.screens
 
+import androidx.compose.animation.core.animateFloatAsState
+import top.yukonga.miuix.kmp.anim.folmeSpring
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -35,7 +38,7 @@ import top.yukonga.miuix.kmp.basic.Button
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
-import top.yukonga.miuix.kmp.basic.ScrollBehavior
+import com.foodcalorie.app.ui.basic.SharedScrollBehavior as ScrollBehavior
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.icon.MiuixIcons
@@ -43,7 +46,7 @@ import top.yukonga.miuix.kmp.icon.os4.ChevronBackward
 import top.yukonga.miuix.kmp.icon.os4.ChevronForward
 import top.yukonga.miuix.kmp.icon.os4.Delete
 import top.yukonga.miuix.kmp.theme.MiuixTheme
-import top.yukonga.miuix.kmp.utils.overScrollVertical
+import com.foodcalorie.app.ui.utils.overScrollVertical
 
 private val dateFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("M月d日 EEEE")
 
@@ -58,6 +61,11 @@ fun TodayScreen(
     val state by viewModel.uiState.collectAsState()
     val date by viewModel.date.collectAsState()
     val isToday = date == LocalDate.now()
+    val progress by animateFloatAsState(
+        targetValue = state.progress.coerceIn(0f, 1f),
+        animationSpec = folmeSpring(damping = 1f, response = 0.6f),
+        label = "calorieProgress",
+    )
 
     LazyColumn(
         modifier = Modifier
@@ -106,7 +114,7 @@ fun TodayScreen(
         }
 
         item {
-            Card(modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(16.dp)) {
+            Card(cornerRadius = 20.dp, modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(16.dp)) {
                 Column {
                     Text(text = "热量", style = MiuixTheme.textStyles.subtitle)
                     Spacer(Modifier.height(4.dp))
@@ -134,7 +142,7 @@ fun TodayScreen(
                     ) {
                         Box(
                             modifier = Modifier
-                            .fillMaxWidth(state.progress.coerceIn(0f, 1f))
+                            .fillMaxWidth(progress.coerceIn(0f, 1f))
                                 .height(10.dp)
                                 .clip(CircleShape)
                                 .background(MiuixTheme.colorScheme.primary),
@@ -164,7 +172,7 @@ fun TodayScreen(
 
         if (state.entries.isEmpty()) {
             item {
-                Card(modifier = Modifier.fillMaxWidth()) {
+                Card(cornerRadius = 20.dp, modifier = Modifier.fillMaxWidth()) {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -189,7 +197,7 @@ fun TodayScreen(
                         SmallTitle(text = meal.label)
                     }
                     items(mealItems, key = { it.id }) { entry ->
-                        Card(modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(16.dp)) {
+                        Card(cornerRadius = 20.dp, modifier = Modifier.animateItem().fillMaxWidth(), insideMargin = PaddingValues(16.dp)) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 verticalAlignment = Alignment.CenterVertically,

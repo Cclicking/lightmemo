@@ -29,11 +29,11 @@ import com.foodcalorie.app.viewmodel.StatsViewModel
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import top.yukonga.miuix.kmp.basic.Card
-import top.yukonga.miuix.kmp.basic.ScrollBehavior
+import com.foodcalorie.app.ui.basic.SharedScrollBehavior as ScrollBehavior
 import top.yukonga.miuix.kmp.basic.TabRow
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.theme.MiuixTheme
-import top.yukonga.miuix.kmp.utils.overScrollVertical
+import com.foodcalorie.app.ui.utils.overScrollVertical
 
 @Composable
 fun StatsScreen(
@@ -77,7 +77,7 @@ fun StatsScreen(
         }
 
         item {
-            Card(modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(16.dp)) {
+            Card(cornerRadius = 20.dp, modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(16.dp)) {
                 Column {
                     Text(text = "日均热量", style = MiuixTheme.textStyles.subtitle)
                     Spacer(Modifier.height(4.dp))
@@ -97,7 +97,7 @@ fun StatsScreen(
         }
 
         item {
-            Card(modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(16.dp)) {
+            Card(cornerRadius = 20.dp, modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(16.dp)) {
                 Column {
                     Text(text = "每日热量", style = MiuixTheme.textStyles.subtitle)
                     Spacer(Modifier.height(12.dp))

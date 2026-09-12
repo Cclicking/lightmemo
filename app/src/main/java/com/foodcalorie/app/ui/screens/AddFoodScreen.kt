@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -45,7 +46,7 @@ import java.io.File
 import top.yukonga.miuix.kmp.basic.Button
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Icon
-import top.yukonga.miuix.kmp.basic.ScrollBehavior
+import com.foodcalorie.app.ui.basic.SharedScrollBehavior as ScrollBehavior
 import top.yukonga.miuix.kmp.basic.TabRowWithContour
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextField
@@ -203,8 +204,8 @@ private fun PickSourceContent(
             .verticalScroll(rememberScrollState())
             .height(AddFoodSheetHeight)
             .padding(
-                start = 12.dp,
-                end = 12.dp,
+                start = 16.dp,
+                end = 16.dp,
                 top = padding.calculateTopPadding() + 8.dp,
                 bottom = padding.calculateBottomPadding() + 12.dp,
             ),
@@ -213,7 +214,7 @@ private fun PickSourceContent(
         MealTypeSelector(mealType, onMealType)
 
         if (!configured) {
-            Card(modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(16.dp)) {
+            Card(cornerRadius = 20.dp, modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(16.dp)) {
                 Column {
                     Text("尚未配置识别 API", style = MiuixTheme.textStyles.title4)
                     Spacer(Modifier.height(6.dp))
@@ -311,8 +312,8 @@ private fun ManualEntryContent(
             .verticalScroll(rememberScrollState())
             .height(AddFoodSheetHeight)
             .padding(
-                start = 12.dp,
-                end = 12.dp,
+                start = 16.dp,
+                end = 16.dp,
                 top = padding.calculateTopPadding() + 8.dp,
                 bottom = padding.calculateBottomPadding() + 12.dp,
             ),
@@ -437,8 +438,8 @@ private fun ReviewContent(
             .height(AddFoodSheetHeight),
         state = listState,
         contentPadding = PaddingValues(
-            start = 12.dp,
-            end = 12.dp,
+            start = 16.dp,
+            end = 16.dp,
             top = padding.calculateTopPadding() + 8.dp,
             bottom = padding.calculateBottomPadding() + 12.dp,
         ),
@@ -450,7 +451,7 @@ private fun ReviewContent(
         }
         if (editable.isEmpty()) {
             item {
-                Card(modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(16.dp)) {
+                Card(cornerRadius = 20.dp, modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(16.dp)) {
                     Text("没有识别到食物，请重拍或手动录入")
                 }
             }
@@ -476,7 +477,7 @@ private fun ReviewContent(
                 )
             }
 
-            Card(modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(16.dp)) {
+            Card(cornerRadius = 20.dp, modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(16.dp)) {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     TextField(
                         value = name,

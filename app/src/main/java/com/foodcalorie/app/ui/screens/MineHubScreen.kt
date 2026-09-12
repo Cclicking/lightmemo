@@ -12,15 +12,15 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.unit.dp
-import top.yukonga.miuix.kmp.basic.BasicComponent
+import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Icon
-import top.yukonga.miuix.kmp.basic.ScrollBehavior
+import com.foodcalorie.app.ui.basic.SharedScrollBehavior as ScrollBehavior
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.basic.ArrowRight
 import top.yukonga.miuix.kmp.theme.MiuixTheme
-import top.yukonga.miuix.kmp.utils.overScrollVertical
+import com.foodcalorie.app.ui.utils.overScrollVertical
 
 @Composable
 fun MineHubScreen(
@@ -55,31 +55,17 @@ fun MineHubScreen(
                 text = "基本设置",
                 insideMargin = PaddingValues(start = 12.dp, end = 12.dp, bottom = 8.dp),
             )
-            Card(modifier = Modifier.fillMaxWidth()) {
+            Card(cornerRadius = 20.dp, modifier = Modifier.fillMaxWidth()) {
                 Column {
-                    BasicComponent(
+                    ArrowPreference(
                         title = "识别 API",
                         summary = "Base URL、API Key 与模型",
                         onClick = onApi,
-                        endActions = {
-                            Icon(
-                                imageVector = MiuixIcons.Basic.ArrowRight,
-                                contentDescription = null,
-                                tint = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                            )
-                        },
                     )
-                    BasicComponent(
+                    ArrowPreference(
                         title = "每日目标",
                         summary = "热量目标 (kcal)",
                         onClick = onTarget,
-                        endActions = {
-                            Icon(
-                                imageVector = MiuixIcons.Basic.ArrowRight,
-                                contentDescription = null,
-                                tint = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                            )
-                        },
                     )
                 }
             }

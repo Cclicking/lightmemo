@@ -26,12 +26,12 @@ import androidx.compose.ui.unit.dp
 import com.foodcalorie.app.viewmodel.SettingsViewModel
 import top.yukonga.miuix.kmp.basic.BasicComponent
 import top.yukonga.miuix.kmp.basic.Card
-import top.yukonga.miuix.kmp.basic.ScrollBehavior
+import com.foodcalorie.app.ui.basic.SharedScrollBehavior as ScrollBehavior
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.theme.MiuixTheme
-import top.yukonga.miuix.kmp.utils.overScrollVertical
+import com.foodcalorie.app.ui.utils.overScrollVertical
 
 @Composable
 fun ApiSettingsScreen(
@@ -75,7 +75,7 @@ fun ApiSettingsScreen(
             SmallTitle(text = "服务配置", insideMargin = PaddingValues(horizontal = 12.dp, vertical = 8.dp))
         }
         item {
-            Card(modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(16.dp)) {
+            Card(cornerRadius = 20.dp, modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(16.dp)) {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     if (!settings.isRecognitionConfigured) {
                         BasicComponent(
@@ -161,7 +161,7 @@ fun CalorieTargetScreen(
             SmallTitle(text = "目标设定", insideMargin = PaddingValues(horizontal = 12.dp, vertical = 8.dp))
         }
         item {
-            Card(modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(16.dp)) {
+            Card(cornerRadius = 20.dp, modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(16.dp)) {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     BasicComponent(
                         title = "每日热量目标",
