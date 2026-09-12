@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -58,8 +59,6 @@ import top.yukonga.miuix.kmp.basic.rememberTopAppBarState
 import top.yukonga.miuix.kmp.blur.isRuntimeShaderSupported
 import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
-import top.yukonga.miuix.kmp.glass.GlassNavigationBar
-import top.yukonga.miuix.kmp.glass.GlassNavigationItem
 import top.yukonga.miuix.kmp.glass.GlassTopAppBar
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Add
@@ -287,50 +286,36 @@ private fun BottomChrome(
     onAdd: () -> Unit,
     backdrop: top.yukonga.miuix.kmp.blur.Backdrop?,
 ) {
+    // FloatingNavigationBar (miuix): compact pill without glass veil/gray mask.
+    // GlassNavigationBar over a flat surface reads as a gray overlay.
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .navigationBarsPadding()
             .padding(horizontal = 20.dp, vertical = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally),
+        horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally),
     ) {
-        Box(modifier = Modifier.weight(1f, fill = false)) {
-            if (backdrop != null) {
-                GlassNavigationBar(
-                    items = listOf(
-                        GlassNavigationItem(MiuixIcons.Album, AppTab.TODAY.title),
-                        GlassNavigationItem(MiuixIcons.Years, AppTab.STATS.title),
-                        GlassNavigationItem(MiuixIcons.ContactsCircle, AppTab.MINE.title),
-                    ),
-                    selectedIndex = selectedTab,
-                    onSelect = onTabSelected,
-                    backdrop = backdrop,
-                    selectedColor = MiuixTheme.colorScheme.onSurface,
-                    unselectedColor = MiuixTheme.colorScheme.onSurface,
-                    modifier = Modifier.widthIn(max = 300.dp),
+        Box(modifier = Modifier.width(280.dp)) {
+            FloatingNavigationBar {
+                FloatingNavigationBarItem(
+                    selected = selectedTab == 0,
+                    onClick = { onTabSelected(0) },
+                    icon = MiuixIcons.Album,
+                    label = AppTab.TODAY.title,
                 )
-            } else {
-                FloatingNavigationBar {
-                    FloatingNavigationBarItem(
-                        selected = selectedTab == 0,
-                        onClick = { onTabSelected(0) },
-                        icon = MiuixIcons.Album,
-                        label = AppTab.TODAY.title,
-                    )
-                    FloatingNavigationBarItem(
-                        selected = selectedTab == 1,
-                        onClick = { onTabSelected(1) },
-                        icon = MiuixIcons.Years,
-                        label = AppTab.STATS.title,
-                    )
-                    FloatingNavigationBarItem(
-                        selected = selectedTab == 2,
-                        onClick = { onTabSelected(2) },
-                        icon = MiuixIcons.ContactsCircle,
-                        label = AppTab.MINE.title,
-                    )
-                }
+                FloatingNavigationBarItem(
+                    selected = selectedTab == 1,
+                    onClick = { onTabSelected(1) },
+                    icon = MiuixIcons.Years,
+                    label = AppTab.STATS.title,
+                )
+                FloatingNavigationBarItem(
+                    selected = selectedTab == 2,
+                    onClick = { onTabSelected(2) },
+                    icon = MiuixIcons.ContactsCircle,
+                    label = AppTab.MINE.title,
+                )
             }
         }
 
