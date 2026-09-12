@@ -72,10 +72,10 @@ fun ApiSettingsScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
-            SmallTitle(text = "服务配置")
+            SmallTitle(text = "服务配置", insideMargin = PaddingValues(horizontal = 12.dp, vertical = 8.dp))
         }
         item {
-            Card(modifier = Modifier.fillMaxWidth()) {
+            Card(modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(16.dp)) {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     if (!settings.isRecognitionConfigured) {
                         BasicComponent(
@@ -158,10 +158,10 @@ fun CalorieTargetScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
-            SmallTitle(text = "目标设定")
+            SmallTitle(text = "目标设定", insideMargin = PaddingValues(horizontal = 12.dp, vertical = 8.dp))
         }
         item {
-            Card(modifier = Modifier.fillMaxWidth()) {
+            Card(modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(16.dp)) {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     BasicComponent(
                         title = "每日热量目标",

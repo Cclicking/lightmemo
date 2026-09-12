@@ -59,4 +59,6 @@ APK 输出：`app/build/outputs/apk/debug/app-debug.apk`
 - 记录：拍照识别（运行时申请相机权限）/ 相册识别 / 手动录入，可编辑名称与营养后保存
 - 统计：近 7/30 天每日热量柱状图、日均、达标天数
 - 设置：API 与目标热量
-- Glass：`GlassNavigationBar` + `glassPanel`；无 shader 时回退半透明/实心表面
+- Glass：带图标、文字和选中胶囊的 `GlassNavigationBar`，以及 `glassPanel` 蓝色添加按钮；导航与按钮同排自适应宽度
+- 卡片：使用本地 Miuix 的 `Card`，内容卡片统一 16dp 内边距，设置行使用组件自带留白
+- 背景捕获：`layerBackdrop` 包含页面底色与滚动内容，为玻璃导航和顶部栏提供完整采样

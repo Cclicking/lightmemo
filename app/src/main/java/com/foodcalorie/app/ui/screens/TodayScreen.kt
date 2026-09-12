@@ -106,7 +106,7 @@ fun TodayScreen(
         }
 
         item {
-            Card(modifier = Modifier.fillMaxWidth()) {
+            Card(modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(16.dp)) {
                 Column {
                     Text(text = "热量", style = MiuixTheme.textStyles.subtitle)
                     Spacer(Modifier.height(4.dp))
@@ -134,7 +134,7 @@ fun TodayScreen(
                     ) {
                         Box(
                             modifier = Modifier
-                                .fillMaxWidth(state.progress)
+                            .fillMaxWidth(state.progress.coerceIn(0f, 1f))
                                 .height(10.dp)
                                 .clip(CircleShape)
                                 .background(MiuixTheme.colorScheme.primary),
@@ -189,7 +189,7 @@ fun TodayScreen(
                         SmallTitle(text = meal.label)
                     }
                     items(mealItems, key = { it.id }) { entry ->
-                        Card(modifier = Modifier.fillMaxWidth()) {
+                        Card(modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(16.dp)) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 verticalAlignment = Alignment.CenterVertically,

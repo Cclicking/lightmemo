@@ -77,7 +77,7 @@ fun StatsScreen(
         }
 
         item {
-            Card(modifier = Modifier.fillMaxWidth()) {
+            Card(modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(16.dp)) {
                 Column {
                     Text(text = "日均热量", style = MiuixTheme.textStyles.subtitle)
                     Spacer(Modifier.height(4.dp))
@@ -97,7 +97,7 @@ fun StatsScreen(
         }
 
         item {
-            Card(modifier = Modifier.fillMaxWidth()) {
+            Card(modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(16.dp)) {
                 Column {
                     Text(text = "每日热量", style = MiuixTheme.textStyles.subtitle)
                     Spacer(Modifier.height(12.dp))

@@ -188,7 +188,7 @@ fun AddFoodRoute(
                     ),
                 contentAlignment = Alignment.Center,
             ) {
-                Card(modifier = Modifier.padding(24.dp)) {
+                Card(modifier = Modifier.padding(24.dp), insideMargin = PaddingValues(24.dp)) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text("正在识别食物...", style = MiuixTheme.textStyles.title3)
                         Spacer(Modifier.height(8.dp))
@@ -235,7 +235,7 @@ private fun PickSourceContent(
         MealTypeSelector(mealType, onMealType)
 
         if (!configured) {
-            Card(modifier = Modifier.fillMaxWidth()) {
+            Card(modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(16.dp)) {
                 Column {
                     Text("尚未配置识别 API", style = MiuixTheme.textStyles.title4)
                     Spacer(Modifier.height(6.dp))
@@ -430,7 +430,7 @@ private fun ReviewContent(
         }
         if (editable.isEmpty()) {
             item {
-                Card(modifier = Modifier.fillMaxWidth()) {
+                Card(modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(16.dp)) {
                     Text("没有识别到食物，请重拍或手动录入")
                 }
             }
@@ -456,7 +456,7 @@ private fun ReviewContent(
                 )
             }
 
-            Card(modifier = Modifier.fillMaxWidth()) {
+            Card(modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(16.dp)) {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     TextField(
                         value = name,
