@@ -4,25 +4,28 @@
 
 ## 技术
 
-- Kotlin + Jetpack Compose
+- Kotlin + Jetpack Compose + AGP 9
 - 本地 UI 库：`D:\Code\miuix-glass`（`includeBuild` composite）
-- Room + DataStore
+- DataStore JSON 持久化 + DataStore 设置
 - OpenAI 兼容 Vision API
 
 ## 环境
 
 - JDK 21
-- Android SDK 36（`local.properties` 中 `sdk.dir`）
-- minSdk 35
+- Android SDK 37（`local.properties` 中 `sdk.dir`）
+- minSdk 35 / compileSdk 37
 
 ## 构建
 
 ```powershell
 $env:JAVA_HOME = "C:\Program Files\Eclipse Adoptium\jdk-21.0.12.101-hotspot"
 .\gradlew :app:assembleDebug
+.\gradlew :app:testDebugUnitTest
 ```
 
 首次构建会通过 composite 编译 `../miuix-glass` 相关模块，耗时较长。
+
+APK 输出：`app/build/outputs/apk/debug/app-debug.apk`
 
 ## 使用前配置
 
@@ -36,6 +39,7 @@ $env:JAVA_HOME = "C:\Program Files\Eclipse Adoptium\jdk-21.0.12.101-hotspot"
 ## 功能
 
 - 今日：热量进度、三大营养素、按餐次列表、删除
-- 记录：拍照识别 / 相册识别 / 手动录入，可编辑后保存
-- 统计：近 7/30 天每日热量柱状图与日均
+- 记录：拍照识别（运行时申请相机权限）/ 相册识别 / 手动录入，可编辑名称与营养后保存
+- 统计：近 7/30 天每日热量柱状图、日均、达标天数
 - 设置：API 与目标热量
+- Glass：`GlassNavigationBar` + `glassPanel`；无 shader 时回退半透明/实心表面

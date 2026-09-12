@@ -78,7 +78,7 @@ fun StatsScreen(
                     )
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        text = "有记录 ${state.daily.size} 天 · 峰值 ${state.maxKcal.toInt()} kcal",
+                        text = "有记录 ${state.daily.size} 天 · 达标 ${state.daysHitTarget} 天 · 峰值 ${state.maxKcal.toInt()} kcal",
                         style = MiuixTheme.textStyles.subtitle,
                         color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                     )

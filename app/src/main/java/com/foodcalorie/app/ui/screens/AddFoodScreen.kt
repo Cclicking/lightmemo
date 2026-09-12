@@ -1,11 +1,18 @@
 package com.foodcalorie.app.ui.screens
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -19,7 +26,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -27,9 +33,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import com.foodcalorie.app.domain.MealType
 import com.foodcalorie.app.domain.Nutrition
@@ -63,6 +72,7 @@ fun AddFoodRoute(
     val context = LocalContext.current
 
     var cameraUri by remember { mutableStateOf<Uri?>(null) }
+    var cameraPermissionDenied by remember { mutableStateOf(false) }
 
     val galleryLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.PickVisualMedia(),
@@ -79,94 +89,135 @@ fun AddFoodRoute(
         }
     }
 
-    Scaffold(
-        modifier = Modifier.fillMaxSize(),
-        topBar = {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .statusBarsPadding()
-                    .padding(horizontal = 8.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                IconButton(onClick = {
-                    viewModel.backToPick()
-                    onDone()
-                }) {
-                    Icon(MiuixIcons.Os4.ChevronBackward, contentDescription = "返回")
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (granted) {
+            cameraPermissionDenied = false
+            cameraUri?.let { cameraLauncher.launch(it) }
+        } else {
+            cameraPermissionDenied = true
+        }
+    }
+
+    fun prepareCameraUri(): Uri {
+        val dir = File(context.cacheDir, "camera").apply { mkdirs() }
+        val file = File(dir, "capture_${System.currentTimeMillis()}.jpg")
+        return FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.fileprovider",
+            file,
+        )
+    }
+
+    fun onCameraClick() {
+        val granted = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.CAMERA,
+        ) == PackageManager.PERMISSION_GRANTED
+        val uri = prepareCameraUri()
+        cameraUri = uri
+        if (granted) {
+            cameraPermissionDenied = false
+            cameraLauncher.launch(uri)
+        } else {
+            cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+        }
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        Scaffold(
+            modifier = Modifier.fillMaxSize(),
+            topBar = {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .statusBarsPadding()
+                        .padding(horizontal = 8.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    IconButton(onClick = {
+                        viewModel.backToPick()
+                        onDone()
+                    }) {
+                        Icon(MiuixIcons.Os4.ChevronBackward, contentDescription = "返回")
+                    }
+                    Text(
+                        text = "记录食物",
+                        style = MiuixTheme.textStyles.title2,
+                        modifier = Modifier.weight(1f),
+                    )
                 }
-                Text(
-                    text = "记录食物",
-                    style = MiuixTheme.textStyles.title2,
-                    modifier = Modifier.weight(1f),
+            },
+        ) { padding ->
+            when (val step = state.step) {
+                is AddStep.PickSource -> PickSourceContent(
+                    padding = padding,
+                    configured = settings.isRecognitionConfigured,
+                    mealType = state.mealType,
+                    onMealType = viewModel::setMealType,
+                    error = state.error,
+                    permissionHint = if (cameraPermissionDenied) {
+                        "相机权限被拒绝，请在系统设置中开启，或改用相册"
+                    } else {
+                        null
+                    },
+                    onGallery = {
+                        galleryLauncher.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                        )
+                    },
+                    onCamera = ::onCameraClick,
+                    onManual = viewModel::openManual,
+                )
+
+                is AddStep.Manual -> ManualEntryContent(
+                    padding = padding,
+                    mealType = state.mealType,
+                    onMealType = viewModel::setMealType,
+                    onSave = { name, grams, nutrition ->
+                        viewModel.saveManual(name, grams, nutrition)
+                        onDone()
+                    },
+                )
+
+                is AddStep.Review -> ReviewContent(
+                    padding = padding,
+                    items = step.items,
+                    recognizing = state.recognizing,
+                    mealType = state.mealType,
+                    onMealType = viewModel::setMealType,
+                    onSave = { edited ->
+                        viewModel.saveRecognized(edited, step.imageUri)
+                        onDone()
+                    },
                 )
             }
-        },
-    ) { padding ->
-        when (val step = state.step) {
-            is AddStep.PickSource -> PickSourceContent(
-                padding = padding,
-                configured = settings.isRecognitionConfigured,
-                mealType = state.mealType,
-                onMealType = viewModel::setMealType,
-                error = state.error,
-                onGallery = {
-                    galleryLauncher.launch(
-                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
-                    )
-                },
-                onCamera = {
-                    val dir = File(context.cacheDir, "camera").apply { mkdirs() }
-                    val file = File(dir, "capture_${System.currentTimeMillis()}.jpg")
-                    val uri = FileProvider.getUriForFile(
-                        context,
-                        "${context.packageName}.fileprovider",
-                        file,
-                    )
-                    cameraUri = uri
-                    cameraLauncher.launch(uri)
-                },
-                onManual = viewModel::openManual,
-            )
-
-            is AddStep.Manual -> ManualEntryContent(
-                padding = padding,
-                mealType = state.mealType,
-                onMealType = viewModel::setMealType,
-                onSave = { name, grams, nutrition ->
-                    viewModel.saveManual(name, grams, nutrition)
-                    onDone()
-                },
-            )
-
-            is AddStep.Review -> ReviewContent(
-                padding = padding,
-                items = step.items,
-                recognizing = state.recognizing,
-                mealType = state.mealType,
-                onMealType = viewModel::setMealType,
-                onSave = {
-                    viewModel.saveRecognized(step.items, step.imageUri)
-                    onDone()
-                },
-            )
         }
 
         if (state.recognizing) {
-            Column(
+            Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(padding),
-                verticalArrangement = Arrangement.Center,
-                horizontalAlignment = Alignment.CenterHorizontally,
+                    .background(Color.Black.copy(alpha = 0.35f))
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = {},
+                    ),
+                contentAlignment = Alignment.Center,
             ) {
-                Text("正在识别食物…", style = MiuixTheme.textStyles.title3)
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    text = "图片将发送到你配置的视觉 API",
-                    style = MiuixTheme.textStyles.subtitle,
-                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                )
+                GlassCard(backdrop = null, modifier = Modifier.padding(24.dp)) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("正在识别食物…", style = MiuixTheme.textStyles.title3)
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            text = "图片将发送到你配置的视觉 API",
+                            style = MiuixTheme.textStyles.subtitle,
+                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                        )
+                    }
+                }
             }
         }
     }
@@ -174,11 +225,12 @@ fun AddFoodRoute(
 
 @Composable
 private fun PickSourceContent(
-    padding: androidx.compose.foundation.layout.PaddingValues,
+    padding: PaddingValues,
     configured: Boolean,
     mealType: MealType,
     onMealType: (MealType) -> Unit,
     error: String?,
+    permissionHint: String?,
     onGallery: () -> Unit,
     onCamera: () -> Unit,
     onManual: () -> Unit,
@@ -205,6 +257,14 @@ private fun PickSourceContent(
                     )
                 }
             }
+        }
+
+        if (permissionHint != null) {
+            Text(
+                text = permissionHint,
+                color = MiuixTheme.colorScheme.error,
+                style = MiuixTheme.textStyles.subtitle,
+            )
         }
 
         Button(
@@ -248,7 +308,7 @@ private fun PickSourceContent(
 
 @Composable
 private fun ManualEntryContent(
-    padding: androidx.compose.foundation.layout.PaddingValues,
+    padding: PaddingValues,
     mealType: MealType,
     onMealType: (MealType) -> Unit,
     onSave: (String, Double, Nutrition) -> Unit,
@@ -341,12 +401,12 @@ private fun ManualEntryContent(
 
 @Composable
 private fun ReviewContent(
-    padding: androidx.compose.foundation.layout.PaddingValues,
+    padding: PaddingValues,
     items: List<RecognizedFood>,
     recognizing: Boolean,
     mealType: MealType,
     onMealType: (MealType) -> Unit,
-    onSave: () -> Unit,
+    onSave: (List<RecognizedFood>) -> Unit,
 ) {
     val editable = remember(items) { items.toMutableStateList() }
 
@@ -354,7 +414,7 @@ private fun ReviewContent(
         modifier = Modifier
             .fillMaxSize()
             .padding(padding),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
+        contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         item { MealTypeSelector(mealType, onMealType) }
@@ -372,24 +432,35 @@ private fun ReviewContent(
             var name by remember(item) { mutableStateOf(item.name) }
             var grams by remember(item) { mutableStateOf(item.grams.toInt().toString()) }
             var kcal by remember(item) { mutableStateOf(item.nutrition.caloriesKcal.toInt().toString()) }
+            var protein by remember(item) { mutableStateOf(item.nutrition.proteinG.toInt().toString()) }
+            var carbs by remember(item) { mutableStateOf(item.nutrition.carbsG.toInt().toString()) }
+            var fat by remember(item) { mutableStateOf(item.nutrition.fatG.toInt().toString()) }
+
+            fun commit() {
+                editable[index] = item.copy(
+                    name = name.trim().ifEmpty { item.name },
+                    grams = grams.toDoubleOrNull() ?: item.grams,
+                    nutrition = Nutrition(
+                        caloriesKcal = kcal.toDoubleOrNull() ?: item.nutrition.caloriesKcal,
+                        proteinG = protein.toDoubleOrNull() ?: item.nutrition.proteinG,
+                        carbsG = carbs.toDoubleOrNull() ?: item.nutrition.carbsG,
+                        fatG = fat.toDoubleOrNull() ?: item.nutrition.fatG,
+                    ),
+                )
+            }
+
             GlassCard(backdrop = null, modifier = Modifier.fillMaxWidth()) {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     TextField(
                         value = name,
-                        onValueChange = {
-                            name = it
-                            editable[index] = item.copy(name = it)
-                        },
+                        onValueChange = { name = it; commit() },
                         label = "名称",
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                     )
                     TextField(
                         value = grams,
-                        onValueChange = {
-                            grams = it
-                            editable[index] = item.copy(grams = it.toDoubleOrNull() ?: 0.0)
-                        },
+                        onValueChange = { grams = it; commit() },
                         label = "克数",
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
@@ -397,30 +468,42 @@ private fun ReviewContent(
                     )
                     TextField(
                         value = kcal,
-                        onValueChange = {
-                            kcal = it
-                            editable[index] = item.copy(
-                                nutrition = item.nutrition.copy(
-                                    caloriesKcal = it.toDoubleOrNull() ?: 0.0,
-                                ),
-                            )
-                        },
+                        onValueChange = { kcal = it; commit() },
                         label = "热量 kcal",
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         modifier = Modifier.fillMaxWidth(),
                     )
-                    Text(
-                        text = "蛋白 ${item.nutrition.proteinG.toInt()}g · 碳水 ${item.nutrition.carbsG.toInt()}g · 脂肪 ${item.nutrition.fatG.toInt()}g",
-                        style = MiuixTheme.textStyles.subtitle,
-                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    TextField(
+                        value = protein,
+                        onValueChange = { protein = it; commit() },
+                        label = "蛋白质 g",
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    TextField(
+                        value = carbs,
+                        onValueChange = { carbs = it; commit() },
+                        label = "碳水 g",
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    TextField(
+                        value = fat,
+                        onValueChange = { fat = it; commit() },
+                        label = "脂肪 g",
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        modifier = Modifier.fillMaxWidth(),
                     )
                 }
             }
         }
         item {
             Button(
-                onClick = onSave,
+                onClick = { onSave(editable.toList()) },
                 enabled = !recognizing && editable.isNotEmpty(),
                 modifier = Modifier.fillMaxWidth(),
             ) {
@@ -442,6 +525,14 @@ fun MealTypeSelector(
                 TextButton(
                     text = type.label,
                     onClick = { onSelect(type) },
+                    textStyle = MiuixTheme.textStyles.body1.copy(
+                        fontWeight = if (type == selected) FontWeight.Bold else FontWeight.Normal,
+                        color = if (type == selected) {
+                            MiuixTheme.colorScheme.primary
+                        } else {
+                            MiuixTheme.colorScheme.onSurfaceVariantSummary
+                        },
+                    ),
                 )
             }
         }
@@ -452,14 +543,4 @@ private fun <T> List<T>.toMutableStateList(): androidx.compose.runtime.snapshots
     val list = androidx.compose.runtime.mutableStateListOf<T>()
     list.addAll(this)
     return list
-}
-
-@Suppress("unused")
-private fun unusedLaunchedEffect() {
-    // keep import surface stable for future lifecycle hooks
-}
-
-@Composable
-private fun SuppressUnused() {
-    LaunchedEffect(Unit) { }
 }

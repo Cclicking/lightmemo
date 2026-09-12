@@ -1,14 +1,13 @@
 package com.foodcalorie.app.ui.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.foodcalorie.app.LocalGlassSupported
 import top.yukonga.miuix.kmp.blur.Backdrop
@@ -24,10 +23,15 @@ fun GlassCard(
     modifier: Modifier = Modifier,
     shape: GlassShape = GlassShape(22.dp),
     style: GlassStyle = GlassStyles.CommonMediumRegularLowLight,
-    fallbackColor: Color = Color.White.copy(alpha = 0.55f),
+    fallbackColor: Color = Color.Unspecified,
     contentPadding: PaddingValues = PaddingValues(16.dp),
     content: @Composable () -> Unit,
 ) {
+    val resolvedFallback = if (fallbackColor == Color.Unspecified) {
+        if (isSystemInDarkTheme()) Color.White.copy(alpha = 0.12f) else Color.White.copy(alpha = 0.55f)
+    } else {
+        fallbackColor
+    }
     val supported = LocalGlassSupported.current && backdrop != null
     Box(
         modifier = modifier
@@ -37,10 +41,10 @@ fun GlassCard(
                         backdrop = backdrop,
                         shape = shape,
                         style = style,
-                        fallback = Modifier.background(fallbackColor),
+                        fallback = Modifier.background(resolvedFallback),
                     )
                 } else {
-                    Modifier.background(fallbackColor)
+                    Modifier.background(resolvedFallback)
                 },
             )
             .padding(contentPadding),
@@ -48,17 +52,3 @@ fun GlassCard(
         content()
     }
 }
-
-@Composable
-fun ScreenBackdropHost(
-    backdrop: Backdrop?,
-    modifier: Modifier = Modifier,
-    content: @Composable (Backdrop?) -> Unit,
-) {
-    // Backdrop recording is owned by the root; pages just receive it.
-    Box(modifier = modifier.fillMaxSize()) {
-        content(backdrop)
-    }
-}
-
-val PageHorizontalPadding: Dp = 16.dp

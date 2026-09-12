@@ -57,6 +57,7 @@ class TodayViewModel(app: Application) : AndroidViewModel(app) {
 
 class StatsViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = (app as FoodApp).foodLogRepository
+    private val settingsRepo = (app as FoodApp).settingsRepository
 
     private val _rangeDays = MutableStateFlow(7)
     val rangeDays: StateFlow<Int> = _rangeDays
@@ -66,6 +67,8 @@ class StatsViewModel(app: Application) : AndroidViewModel(app) {
         val daily: List<DayNutritionSummary> = emptyList(),
         val averageKcal: Double = 0.0,
         val maxKcal: Double = 0.0,
+        val daysHitTarget: Int = 0,
+        val target: Float = 1800f,
     ) {
         val hasData: Boolean get() = daily.isNotEmpty()
     }
@@ -73,7 +76,8 @@ class StatsViewModel(app: Application) : AndroidViewModel(app) {
     val uiState: StateFlow<StatsUiState> = combine(
         repo.logs,
         _rangeDays,
-    ) { logs, days ->
+        settingsRepo.settings,
+    ) { logs, days, settings ->
         val today = LocalDate.now()
         val from = today.minusDays(days.toLong() - 1).toEpochDay()
         val to = today.toEpochDay()
@@ -85,11 +89,14 @@ class StatsViewModel(app: Application) : AndroidViewModel(app) {
                 total = items.fold(Nutrition()) { acc, i -> acc + i.nutrition },
             )
         }.sortedBy { it.dateEpochDay }
+        val target = settings.dailyCalorieTarget.toDouble()
         StatsUiState(
             rangeDays = days,
             daily = daily,
             averageKcal = if (daily.isEmpty()) 0.0 else daily.map { it.total.caloriesKcal }.average(),
             maxKcal = daily.maxOfOrNull { it.total.caloriesKcal } ?: 0.0,
+            daysHitTarget = daily.count { it.total.caloriesKcal in 0.0..target },
+            target = settings.dailyCalorieTarget,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), StatsUiState())
 
