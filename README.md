@@ -5,7 +5,7 @@
 ## 技术
 
 - Kotlin + Jetpack Compose + AGP 9
-- 本地 UI 库：`D:\Code\miuix-glass`（`includeBuild` composite）
+- UI：`miuix-glass`（本地 `mavenLocal` 版本 `0.9.4-rclocal`，来自 `D:\Code\miuix-glass` 发布）
 - DataStore JSON 持久化 + DataStore 设置
 - OpenAI 兼容 Vision API
 
@@ -14,6 +14,25 @@
 - JDK 21
 - Android SDK 37（`local.properties` 中 `sdk.dir`）
 - minSdk 35 / compileSdk 37
+- 本机 `~/.m2` 中需有 `top.yukonga.miuix.kmp:*-android:0.9.4-rclocal`
+
+### 刷新本地 miuix 包（改了 miuix 源码时）
+
+```powershell
+$env:JAVA_HOME = "C:\Program Files\Eclipse Adoptium\jdk-21.0.12.101-hotspot"
+cd D:\Code\miuix-glass
+.\gradlew `
+  :miuix-core:publishAndroidPublicationToMavenLocal `
+  :miuix-shader:publishAndroidPublicationToMavenLocal `
+  :miuix-squircle:publishAndroidPublicationToMavenLocal `
+  :miuix-blur:publishAndroidPublicationToMavenLocal `
+  :miuix-glass:publishAndroidPublicationToMavenLocal `
+  :miuix-ui:publishAndroidPublicationToMavenLocal `
+  :miuix-preference:publishAndroidPublicationToMavenLocal `
+  :miuix-icons:publishAndroidPublicationToMavenLocal `
+  :miuix-nav:publishAndroidPublicationToMavenLocal `
+  -Prc=local
+```
 
 ## 构建
 
@@ -22,8 +41,6 @@ $env:JAVA_HOME = "C:\Program Files\Eclipse Adoptium\jdk-21.0.12.101-hotspot"
 .\gradlew :app:assembleDebug
 .\gradlew :app:testDebugUnitTest
 ```
-
-首次构建会通过 composite 编译 `../miuix-glass` 相关模块，耗时较长。
 
 APK 输出：`app/build/outputs/apk/debug/app-debug.apk`
 

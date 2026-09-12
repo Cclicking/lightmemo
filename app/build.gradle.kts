@@ -41,12 +41,13 @@ android {
 }
 
 dependencies {
-    implementation("top.yukonga.miuix.kmp:miuix-ui-android:0.9.4")
-    implementation("top.yukonga.miuix.kmp:miuix-preference-android:0.9.4")
-    implementation("top.yukonga.miuix.kmp:miuix-icons-android:0.9.4")
-    implementation("top.yukonga.miuix.kmp:miuix-blur-android:0.9.4")
-    implementation("top.yukonga.miuix.kmp:miuix-glass-android:0.9.4")
-    implementation("top.yukonga.miuix.kmp:miuix-nav-android:0.9.4")
+    val miuix = "0.9.4-rclocal"
+    implementation("top.yukonga.miuix.kmp:miuix-ui-android:$miuix")
+    implementation("top.yukonga.miuix.kmp:miuix-preference-android:$miuix")
+    implementation("top.yukonga.miuix.kmp:miuix-icons-android:$miuix")
+    implementation("top.yukonga.miuix.kmp:miuix-blur-android:$miuix")
+    implementation("top.yukonga.miuix.kmp:miuix-glass-android:$miuix")
+    implementation("top.yukonga.miuix.kmp:miuix-nav-android:$miuix")
 
     val composeBom = platform("androidx.compose:compose-bom:2025.10.00")
     implementation(composeBom)
