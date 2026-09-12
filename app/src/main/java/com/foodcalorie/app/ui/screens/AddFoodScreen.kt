@@ -49,14 +49,10 @@ import com.foodcalorie.app.viewmodel.AddStep
 import java.io.File
 import top.yukonga.miuix.kmp.basic.Button
 import top.yukonga.miuix.kmp.basic.Icon
-import top.yukonga.miuix.kmp.basic.IconButton
-import top.yukonga.miuix.kmp.basic.Scaffold
-import top.yukonga.miuix.kmp.basic.SmallTitle
+import top.yukonga.miuix.kmp.basic.TabRowWithContour
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextField
-import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.icon.MiuixIcons
-import top.yukonga.miuix.kmp.icon.os4.ChevronBackward
 import top.yukonga.miuix.kmp.icon.os4.Edit
 import top.yukonga.miuix.kmp.icon.os4.Image
 import top.yukonga.miuix.kmp.icon.os4.Photos
@@ -65,6 +61,7 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 @Composable
 fun AddFoodRoute(
     viewModel: AddFoodViewModel,
+    contentPadding: PaddingValues,
     onDone: () -> Unit,
 ) {
     val state by viewModel.uiState.collectAsState()
@@ -126,73 +123,48 @@ fun AddFoodRoute(
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        Scaffold(
-            modifier = Modifier.fillMaxSize(),
-            topBar = {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .statusBarsPadding()
-                        .padding(horizontal = 8.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    IconButton(onClick = {
-                        viewModel.backToPick()
-                        onDone()
-                    }) {
-                        Icon(MiuixIcons.Os4.ChevronBackward, contentDescription = "返回")
-                    }
-                    Text(
-                        text = "记录食物",
-                        style = MiuixTheme.textStyles.title2,
-                        modifier = Modifier.weight(1f),
+        when (val step = state.step) {
+            is AddStep.PickSource -> PickSourceContent(
+                padding = contentPadding,
+                configured = settings.isRecognitionConfigured,
+                mealType = state.mealType,
+                onMealType = viewModel::setMealType,
+                error = state.error,
+                permissionHint = if (cameraPermissionDenied) {
+                    "相机权限被拒绝，请在系统设置中开启，或改用相册"
+                } else {
+                    null
+                },
+                onGallery = {
+                    galleryLauncher.launch(
+                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
                     )
-                }
-            },
-        ) { padding ->
-            when (val step = state.step) {
-                is AddStep.PickSource -> PickSourceContent(
-                    padding = padding,
-                    configured = settings.isRecognitionConfigured,
-                    mealType = state.mealType,
-                    onMealType = viewModel::setMealType,
-                    error = state.error,
-                    permissionHint = if (cameraPermissionDenied) {
-                        "相机权限被拒绝，请在系统设置中开启，或改用相册"
-                    } else {
-                        null
-                    },
-                    onGallery = {
-                        galleryLauncher.launch(
-                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
-                        )
-                    },
-                    onCamera = ::onCameraClick,
-                    onManual = viewModel::openManual,
-                )
+                },
+                onCamera = ::onCameraClick,
+                onManual = viewModel::openManual,
+            )
 
-                is AddStep.Manual -> ManualEntryContent(
-                    padding = padding,
-                    mealType = state.mealType,
-                    onMealType = viewModel::setMealType,
-                    onSave = { name, grams, nutrition ->
-                        viewModel.saveManual(name, grams, nutrition)
-                        onDone()
-                    },
-                )
+            is AddStep.Manual -> ManualEntryContent(
+                padding = contentPadding,
+                mealType = state.mealType,
+                onMealType = viewModel::setMealType,
+                onSave = { name, grams, nutrition ->
+                    viewModel.saveManual(name, grams, nutrition)
+                    onDone()
+                },
+            )
 
-                is AddStep.Review -> ReviewContent(
-                    padding = padding,
-                    items = step.items,
-                    recognizing = state.recognizing,
-                    mealType = state.mealType,
-                    onMealType = viewModel::setMealType,
-                    onSave = { edited ->
-                        viewModel.saveRecognized(edited, step.imageUri)
-                        onDone()
-                    },
-                )
-            }
+            is AddStep.Review -> ReviewContent(
+                padding = contentPadding,
+                items = step.items,
+                recognizing = state.recognizing,
+                mealType = state.mealType,
+                onMealType = viewModel::setMealType,
+                onSave = { edited ->
+                    viewModel.saveRecognized(edited, step.imageUri)
+                    onDone()
+                },
+            )
         }
 
         if (state.recognizing) {
@@ -238,8 +210,12 @@ private fun PickSourceContent(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(padding)
-            .padding(16.dp)
+            .padding(
+                start = 16.dp,
+                end = 16.dp,
+                top = padding.calculateTopPadding() + 12.dp,
+                bottom = padding.calculateBottomPadding() + 12.dp,
+            )
             .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
@@ -323,8 +299,12 @@ private fun ManualEntryContent(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(padding)
-            .padding(16.dp)
+            .padding(
+                start = 16.dp,
+                end = 16.dp,
+                top = padding.calculateTopPadding() + 12.dp,
+                bottom = padding.calculateBottomPadding() + 12.dp,
+            )
             .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
@@ -411,14 +391,12 @@ private fun ReviewContent(
     val editable = remember(items) { items.toMutableStateList() }
 
     LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(padding),
+        modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(
             start = 16.dp,
             end = 16.dp,
-            top = 8.dp,
-            bottom = 24.dp,
+            top = padding.calculateTopPadding() + 12.dp,
+            bottom = padding.calculateBottomPadding() + 12.dp,
         ),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
@@ -523,25 +501,12 @@ fun MealTypeSelector(
     selected: MealType,
     onSelect: (MealType) -> Unit,
 ) {
-    Column {
-        SmallTitle(text = "餐次")
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            MealType.entries.forEach { type ->
-                TextButton(
-                    text = type.label,
-                    onClick = { onSelect(type) },
-                    textStyle = MiuixTheme.textStyles.body1.copy(
-                        fontWeight = if (type == selected) FontWeight.Bold else FontWeight.Normal,
-                        color = if (type == selected) {
-                            MiuixTheme.colorScheme.primary
-                        } else {
-                            MiuixTheme.colorScheme.onSurfaceVariantSummary
-                        },
-                    ),
-                )
-            }
-        }
-    }
+    val types = MealType.entries
+    TabRowWithContour(
+        tabs = types.map { it.label },
+        selectedTabIndex = types.indexOf(selected).coerceAtLeast(0),
+        onTabSelected = { index -> onSelect(types[index]) },
+    )
 }
 
 private fun <T> List<T>.toMutableStateList(): androidx.compose.runtime.snapshots.SnapshotStateList<T> {

@@ -4,8 +4,10 @@ import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -27,11 +29,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color as ComposeColor
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.foodcalorie.app.ui.screens.AddFoodRoute
-import com.foodcalorie.app.ui.screens.SettingsScreen
+import com.foodcalorie.app.ui.screens.ApiSettingsScreen
+import com.foodcalorie.app.ui.screens.CalorieTargetScreen
+import com.foodcalorie.app.ui.screens.MineHubScreen
 import com.foodcalorie.app.ui.screens.StatsScreen
 import com.foodcalorie.app.ui.screens.TodayScreen
 import com.foodcalorie.app.ui.theme.FoodTheme
@@ -55,6 +58,7 @@ import top.yukonga.miuix.kmp.icon.extended.Add
 import top.yukonga.miuix.kmp.icon.extended.Album
 import top.yukonga.miuix.kmp.icon.extended.ContactsCircle
 import top.yukonga.miuix.kmp.icon.extended.Years
+import top.yukonga.miuix.kmp.icon.os4.ChevronBackward
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 val LocalGlassSupported = staticCompositionLocalOf { true }
@@ -66,8 +70,14 @@ class MainActivity : ComponentActivity() {
             val dark = isSystemInDarkTheme()
             DisposableEffect(dark) {
                 enableEdgeToEdge(
-                    statusBarStyle = SystemBarStyle.auto(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT) { dark },
-                    navigationBarStyle = SystemBarStyle.auto(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT) { dark },
+                    statusBarStyle = SystemBarStyle.auto(
+                        android.graphics.Color.TRANSPARENT,
+                        android.graphics.Color.TRANSPARENT,
+                    ) { dark },
+                    navigationBarStyle = SystemBarStyle.auto(
+                        android.graphics.Color.TRANSPARENT,
+                        android.graphics.Color.TRANSPARENT,
+                    ) { dark },
                 )
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     window.isNavigationBarContrastEnforced = false
@@ -85,13 +95,17 @@ private enum class AppTab(val title: String) {
     MINE("我的"),
 }
 
+private enum class MineSection {
+    HUB,
+    API,
+    TARGET,
+}
+
 /**
- * App shell built on Miuix [Scaffold]:
- * - [SmallTopAppBar] for page title
- * - bottom chrome (glass nav + add FAB) in the official bottomBar slot
- * - page body consumes Scaffold [PaddingValues]
- *
- * Glass nav samples a backdrop recorded only in the content subtree, never itself.
+ * Miuix [Scaffold] shell:
+ * - [SmallTopAppBar] is the only page title
+ * - bottom chrome (glass nav + FAB) in bottomBar
+ * - content records backdrop for glass sampling (not a wallpaper)
  */
 @Composable
 fun FoodAppRoot() {
@@ -105,40 +119,74 @@ fun FoodAppRoot() {
         CompositionLocalProvider(LocalGlassSupported provides glassSupported) {
             var selectedTab by remember { mutableIntStateOf(0) }
             var showAdd by remember { mutableStateOf(false) }
+            var mineSection by remember { mutableStateOf(MineSection.HUB) }
             val backdrop = rememberLayerBackdrop()
             val tab = AppTab.entries[selectedTab]
 
+            BackHandler(enabled = showAdd || (selectedTab == 2 && mineSection != MineSection.HUB)) {
+                when {
+                    showAdd -> showAdd = false
+                    mineSection != MineSection.HUB -> mineSection = MineSection.HUB
+                }
+            }
+
+            val topBarTitle = when {
+                showAdd -> "记录食物"
+                selectedTab == 2 -> when (mineSection) {
+                    MineSection.HUB -> "我的"
+                    MineSection.API -> "识别 API"
+                    MineSection.TARGET -> "每日目标"
+                }
+                else -> tab.title
+            }
+
             Scaffold(
                 modifier = Modifier.fillMaxSize(),
-                // Let FoodTheme wallpaper show through.
-                containerColor = ComposeColor.Transparent,
                 topBar = {
-                    if (!showAdd) {
-                        SmallTopAppBar(
-                            title = tab.title,
-                            color = ComposeColor.Transparent,
-                        )
-                    }
+                    SmallTopAppBar(
+                        title = topBarTitle,
+                        navigationIcon = {
+                            val showBack = showAdd || (selectedTab == 2 && mineSection != MineSection.HUB)
+                            if (showBack) {
+                                IconButtonBack(
+                                    onBack = {
+                                        when {
+                                            showAdd -> showAdd = false
+                                            selectedTab == 2 && mineSection != MineSection.HUB -> {
+                                                mineSection = MineSection.HUB
+                                            }
+                                        }
+                                    },
+                                )
+                            }
+                        },
+                    )
                 },
                 bottomBar = {
                     if (!showAdd) {
                         BottomChrome(
                             selectedTab = selectedTab,
-                            onTabSelected = { selectedTab = it },
+                            onTabSelected = {
+                                selectedTab = it
+                                if (it == 2) mineSection = MineSection.HUB
+                            },
                             onAdd = { showAdd = true },
                             backdrop = if (glassSupported) backdrop else null,
                         )
                     }
                 },
                 content = { padding ->
+                    // Surface + page content feed the glass nav backdrop (no wallpaper).
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
+                            .background(MiuixTheme.colorScheme.surface)
                             .then(if (glassSupported) Modifier.layerBackdrop(backdrop) else Modifier),
                     ) {
                         when {
                             showAdd -> AddFoodRoute(
                                 viewModel = addVm,
+                                contentPadding = padding,
                                 onDone = { showAdd = false },
                             )
                             selectedTab == 0 -> TodayScreen(
@@ -152,11 +200,21 @@ fun FoodAppRoot() {
                                 contentPadding = padding,
                                 backdrop = null,
                             )
-                            else -> SettingsScreen(
-                                viewModel = settingsVm,
-                                contentPadding = padding,
-                                backdrop = null,
-                            )
+                            else -> when (mineSection) {
+                                MineSection.HUB -> MineHubScreen(
+                                    contentPadding = padding,
+                                    onApi = { mineSection = MineSection.API },
+                                    onTarget = { mineSection = MineSection.TARGET },
+                                )
+                                MineSection.API -> ApiSettingsScreen(
+                                    viewModel = settingsVm,
+                                    contentPadding = padding,
+                                )
+                                MineSection.TARGET -> CalorieTargetScreen(
+                                    viewModel = settingsVm,
+                                    contentPadding = padding,
+                                )
+                            }
                         }
                     }
                 },
@@ -165,7 +223,17 @@ fun FoodAppRoot() {
     }
 }
 
-/** Bottom chrome: floating glass nav + blue add, placed in Scaffold.bottomBar. */
+@Composable
+private fun IconButtonBack(onBack: () -> Unit) {
+    top.yukonga.miuix.kmp.basic.IconButton(onClick = onBack) {
+        Icon(
+            imageVector = MiuixIcons.Os4.ChevronBackward,
+            contentDescription = "返回",
+            tint = MiuixTheme.colorScheme.onSurface,
+        )
+    }
+}
+
 @Composable
 private fun BottomChrome(
     selectedTab: Int,

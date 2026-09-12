@@ -52,10 +52,6 @@ fun StatsScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
-            Text(text = "摄入统计", style = MiuixTheme.textStyles.title2)
-        }
-
-        item {
             val selected = if (state.rangeDays == 7) 0 else 1
             TabRow(
                 tabs = listOf("近 7 天", "近 30 天"),

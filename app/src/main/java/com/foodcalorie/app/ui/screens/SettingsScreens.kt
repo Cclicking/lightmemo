@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -19,34 +20,27 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.VisualTransformation
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
-import com.foodcalorie.app.ui.components.GlassCard
 import com.foodcalorie.app.viewmodel.SettingsViewModel
+import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextField
-import top.yukonga.miuix.kmp.blur.Backdrop
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 @Composable
-fun SettingsScreen(
+fun ApiSettingsScreen(
     viewModel: SettingsViewModel,
     contentPadding: PaddingValues,
-    backdrop: Backdrop? = null,
 ) {
     val settings by viewModel.settings.collectAsState()
-
     var baseUrl by remember { mutableStateOf(settings.baseUrl) }
     var apiKey by remember { mutableStateOf(settings.apiKey) }
     var model by remember { mutableStateOf(settings.model) }
-    var target by remember { mutableStateOf(settings.dailyCalorieTarget.toInt().toString()) }
 
     LaunchedEffect(settings) {
         baseUrl = settings.baseUrl
         apiKey = settings.apiKey
         model = settings.model
-        target = settings.dailyCalorieTarget.toInt().toString()
     }
 
     LazyColumn(
@@ -54,19 +48,14 @@ fun SettingsScreen(
         contentPadding = PaddingValues(
             start = 16.dp,
             end = 16.dp,
-            top = contentPadding.calculateTopPadding() + 16.dp,
+            top = contentPadding.calculateTopPadding() + 12.dp,
             bottom = contentPadding.calculateBottomPadding() + 12.dp,
         ),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
-            Text(text = "设置", style = MiuixTheme.textStyles.title2)
-        }
-
-        item {
-            GlassCard(backdrop = backdrop, modifier = Modifier.fillMaxWidth()) {
+            Card(modifier = Modifier.fillMaxWidth()) {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("识别 API", style = MiuixTheme.textStyles.title4)
                     if (!settings.isRecognitionConfigured) {
                         Text(
                             text = "填写 Base URL 与 API Key 后才能拍照识别",
@@ -102,27 +91,56 @@ fun SettingsScreen(
                         label = "模型名",
                         modifier = Modifier.fillMaxWidth(),
                     )
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        text = "当前：${settings.baseUrl} · ${settings.model}",
+                        style = MiuixTheme.textStyles.subtitle,
+                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    )
                 }
             }
         }
+    }
+}
 
+@Composable
+fun CalorieTargetScreen(
+    viewModel: SettingsViewModel,
+    contentPadding: PaddingValues,
+) {
+    val settings by viewModel.settings.collectAsState()
+    var target by remember { mutableStateOf(settings.dailyCalorieTarget.toInt().toString()) }
+
+    LaunchedEffect(settings.dailyCalorieTarget) {
+        target = settings.dailyCalorieTarget.toInt().toString()
+    }
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(
+            start = 16.dp,
+            end = 16.dp,
+            top = contentPadding.calculateTopPadding() + 12.dp,
+            bottom = contentPadding.calculateBottomPadding() + 12.dp,
+        ),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
         item {
-            GlassCard(backdrop = backdrop, modifier = Modifier.fillMaxWidth()) {
+            Card(modifier = Modifier.fillMaxWidth()) {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("每日目标", style = MiuixTheme.textStyles.title4)
+                    Text("热量目标", style = MiuixTheme.textStyles.title4)
                     TextField(
                         value = target,
                         onValueChange = { value ->
                             target = value
                             value.toFloatOrNull()?.let { viewModel.setTarget(it) }
                         },
-                        label = "热量目标 (kcal)",
+                        label = "kcal / 天",
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         modifier = Modifier.fillMaxWidth(),
                     )
-                    Spacer(Modifier.height(2.dp))
                     Text(
-                        text = "当前 API：${settings.baseUrl} · ${settings.model}",
+                        text = "默认 1800，可按个人情况调整",
                         style = MiuixTheme.textStyles.subtitle,
                         color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                     )
