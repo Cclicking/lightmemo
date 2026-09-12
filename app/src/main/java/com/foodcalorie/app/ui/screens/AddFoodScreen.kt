@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -30,6 +31,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -47,8 +49,11 @@ import top.yukonga.miuix.kmp.basic.Button
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Icon
 import com.foodcalorie.app.ui.basic.SharedScrollBehavior as ScrollBehavior
+import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.TabRowWithContour
+import top.yukonga.miuix.kmp.basic.TextFieldDefaults
 import top.yukonga.miuix.kmp.basic.Text
+import top.yukonga.miuix.kmp.basic.TabRowWithContour
 import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.os4.Edit
@@ -56,7 +61,7 @@ import top.yukonga.miuix.kmp.icon.os4.Image
 import top.yukonga.miuix.kmp.icon.os4.Photos
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
-private val AddFoodSheetHeight = 640.dp
+private val AddFoodSheetHeight = 780.dp
 
 @Composable
 fun AddFoodRoute(
@@ -203,11 +208,12 @@ private fun PickSourceContent(
             .then(if (connection != null) Modifier.nestedScroll(connection) else Modifier)
             .verticalScroll(rememberScrollState())
             .height(AddFoodSheetHeight)
+            .navigationBarsPadding()
             .padding(
                 start = 16.dp,
                 end = 16.dp,
-                top = padding.calculateTopPadding() + 8.dp,
-                bottom = padding.calculateBottomPadding() + 12.dp,
+                top = padding.calculateTopPadding(),
+                bottom = padding.calculateBottomPadding() + 40.dp,
             ),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
@@ -239,6 +245,7 @@ private fun PickSourceContent(
             onClick = onCamera,
             enabled = configured && !recognizing,
             modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.buttonColors(color = Color.White, contentColor = MiuixTheme.colorScheme.onSurface),
         ) {
             Icon(MiuixIcons.Os4.Image, contentDescription = null)
             Spacer(Modifier.padding(4.dp))
@@ -249,6 +256,7 @@ private fun PickSourceContent(
             onClick = onGallery,
             enabled = configured && !recognizing,
             modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.buttonColors(color = Color.White, contentColor = MiuixTheme.colorScheme.onSurface),
         ) {
             Icon(MiuixIcons.Os4.Photos, contentDescription = null)
             Spacer(Modifier.padding(4.dp))
@@ -259,6 +267,7 @@ private fun PickSourceContent(
             onClick = onManual,
             enabled = !recognizing,
             modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.buttonColors(color = Color.White, contentColor = MiuixTheme.colorScheme.onSurface),
         ) {
             Icon(MiuixIcons.Os4.Edit, contentDescription = null)
             Spacer(Modifier.padding(4.dp))
@@ -311,11 +320,12 @@ private fun ManualEntryContent(
             .then(if (connection != null) Modifier.nestedScroll(connection) else Modifier)
             .verticalScroll(rememberScrollState())
             .height(AddFoodSheetHeight)
+            .navigationBarsPadding()
             .padding(
                 start = 16.dp,
                 end = 16.dp,
-                top = padding.calculateTopPadding() + 8.dp,
-                bottom = padding.calculateBottomPadding() + 12.dp,
+                top = padding.calculateTopPadding(),
+                bottom = padding.calculateBottomPadding() + 40.dp,
             ),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
@@ -325,6 +335,7 @@ private fun ManualEntryContent(
             onValueChange = { name = it },
             label = "食物名称",
             singleLine = true,
+            colors = TextFieldDefaults.textFieldColors(backgroundColor = Color.White),
             modifier = Modifier.fillMaxWidth(),
         )
         TextField(
@@ -332,6 +343,7 @@ private fun ManualEntryContent(
             onValueChange = { grams = it },
             label = "克数（默认 100g）",
             singleLine = true,
+            colors = TextFieldDefaults.textFieldColors(backgroundColor = Color.White),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
             modifier = Modifier.fillMaxWidth(),
         )
@@ -342,6 +354,10 @@ private fun ManualEntryContent(
             },
             enabled = configured && !recognizing && name.isNotBlank(),
             modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.buttonColorsPrimary(
+                color = Color(0xFF0A84FF),
+                contentColor = Color.White,
+            ),
         ) {
             Text(if (recognizing) "正在识别营养..." else "自动识别热量与营养")
         }
@@ -364,6 +380,7 @@ private fun ManualEntryContent(
             onValueChange = { kcal = it },
             label = "热量 kcal",
             singleLine = true,
+            colors = TextFieldDefaults.textFieldColors(backgroundColor = Color.White),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
             modifier = Modifier.fillMaxWidth(),
         )
@@ -372,6 +389,7 @@ private fun ManualEntryContent(
             onValueChange = { protein = it },
             label = "蛋白质 g",
             singleLine = true,
+            colors = TextFieldDefaults.textFieldColors(backgroundColor = Color.White),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
             modifier = Modifier.fillMaxWidth(),
         )
@@ -380,6 +398,7 @@ private fun ManualEntryContent(
             onValueChange = { carbs = it },
             label = "碳水 g",
             singleLine = true,
+            colors = TextFieldDefaults.textFieldColors(backgroundColor = Color.White),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
             modifier = Modifier.fillMaxWidth(),
         )
@@ -388,6 +407,7 @@ private fun ManualEntryContent(
             onValueChange = { fat = it },
             label = "脂肪 g",
             singleLine = true,
+            colors = TextFieldDefaults.textFieldColors(backgroundColor = Color.White),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
             modifier = Modifier.fillMaxWidth(),
         )
@@ -408,6 +428,7 @@ private fun ManualEntryContent(
             },
             enabled = name.isNotBlank(),
             modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.buttonColorsPrimary(color = Color(0xFF0A84FF), contentColor = Color.White),
         ) {
             Text("保存")
         }
@@ -435,13 +456,14 @@ private fun ReviewContent(
         modifier = Modifier
             .fillMaxWidth()
             .then(if (connection != null) Modifier.nestedScroll(connection) else Modifier)
-            .height(AddFoodSheetHeight),
+            .height(AddFoodSheetHeight)
+            .navigationBarsPadding(),
         state = listState,
         contentPadding = PaddingValues(
             start = 16.dp,
             end = 16.dp,
-            top = padding.calculateTopPadding() + 8.dp,
-            bottom = padding.calculateBottomPadding() + 12.dp,
+            top = padding.calculateTopPadding(),
+            bottom = padding.calculateBottomPadding() + 40.dp,
         ),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
@@ -484,6 +506,7 @@ private fun ReviewContent(
                         onValueChange = { name = it; commit() },
                         label = "名称",
                         singleLine = true,
+            colors = TextFieldDefaults.textFieldColors(backgroundColor = Color.White),
                         modifier = Modifier.fillMaxWidth(),
                     )
                     TextField(
@@ -491,6 +514,7 @@ private fun ReviewContent(
                         onValueChange = { grams = it; commit() },
                         label = "克数",
                         singleLine = true,
+            colors = TextFieldDefaults.textFieldColors(backgroundColor = Color.White),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         modifier = Modifier.fillMaxWidth(),
                     )
@@ -499,6 +523,7 @@ private fun ReviewContent(
                         onValueChange = { kcal = it; commit() },
                         label = "热量 kcal",
                         singleLine = true,
+            colors = TextFieldDefaults.textFieldColors(backgroundColor = Color.White),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         modifier = Modifier.fillMaxWidth(),
                     )
@@ -507,6 +532,7 @@ private fun ReviewContent(
                         onValueChange = { protein = it; commit() },
                         label = "蛋白质 g",
                         singleLine = true,
+            colors = TextFieldDefaults.textFieldColors(backgroundColor = Color.White),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         modifier = Modifier.fillMaxWidth(),
                     )
@@ -515,6 +541,7 @@ private fun ReviewContent(
                         onValueChange = { carbs = it; commit() },
                         label = "碳水 g",
                         singleLine = true,
+            colors = TextFieldDefaults.textFieldColors(backgroundColor = Color.White),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         modifier = Modifier.fillMaxWidth(),
                     )
@@ -523,6 +550,7 @@ private fun ReviewContent(
                         onValueChange = { fat = it; commit() },
                         label = "脂肪 g",
                         singleLine = true,
+            colors = TextFieldDefaults.textFieldColors(backgroundColor = Color.White),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         modifier = Modifier.fillMaxWidth(),
                     )
@@ -534,6 +562,7 @@ private fun ReviewContent(
                 onClick = { onSave(editable.toList()) },
                 enabled = !recognizing && editable.isNotEmpty(),
                 modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.buttonColorsPrimary(color = Color(0xFF0A84FF), contentColor = Color.White),
             ) {
                 Text("保存 ${editable.size} 项")
             }

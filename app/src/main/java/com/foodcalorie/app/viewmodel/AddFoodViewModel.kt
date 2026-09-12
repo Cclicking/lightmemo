@@ -120,6 +120,7 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
                     model = current.model,
                     foodName = trimmedName,
                     grams = grams,
+                    systemBackground = current.systemBackground,
                 )
                 _uiState.value = _uiState.value.copy(
                     recognizing = false,
@@ -154,6 +155,7 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
                     model = current.model,
                     imageBase64 = base64,
                     mimeType = "image/jpeg",
+                    systemBackground = current.systemBackground,
                 )
                 _uiState.value = _uiState.value.copy(
                     recognizing = false,

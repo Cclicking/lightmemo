@@ -5,31 +5,37 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.unit.dp
-import top.yukonga.miuix.kmp.preference.ArrowPreference
-import top.yukonga.miuix.kmp.basic.Card
-import top.yukonga.miuix.kmp.basic.Icon
+import androidx.compose.ui.unit.sp
 import com.foodcalorie.app.ui.basic.SharedScrollBehavior as ScrollBehavior
-import top.yukonga.miuix.kmp.basic.SmallTitle
-import top.yukonga.miuix.kmp.icon.MiuixIcons
-import top.yukonga.miuix.kmp.icon.basic.ArrowRight
-import top.yukonga.miuix.kmp.theme.MiuixTheme
 import com.foodcalorie.app.ui.utils.overScrollVertical
+import com.foodcalorie.app.viewmodel.SettingsViewModel
+import top.yukonga.miuix.kmp.basic.Card
+import top.yukonga.miuix.kmp.basic.SmallTitle
+import top.yukonga.miuix.kmp.basic.Text
+import top.yukonga.miuix.kmp.preference.ArrowPreference
+import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 @Composable
 fun MineHubScreen(
     contentPadding: PaddingValues,
     scrollBehavior: ScrollBehavior?,
     listState: LazyListState,
+    viewModel: SettingsViewModel,
     onApi: () -> Unit,
     onTarget: () -> Unit,
+    onProfile: () -> Unit,
 ) {
+    val settings by viewModel.settings.collectAsState()
+
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -53,18 +59,52 @@ fun MineHubScreen(
         item {
             SmallTitle(
                 text = "基本设置",
-                insideMargin = PaddingValues(start = 12.dp, end = 12.dp, bottom = 8.dp),
+                modifier = Modifier.offset(x = (-16).dp),
             )
-            Card(cornerRadius = 20.dp, modifier = Modifier.fillMaxWidth()) {
-                Column {
+            Card(
+                cornerRadius = 20.dp,
+                modifier = Modifier.fillMaxWidth(),
+                insideMargin = PaddingValues(0.dp),
+            ) {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    ArrowPreference(
+                        title = "个人信息",
+                        summary = "身高体重、性别与运动强度",
+                        endActions = {
+                            Text(
+                                text = if (settings.hasPersonalProfile) "已填写" else "未填写",
+                                fontSize = 14.5.sp,
+                                color = MiuixTheme.colorScheme.onSurfaceVariantActions,
+                            )
+                        },
+                        onClick = onProfile,
+                    )
                     ArrowPreference(
                         title = "识别 API",
                         summary = "Base URL、API Key 与模型",
+                        endActions = {
+                            Text(
+                                text = if (settings.isRecognitionConfigured) {
+                                    settings.model.ifBlank { "已配置" }
+                                } else {
+                                    "未配置"
+                                },
+                                fontSize = 14.5.sp,
+                                color = MiuixTheme.colorScheme.onSurfaceVariantActions,
+                            )
+                        },
                         onClick = onApi,
                     )
                     ArrowPreference(
                         title = "每日目标",
                         summary = "热量目标 (kcal)",
+                        endActions = {
+                            Text(
+                                text = "${settings.dailyCalorieTarget.toInt()}",
+                                fontSize = 14.5.sp,
+                                color = MiuixTheme.colorScheme.onSurfaceVariantActions,
+                            )
+                        },
                         onClick = onTarget,
                     )
                 }

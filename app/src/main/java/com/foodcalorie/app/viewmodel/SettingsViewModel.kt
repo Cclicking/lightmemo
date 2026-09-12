@@ -4,7 +4,9 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.foodcalorie.app.FoodApp
+import com.foodcalorie.app.data.ActivityLevel
 import com.foodcalorie.app.data.AppSettings
+import com.foodcalorie.app.data.Gender
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
@@ -19,11 +21,39 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
         AppSettings(),
     )
 
-    fun setBaseUrl(value: String) = viewModelScope.launch { repo.updateBaseUrl(value) }
+    fun setBaseUrl(value: String) = viewModelScope.launch { repo.updateActiveBaseUrl(value) }
 
-    fun setApiKey(value: String) = viewModelScope.launch { repo.updateApiKey(value) }
+    fun setApiKey(value: String) = viewModelScope.launch { repo.updateActiveApiKey(value) }
 
-    fun setModel(value: String) = viewModelScope.launch { repo.updateModel(value) }
+    fun setModel(value: String) = viewModelScope.launch { repo.updateActiveModel(value) }
+
+    fun setSystemBackground(value: String) = viewModelScope.launch { repo.updateSystemBackground(value) }
+
+    fun selectPreset(id: String) = viewModelScope.launch { repo.selectPreset(id) }
+
+    fun addPreset(name: String = "新配置") = viewModelScope.launch { repo.addPreset(name) }
+
+    fun deleteActivePreset() = viewModelScope.launch {
+        repo.deletePreset(settings.value.activePreset.id)
+    }
+
+    fun renamePreset(id: String, name: String) = viewModelScope.launch { repo.renamePreset(id, name) }
 
     fun setTarget(value: Float) = viewModelScope.launch { repo.updateDailyTarget(value) }
+
+    fun setHeight(value: Float) = viewModelScope.launch { repo.updateHeight(value) }
+
+    fun setWeight(value: Float) = viewModelScope.launch { repo.updateWeight(value) }
+
+    fun setAge(value: Int) = viewModelScope.launch { repo.updateAge(value) }
+
+    fun setGender(value: Gender) = viewModelScope.launch { repo.updateGender(value) }
+
+    fun setActivityLevel(value: ActivityLevel) = viewModelScope.launch { repo.updateActivityLevel(value) }
+
+    /** 将推荐热量写入每日目标。 */
+    fun applyRecommendedTarget() = viewModelScope.launch {
+        val recommended = settings.value.recommendedCalories ?: return@launch
+        repo.updateDailyTarget(recommended)
+    }
 }

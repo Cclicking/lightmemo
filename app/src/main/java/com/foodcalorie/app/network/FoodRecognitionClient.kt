@@ -62,6 +62,7 @@ class FoodRecognitionClient(
         model: String,
         imageBase64: String,
         mimeType: String = "image/jpeg",
+        systemBackground: String = "",
     ): List<RecognizedFood> = withContext(Dispatchers.IO) {
         if (baseUrl.isBlank() || apiKey.isBlank()) {
             throw RecognitionException("请先在设置中填写 API Base URL 与 API Key")
@@ -82,7 +83,12 @@ class FoodRecognitionClient(
             messages = listOf(
                 ChatMessage(
                     role = "system",
-                    content = listOf(ContentPart(type = "text", text = "You output strict JSON only.")),
+                    content = listOf(
+                        ContentPart(
+                            type = "text",
+                            text = buildSystemPrompt(systemBackground),
+                        ),
+                    ),
                 ),
                 ChatMessage(
                     role = "user",
@@ -115,6 +121,7 @@ class FoodRecognitionClient(
         model: String,
         foodName: String,
         grams: Double,
+        systemBackground: String = "",
     ): RecognizedFood = withContext(Dispatchers.IO) {
         if (baseUrl.isBlank() || apiKey.isBlank()) {
             throw RecognitionException("请先在设置中填写 API Base URL 与 API Key")
@@ -138,7 +145,9 @@ class FoodRecognitionClient(
             messages = listOf(
                 ChatMessage(
                     role = "system",
-                    content = listOf(ContentPart(type = "text", text = "You output strict JSON only.")),
+                    content = listOf(
+                        ContentPart(type = "text", text = buildSystemPrompt(systemBackground)),
+                    ),
                 ),
                 ChatMessage(
                     role = "user",
@@ -211,6 +220,16 @@ class FoodRecognitionClient(
             throw IOException("响应中没有 JSON 对象")
         }
         return trimmed.substring(start, end + 1)
+    }
+
+    private fun buildSystemPrompt(systemBackground: String): String {
+        val base = "You output strict JSON only."
+        val bg = systemBackground.trim()
+        return if (bg.isEmpty()) {
+            base
+        } else {
+            "$base\n用户背景信息（估算时参考，勿输出）：$bg"
+        }
     }
 
     private fun Double.formatForPrompt(): String =
