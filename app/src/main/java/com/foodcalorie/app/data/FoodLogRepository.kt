@@ -60,6 +60,9 @@ class FoodLogRepository(private val context: Context) {
                     if (log.imageUri == null) put("imageUri", JSONObject.NULL) else put("imageUri", log.imageUri)
                     put("dateEpochDay", log.dateEpochDay)
                     put("createdAtMillis", log.createdAtMillis)
+                    if (log.mealMinuteOfDay == null) put("mealMinuteOfDay", JSONObject.NULL) else put("mealMinuteOfDay", log.mealMinuteOfDay)
+                    if (log.note == null) put("note", JSONObject.NULL) else put("note", log.note)
+                    put("mealTags", JSONArray().apply { log.mealTags.forEach { tag -> put(tag) } })
                 },
             )
         }
@@ -88,6 +91,11 @@ class FoodLogRepository(private val context: Context) {
                         imageUri = image,
                         dateEpochDay = o.getLong("dateEpochDay"),
                         createdAtMillis = o.getLong("createdAtMillis"),
+                        mealMinuteOfDay = if (o.isNull("mealMinuteOfDay")) null else o.optInt("mealMinuteOfDay"),
+                        note = if (o.isNull("note")) null else o.optString("note").takeIf { it.isNotBlank() },
+                        mealTags = o.optJSONArray("mealTags")?.let { tags ->
+                            buildList { for (i in 0 until tags.length()) add(tags.getString(i)) }
+                        }.orEmpty(),
                     ),
                 )
             }

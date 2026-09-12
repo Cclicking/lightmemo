@@ -17,6 +17,7 @@ import com.foodcalorie.app.domain.RecognizedDish
 import com.foodcalorie.app.network.RecognitionException
 import java.io.ByteArrayOutputStream
 import java.time.LocalDate
+import java.time.LocalTime
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -35,8 +36,25 @@ sealed interface AddStep {
         val result: MealRecognition,
     ) : AddStep
 
-    data object Manual : AddStep
+    data class Manual(
+        val initialName: String = "",
+        val initialGrams: Double? = null,
+        val initialNutrition: Nutrition? = null,
+    ) : AddStep
 }
+
+enum class QuantityMode(val label: String) {
+    GRAMS("克重"),
+    PORTIONS("份数"),
+}
+
+data class PresetFood(
+    val id: String = java.util.UUID.randomUUID().toString(),
+    val name: String,
+    val defaultGrams: Double,
+    val portionLabel: String,
+    val nutrition: Nutrition? = null,
+)
 
 data class AddFoodUiState(
     val step: AddStep = AddStep.PickSource,
@@ -47,6 +65,15 @@ data class AddFoodUiState(
     val plateSize: String = "",
     val photoDescription: String = "",
     val targetDateEpochDay: Long = LocalDate.now().toEpochDay(),
+    val quickInput: String = "",
+    val selectedTags: Set<String> = emptySet(),
+    val mealMinuteOfDay: Int = LocalTime.now().hour * 60 + LocalTime.now().minute,
+    val note: String = "",
+    val quantityMode: QuantityMode = QuantityMode.GRAMS,
+    val portionCount: Double = 1.0,
+    val estimatedPortionGrams: Double? = null,
+    val showPresetSheet: Boolean = false,
+    val presets: List<PresetFood> = DefaultPresetFoods,
 )
 
 fun defaultMealType(): MealType {
@@ -58,6 +85,23 @@ fun defaultMealType(): MealType {
         else -> MealType.SNACK
     }
 }
+
+val DefaultMealTags = listOf("无糖", "少油", "少盐", "清淡", "多菜", "无主食", "高蛋白", "外食")
+
+val DefaultPresetFoods = listOf(
+    PresetFood(id = "rice", name = "米饭", defaultGrams = 150.0, portionLabel = "1 小碗", nutrition = Nutrition(174.0, 3.9, 38.9, 0.5)),
+    PresetFood(id = "mantou", name = "馒头", defaultGrams = 100.0, portionLabel = "1 个", nutrition = Nutrition(223.0, 7.0, 47.0, 1.1)),
+    PresetFood(id = "egg", name = "鸡蛋", defaultGrams = 50.0, portionLabel = "1 个", nutrition = Nutrition(72.0, 6.3, 0.4, 4.8)),
+    PresetFood(id = "milk", name = "牛奶", defaultGrams = 250.0, portionLabel = "1 盒", nutrition = Nutrition(162.0, 8.0, 12.0, 8.8)),
+    PresetFood(id = "chicken_breast", name = "鸡胸肉", defaultGrams = 120.0, portionLabel = "1 块", nutrition = Nutrition(198.0, 37.1, 0.0, 4.3)),
+    PresetFood(id = "apple", name = "苹果", defaultGrams = 200.0, portionLabel = "1 个", nutrition = Nutrition(104.0, 0.6, 27.6, 0.3)),
+    PresetFood(id = "banana", name = "香蕉", defaultGrams = 120.0, portionLabel = "1 根", nutrition = Nutrition(107.0, 1.3, 27.4, 0.4)),
+    PresetFood(id = "bread", name = "全麦面包", defaultGrams = 60.0, portionLabel = "2 片", nutrition = Nutrition(154.0, 7.2, 25.8, 2.4)),
+    PresetFood(id = "yogurt", name = "酸奶", defaultGrams = 150.0, portionLabel = "1 杯", nutrition = Nutrition(93.0, 5.3, 11.9, 3.3)),
+    PresetFood(id = "oats", name = "燕麦片", defaultGrams = 40.0, portionLabel = "1 份", nutrition = Nutrition(150.0, 5.3, 26.4, 2.7)),
+    PresetFood(id = "beef", name = "牛肉", defaultGrams = 100.0, portionLabel = "1 份", nutrition = Nutrition(250.0, 26.0, 0.0, 15.0)),
+    PresetFood(id = "salmon", name = "三文鱼", defaultGrams = 120.0, portionLabel = "1 份", nutrition = Nutrition(250.0, 27.0, 0.0, 15.0)),
+)
 
 class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
     private val foodApp = app as FoodApp
@@ -98,11 +142,89 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
         _uiState.value = _uiState.value.copy(targetDateEpochDay = date.toEpochDay())
     }
 
-    fun openManual() {
+    fun setQuickInput(value: String) {
+        _uiState.value = _uiState.value.copy(quickInput = value)
+    }
+
+    fun toggleTag(tag: String) {
+        val current = _uiState.value.selectedTags
+        val next = if (tag in current) current - tag else current + tag
         _uiState.value = _uiState.value.copy(
-            step = AddStep.Manual,
+            selectedTags = next,
+            photoDescription = next.joinToString("、"),
+        )
+    }
+
+    fun setMealMinuteOfDay(minute: Int) {
+        _uiState.value = _uiState.value.copy(mealMinuteOfDay = minute.coerceIn(0, 1439))
+    }
+
+    fun setNote(value: String) {
+        _uiState.value = _uiState.value.copy(note = value)
+    }
+
+    fun openManual(
+        initialName: String = "",
+        initialGrams: Double? = null,
+        initialNutrition: Nutrition? = null,
+    ) {
+        _uiState.value = _uiState.value.copy(
+            step = AddStep.Manual(
+                initialName = initialName,
+                initialGrams = initialGrams,
+                initialNutrition = initialNutrition,
+            ),
             error = null,
-            manualNutrition = null,
+            manualNutrition = initialNutrition,
+            showPresetSheet = false,
+            quantityMode = QuantityMode.GRAMS,
+        )
+    }
+
+    fun openPresetSheet() {
+        _uiState.value = _uiState.value.copy(showPresetSheet = true, error = null)
+    }
+
+    fun closePresetSheet() {
+        _uiState.value = _uiState.value.copy(showPresetSheet = false)
+    }
+
+    fun updatePreset(updated: PresetFood) {
+        _uiState.value = _uiState.value.copy(
+            presets = _uiState.value.presets.map { if (it.id == updated.id) updated else it },
+        )
+        notify("预设「${updated.name}」已更新")
+    }
+
+    fun applyPreset(preset: PresetFood) {
+        // 已有营养数据时直接进手动录入并回填，避免再走识别
+        val nutrition = preset.nutrition
+        if (nutrition != null && nutrition.caloriesKcal > 0.0) {
+            openManual(
+                initialName = preset.name,
+                initialGrams = preset.defaultGrams,
+                initialNutrition = nutrition,
+            )
+            return
+        }
+        val text = if (preset.portionLabel.isNotBlank()) {
+            "${preset.portionLabel}${preset.name}"
+        } else {
+            "${preset.defaultGrams.toInt()}克${preset.name}"
+        }
+        _uiState.value = _uiState.value.copy(
+            quickInput = text,
+            showPresetSheet = false,
+            error = null,
+        )
+        recognizeFromText(text)
+    }
+
+    fun applyPresetManual(preset: PresetFood) {
+        openManual(
+            initialName = preset.name,
+            initialGrams = preset.defaultGrams,
+            initialNutrition = preset.nutrition,
         )
     }
 
@@ -112,7 +234,19 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
             error = null,
             recognizing = false,
             manualNutrition = null,
+            showPresetSheet = false,
         )
+    }
+
+    fun setQuantityMode(mode: QuantityMode) {
+        _uiState.value = _uiState.value.copy(
+            quantityMode = mode,
+            estimatedPortionGrams = if (mode == QuantityMode.GRAMS) null else _uiState.value.estimatedPortionGrams,
+        )
+    }
+
+    fun setPortionCount(value: Double) {
+        _uiState.value = _uiState.value.copy(portionCount = value.coerceAtLeast(0.1))
     }
 
     fun recognizeManual(name: String, grams: Double) {
@@ -155,6 +289,101 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** 份数模式：先用大模型估重，再识别营养。 */
+    fun recognizeManualWithPortions(name: String, portions: Double) {
+        val trimmedName = name.trim()
+        if (trimmedName.isEmpty()) {
+            notify("请输入食物名称")
+            _uiState.value = _uiState.value.copy(error = "请输入食物名称")
+            return
+        }
+        viewModelScope.launch {
+            val current = settings.value
+            if (!current.isRecognitionConfigured) {
+                notify("请先在设置中配置 API Key 与 Base URL")
+                _uiState.value = _uiState.value.copy(error = "请先在设置中配置 API Key 与 Base URL")
+                return@launch
+            }
+            _uiState.value = _uiState.value.copy(recognizing = true, error = null)
+            notify("正在用大模型估计重量…")
+            try {
+                val grams = client.estimatePortionGrams(
+                    baseUrl = current.baseUrl,
+                    apiKey = current.apiKey,
+                    model = current.model,
+                    foodName = trimmedName,
+                    portions = portions,
+                    portionHint = _uiState.value.photoDescription,
+                )
+                _uiState.value = _uiState.value.copy(estimatedPortionGrams = grams)
+                notify("估计重量 ${grams.toInt()}g，继续识别营养…")
+                recognizeManual(trimmedName, grams)
+            } catch (e: RecognitionException) {
+                notify(e.message ?: "估重失败")
+                _uiState.value = _uiState.value.copy(recognizing = false, error = e.message)
+            } catch (e: Exception) {
+                notify(e.message ?: "估重失败")
+                _uiState.value = _uiState.value.copy(recognizing = false, error = e.message ?: "估重失败")
+            }
+        }
+    }
+
+    /** 顶部输入框回车：立刻文字识别。 */
+    fun recognizeFromText(raw: String? = null) {
+        val text = (raw ?: _uiState.value.quickInput).trim()
+        if (text.isEmpty()) {
+            notify("请先输入食物描述")
+            _uiState.value = _uiState.value.copy(error = "请先输入食物描述")
+            return
+        }
+        viewModelScope.launch {
+            val current = settings.value
+            if (!current.isRecognitionConfigured) {
+                notify("请先在设置中配置 API Key 与 Base URL")
+                _uiState.value = _uiState.value.copy(error = "请先在设置中配置 API Key 与 Base URL")
+                return@launch
+            }
+            _uiState.value = _uiState.value.copy(
+                recognizing = true,
+                error = null,
+                quickInput = text,
+                step = AddStep.PickSource,
+            )
+            notify("已开始文字识别…")
+            try {
+                val tagsDesc = _uiState.value.selectedTags.joinToString("、")
+                val visualResult = client.recognizeFromText(
+                    baseUrl = current.baseUrl,
+                    apiKey = current.apiKey,
+                    model = current.model,
+                    text = text,
+                    userDescription = buildList {
+                        current.systemBackground.takeIf { it.isNotBlank() }?.let { add("用户背景：$it") }
+                        tagsDesc.takeIf { it.isNotBlank() }?.let { add("本餐说明：$it") }
+                        _uiState.value.note.takeIf { it.isNotBlank() }?.let { add("备注：$it") }
+                    }.joinToString("\n"),
+                    mealType = _uiState.value.mealType.label,
+                    plateSize = _uiState.value.plateSize,
+                )
+                if (visualResult.dishes.isEmpty()) {
+                    throw RecognitionException("未能识别到可记录的食物，请换个说法")
+                }
+                val result = nutritionDatabase.enrich(visualResult, current.foodDataCentralApiKey)
+                _uiState.value = _uiState.value.copy(
+                    recognizing = false,
+                    step = AddStep.Review(imageUri = null, result = result),
+                )
+                notify("识别完成，请确认结果")
+            } catch (e: RecognitionException) {
+                notify(e.message ?: "识别失败")
+                _uiState.value = _uiState.value.copy(recognizing = false, error = e.message)
+            } catch (e: Exception) {
+                notify(e.message ?: "识别失败")
+                _uiState.value = _uiState.value.copy(recognizing = false, error = e.message ?: "识别失败")
+            }
+        }
+    }
+
     fun recognizeFromUri(uri: Uri) {
         viewModelScope.launch {
             val current = settings.value
@@ -167,6 +396,7 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
             notify("已开始识别食物，结果将在后台返回")
             try {
                 val base64 = withContext(Dispatchers.IO) { encodeImage(uri) }
+                val tagsDesc = _uiState.value.selectedTags.joinToString("、")
                 val visualResult = client.recognize(
                     baseUrl = current.baseUrl,
                     apiKey = current.apiKey,
@@ -175,7 +405,8 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
                     mimeType = "image/jpeg",
                     userDescription = buildList {
                         current.systemBackground.takeIf { it.isNotBlank() }?.let { add("用户背景：$it") }
-                        _uiState.value.photoDescription.takeIf { it.isNotBlank() }?.let { add("本餐说明：$it") }
+                        tagsDesc.takeIf { it.isNotBlank() }?.let { add("本餐说明：$it") }
+                        _uiState.value.note.takeIf { it.isNotBlank() }?.let { add("备注：$it") }
                     }.joinToString("\n"),
                     mealType = _uiState.value.mealType.label,
                     plateSize = _uiState.value.plateSize,
@@ -208,6 +439,9 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
                     grams = grams,
                     nutrition = nutrition,
                     dateEpochDay = _uiState.value.targetDateEpochDay,
+                    mealMinuteOfDay = _uiState.value.mealMinuteOfDay,
+                    note = _uiState.value.note.takeIf { it.isNotBlank() },
+                    mealTags = _uiState.value.selectedTags.toList(),
                 ),
             )
             _uiState.value = _uiState.value.copy(step = AddStep.PickSource, error = null)
@@ -227,10 +461,36 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
         )
     }
 
+    fun removeComponent(componentId: String) {
+        val step = _uiState.value.step as? AddStep.Review ?: return
+        _uiState.value = _uiState.value.copy(
+            step = step.copy(
+                result = step.result.copy(
+                    dishes = step.result.dishes.map { it.removeComponent(componentId) }
+                        .filter { it.allComponents.isNotEmpty() },
+                ),
+            ),
+        )
+    }
+
+    fun removeDish(dishId: String) {
+        val step = _uiState.value.step as? AddStep.Review ?: return
+        val remaining = step.result.dishes.filterNot { it.id == dishId }
+        if (remaining.isEmpty()) {
+            backToPick()
+            return
+        }
+        _uiState.value = _uiState.value.copy(
+            step = step.copy(result = step.result.copy(dishes = remaining)),
+        )
+    }
+
     fun saveRecognized(result: MealRecognition, imageUri: String?) {
         viewModelScope.launch {
             val meal = _uiState.value.mealType
             val day = _uiState.value.targetDateEpochDay
+            val note = _uiState.value.note.takeIf { it.isNotBlank() }
+            val tags = _uiState.value.selectedTags.toList()
             result.dishes.forEach { dish ->
                 repo.insert(
                     FoodLog(
@@ -241,11 +501,20 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
                         components = dish.allComponents,
                         imageUri = imageUri,
                         dateEpochDay = day,
+                        mealMinuteOfDay = _uiState.value.mealMinuteOfDay,
+                        note = note,
+                        mealTags = tags,
                     ),
                 )
             }
-            _uiState.value = _uiState.value.copy(step = AddStep.PickSource, error = null)
-            notify("食物已保存")
+            _uiState.value = _uiState.value.copy(
+                step = AddStep.PickSource,
+                error = null,
+                quickInput = "",
+                note = "",
+                selectedTags = emptySet(),
+            )
+            notify("已保存 ${result.dishes.size} 道菜")
         }
     }
 
@@ -276,6 +545,11 @@ private fun RecognizedDish.updateWeight(componentId: String, grams: Double): Rec
         if (component.id == componentId) component.withWeight(grams) else component
     },
     children = children.map { it.updateWeight(componentId, grams) },
+)
+
+private fun RecognizedDish.removeComponent(componentId: String): RecognizedDish = copy(
+    components = components.filterNot { it.id == componentId },
+    children = children.map { it.removeComponent(componentId) },
 )
 
 private fun FoodComponent.withWeight(grams: Double): FoodComponent {

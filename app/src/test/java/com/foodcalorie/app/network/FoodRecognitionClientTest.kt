@@ -53,4 +53,26 @@ class FoodRecognitionClientTest {
         assertEquals(174.0, component.nutritionMin.caloriesKcal, 0.01)
         assertEquals(243.6, component.nutritionMax.caloriesKcal, 0.01)
     }
+
+    @Test
+    fun multiDishRecognitionKeepsSeparateCards() {
+        val payload = """
+            {"is_food_image":true,"meal_name":"晚餐","overall_confidence":0.88,
+             "dishes":[
+               {"dish_name":"红烧豆腐","dish_type":"mixed_dish","dish_confidence":0.9,
+                "components":[{"name":"北豆腐","database_query":"tofu firm","source":"visible",
+                 "estimated_weight_g":120,"weight_min_g":90,"weight_max_g":150,"confidence":0.9}]},
+               {"dish_name":"清炒时蔬","dish_type":"mixed_dish","dish_confidence":0.85,
+                "components":[{"name":"西兰花","database_query":"broccoli cooked","source":"visible",
+                 "estimated_weight_g":100,"weight_min_g":80,"weight_max_g":120,"confidence":0.85}]},
+               {"dish_name":"米饭","dish_type":"single_food","dish_confidence":0.95,
+                "components":[{"name":"熟白米饭","database_query":"rice white cooked","source":"visible",
+                 "estimated_weight_g":150,"weight_min_g":120,"weight_max_g":180,"confidence":0.95}]}
+             ]}
+        """.trimIndent()
+
+        val result = client.parseVisualJson(payload)
+        assertEquals(3, result.dishes.size)
+        assertEquals(listOf("红烧豆腐", "清炒时蔬", "米饭"), result.dishes.map { it.name })
+    }
 }

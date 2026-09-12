@@ -32,12 +32,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import kotlin.math.abs
 import androidx.compose.ui.unit.sp
 import com.foodcalorie.app.domain.FoodLog
 import com.foodcalorie.app.domain.MealType
@@ -267,15 +270,25 @@ private fun NutritionSummaryCard(total: Nutrition, calorieTarget: Float) {
 
 @Composable
 private fun MacroRing(label: String, value: Double, target: Float, color: Color, modifier: Modifier = Modifier) {
+    val density = LocalDensity.current
+    var ringSize by remember { mutableStateOf(40.dp) }
+
     Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
         CircularProgressIndicator(
             progress = (value / target).toFloat().coerceIn(0f, 1f),
             colors = ProgressIndicatorDefaults.progressIndicatorColors(foregroundColor = color),
-            size = 50.dp,
-            strokeWidth = 6.dp,
+            size = ringSize,
+            strokeWidth = (ringSize.value * 6f / 50f).dp.coerceAtLeast(3.dp),
         )
         Spacer(Modifier.width(7.dp))
-        Column {
+        Column(
+            Modifier.onSizeChanged { coords ->
+                val textHeight = with(density) { coords.height.toDp() }
+                if (textHeight > 0.dp && abs(textHeight.value - ringSize.value) > 0.5f) {
+                    ringSize = textHeight
+                }
+            },
+        ) {
             Text(label, style = MiuixTheme.textStyles.footnote1, maxLines = 1)
             Text("${value.toInt()}g", style = MiuixTheme.textStyles.body1, fontWeight = FontWeight.Bold)
             Text("/${target.toInt()}g", style = MiuixTheme.textStyles.footnote2, color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
@@ -358,8 +371,47 @@ private fun PendingFoodCard(name: String, grams: Double, nutrition: Nutrition, o
 
 @Composable
 private fun FoodDetailOverlay(entry: FoodLog, onDismiss: () -> Unit) {
-    OverlayDialog(show = true, title = entry.name, summary = "${entry.grams.toInt()}g · ${entry.mealType.label}", onDismissRequest = onDismiss) {
+    val timeText = entry.mealMinuteOfDay?.let { minute ->
+        String.format("%02d:%02d", minute / 60, minute % 60)
+    }
+    val summaryParts = buildList {
+        add("${entry.grams.toInt()}g")
+        add(entry.mealType.label)
+        timeText?.let { add(it) }
+    }
+    OverlayDialog(
+        show = true,
+        title = entry.name,
+        summary = summaryParts.joinToString(" · "),
+        onDismissRequest = onDismiss,
+    ) {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            if (!entry.note.isNullOrBlank() || entry.mealTags.isNotEmpty()) {
+                Card(cornerRadius = 14.dp, modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(12.dp)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        if (entry.mealTags.isNotEmpty()) {
+                            Text(
+                                "本餐说明：${entry.mealTags.joinToString("、")}",
+                                style = MiuixTheme.textStyles.subtitle,
+                            )
+                        }
+                        if (!entry.note.isNullOrBlank()) {
+                            Text(
+                                "备注：${entry.note}",
+                                style = MiuixTheme.textStyles.subtitle,
+                                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                            )
+                        }
+                        timeText?.let {
+                            Text(
+                                "时间：$it",
+                                style = MiuixTheme.textStyles.subtitle,
+                                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                            )
+                        }
+                    }
+                }
+            }
             Column {
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text("热量", style = MiuixTheme.textStyles.title4)
@@ -371,11 +423,12 @@ private fun FoodDetailOverlay(entry: FoodLog, onDismiss: () -> Unit) {
                     modifier = Modifier.fillMaxWidth(),
                     height = 8.dp,
                 )
-            }
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                MacroRing("蛋白质", entry.nutrition.proteinG, ProteinTarget, ProteinColor, Modifier.weight(1f))
-                MacroRing("碳水", entry.nutrition.carbsG, CarbsTarget, CarbsColor, Modifier.weight(1f))
-                MacroRing("脂肪", entry.nutrition.fatG, FatTarget, FatColor, Modifier.weight(1f))
+                Spacer(Modifier.height(15.dp))
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    MacroRing("蛋白质", entry.nutrition.proteinG, ProteinTarget, ProteinColor, Modifier.weight(1f))
+                    MacroRing("碳水", entry.nutrition.carbsG, CarbsTarget, CarbsColor, Modifier.weight(1f))
+                    MacroRing("脂肪", entry.nutrition.fatG, FatTarget, FatColor, Modifier.weight(1f))
+                }
             }
             SmallTitle(
                 text = "组成部分",

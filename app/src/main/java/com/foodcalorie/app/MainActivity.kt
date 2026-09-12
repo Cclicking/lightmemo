@@ -353,7 +353,7 @@ fun FoodAppRoot() {
                         .calculateTopPadding()
                     BlurBottomSheet(
                         show = showAdd,
-                        title = "记录食物",
+                        title = if (addState.step is AddStep.PickSource) "添加食物" else "记录食物",
                         liquidGlassBackdrop = if (glassSupported) backdrop else null,
                         dimBackground = true,
                         sheetOffsetDp = statusBarsPadding + 5.dp,
@@ -378,7 +378,7 @@ fun FoodAppRoot() {
                                 contentDescription = if (addState.step is AddStep.PickSource) {
                                     "关闭"
                                 } else {
-                                    "返回记录方式"
+                                    "返回添加食物"
                                 },
                                 modifier = Modifier.padding(start = 18.dp),
                                 iconSize = 24.dp,

@@ -108,6 +108,77 @@ class FoodRecognitionClient(
             ?: throw RecognitionException("无法标准化食物名称")
     }
 
+    /** 将「份数 + 食物名」交给大模型估计可食用克重。 */
+    suspend fun estimatePortionGrams(
+        baseUrl: String,
+        apiKey: String,
+        model: String,
+        foodName: String,
+        portions: Double,
+        portionHint: String = "",
+    ): Double = withContext(Dispatchers.IO) {
+        validateConfig(baseUrl, apiKey)
+        val content = complete(
+            baseUrl,
+            apiKey,
+            model,
+            listOf(
+                textMessage(
+                    "system",
+                    """
+                    你是食物估重助手。根据份数估计可食用重量（克），合理考虑常见盛装量。
+                    只输出合法 JSON：{"estimated_weight_g": 数字}
+                    """.trimIndent(),
+                ),
+                textMessage(
+                    "user",
+                    "食物：$foodName\n份数：$portions 份\n补充说明：${portionHint.ifBlank { "无" }}",
+                ),
+            ),
+        )
+        json.parseToJsonElement(extractJson(content)).jsonObject["estimated_weight_g"]
+            ?.jsonPrimitive?.content?.toDoubleOrNull()
+            ?.takeIf { it > 0.0 }
+            ?: throw RecognitionException("无法估计该份数对应的克重")
+    }
+
+    /** 纯文字快速识别：根据描述拆出完整菜品与组成，并估计克重。 */
+    suspend fun recognizeFromText(
+        baseUrl: String,
+        apiKey: String,
+        model: String,
+        text: String,
+        userDescription: String = "",
+        mealType: String = "",
+        plateSize: String = "",
+    ): MealRecognition = withContext(Dispatchers.IO) {
+        validateConfig(baseUrl, apiKey)
+        if (text.isBlank()) throw RecognitionException("请输入要识别的食物")
+        val content = complete(
+            baseUrl,
+            apiKey,
+            model,
+            listOf(
+                textMessage("system", TEXT_SYSTEM_PROMPT),
+                textMessage(
+                    "user",
+                    """
+                    食物描述：$text
+                    餐具尺寸：${plateSize.ifBlank { "未提供" }}
+                    用户补充说明：${userDescription.ifBlank { "未提供" }}
+                    用餐类型：${mealType.ifBlank { "未提供" }}
+                    严格按系统 JSON 结构输出，不要 Markdown。
+                    """.trimIndent(),
+                ),
+            ),
+        )
+        parseVisualJson(extractJson(content))
+    }
+
+    private fun validateConfig(baseUrl: String, apiKey: String) {
+        if (baseUrl.isBlank() || apiKey.isBlank()) throw RecognitionException("请先配置识别 API")
+    }
+
     suspend fun recognize(
         baseUrl: String,
         apiKey: String,
@@ -207,7 +278,7 @@ class FoodRecognitionClient(
     }
 
     private fun validate(baseUrl: String, apiKey: String, imageBase64: String) {
-        if (baseUrl.isBlank() || apiKey.isBlank()) throw RecognitionException("请先配置识别 API")
+        validateConfig(baseUrl, apiKey)
         if (imageBase64.isBlank()) throw RecognitionException("图片数据为空")
     }
 
@@ -233,7 +304,8 @@ class FoodRecognitionClient(
         val SYSTEM_PROMPT = """
             你是专业的食物视觉识别系统。你只负责看图、分层和估重；营养数据库负责计算。
             严格执行：图片质量检查 → 完整菜品识别 → 组成拆解 → 重量范围估计。
-            一级必须是用户认知中的完整菜品。套餐放在一级，子餐品放 children，不得把全部原料平铺。
+            一级必须是用户认知中的完整菜品。画面中若有多个独立菜品/盘子，必须分别作为独立 dish 列出，禁止合并成一道。
+            套餐放在一级，子餐品放 children，不得把全部原料平铺。
             只拆对营养有明显影响的组成。油、酱汁、糖、奶油、芝士、汤底等可合理推测，但 source 必须为 inferred。
             每个组成提供适合 USDA FoodData Central 检索的简洁英文 database_query，需包含生熟状态和烹饪方式。
             禁止输出或猜测任何热量、蛋白质、碳水、脂肪数值。重量使用合理整值并给上下界。
@@ -255,7 +327,27 @@ class FoodRecognitionClient(
         val REVIEW_PROMPT = """
             你是食物视觉识别质量审核模块。对照原图审核给定结果，只在有充分视觉依据时修正。
             检查漏菜、层级、重复、不可食部分、烹饪方式、相对重量、餐具体积、隐藏油酱和过度具体判断。
+            若画面中有多道独立菜品，必须分别作为独立 dish 列出，禁止合并成一道。
             输出与输入完全相同的合法 JSON 结构；不要输出审核说明、营养值或 Markdown。
+        """.trimIndent()
+
+        val TEXT_SYSTEM_PROMPT = """
+            你是专业的食物识别系统。根据文字描述拆出完整菜品与组成，并估计可食用重量。
+            一级必须是用户认知中的完整菜品。多道菜分别作为独立 dish，禁止合并。
+            只拆对营养有明显影响的组成。油、酱汁、糖等可合理推测，source 为 inferred。
+            database_query 使用适合 USDA 检索的简洁英文（含生熟与烹饪方式）。
+            禁止输出或猜测热量、蛋白质、碳水、脂肪。重量给合理整值并带上下界。
+            只输出合法 JSON，不要 Markdown：
+            {"is_food_image":true,"meal_name":"文字识别","overall_confidence":0.8,
+             "image_quality_issues":[],"confirmation_questions":[],"dishes":[{
+             "dish_name":"红烧豆腐","dish_type":"mixed_dish","dish_confidence":0.85,
+             "needs_confirmation":false,"uncertainty_reason":null,"children":[],"components":[{
+             "name":"北豆腐","database_query":"tofu firm","china_database_query":"北豆腐",
+             "source":"visible","estimated_weight_g":120,"weight_min_g":90,"weight_max_g":150,
+             "confidence":0.8,"needs_confirmation":false}]}]}
+            dish_type 只能为 single_food、mixed_dish、staple_with_toppings、soup_or_noodle、salad、
+            sandwich_or_burger、combo_meal、beverage、dessert、other。
+            source 只能为 visible、inferred、user_provided。
         """.trimIndent()
     }
 }

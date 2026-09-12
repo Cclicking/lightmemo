@@ -121,6 +121,10 @@ data class FoodLog(
     val imageUri: String? = null,
     val dateEpochDay: Long = LocalDate.now().toEpochDay(),
     val createdAtMillis: Long = System.currentTimeMillis(),
+    /** 当日分钟数（0–1439），表示用餐时间 */
+    val mealMinuteOfDay: Int? = null,
+    val note: String? = null,
+    val mealTags: List<String> = emptyList(),
 )
 
 data class DayNutritionSummary(
