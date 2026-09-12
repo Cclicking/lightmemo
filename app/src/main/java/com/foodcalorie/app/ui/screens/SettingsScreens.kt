@@ -38,6 +38,8 @@ import com.foodcalorie.app.FoodApp
 import com.foodcalorie.app.data.ActivityLevel
 import com.foodcalorie.app.data.Gender
 import com.foodcalorie.app.ui.basic.SharedScrollBehavior as ScrollBehavior
+import com.foodcalorie.app.ui.components.AnimatedOverlayDialog
+import com.foodcalorie.app.ui.components.DropdownPref
 import com.foodcalorie.app.ui.utils.overScrollVertical
 import com.foodcalorie.app.viewmodel.SettingsViewModel
 import top.yukonga.miuix.kmp.basic.Button
@@ -48,9 +50,7 @@ import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.TabRow
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextField
-import top.yukonga.miuix.kmp.overlay.OverlayDialog
 import top.yukonga.miuix.kmp.preference.ArrowPreference
-import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
@@ -121,7 +121,7 @@ fun ApiSettingsScreen(
                     modifier = Modifier.fillMaxWidth(),
                     insideMargin = PaddingValues(0.dp),
                 ) {
-                    OverlayDropdownPreference(
+                    DropdownPref(
                         title = "当前配置",
                         summary = "${settings.model.ifBlank { "未命名" }} · 可保存多套并切换",
                         items = presets.map { it.name },
@@ -315,7 +315,7 @@ fun CalorieTargetScreen(
                             showDialog = true
                         },
                     )
-                    OverlayDialog(
+                    AnimatedOverlayDialog(
                         title = "每日热量目标",
                         summary = "输入 500–10000 kcal",
                         show = showDialog,
@@ -436,7 +436,7 @@ private fun NumberPickerPreferenceRow(
             showPicker = true
         },
     )
-    OverlayDialog(
+    AnimatedOverlayDialog(
         title = "选择$title",
         show = showPicker,
         onDismissRequest = { showPicker = false },
@@ -474,6 +474,7 @@ private fun InputDialogPreferenceRow(
     value: Int,
     range: IntRange,
     summary: String? = null,
+    dialogTitle: String = "${title}目标",
     onValueChange: (Int) -> Unit,
 ) {
     var showDialog by remember { mutableStateOf(false) }
@@ -494,8 +495,8 @@ private fun InputDialogPreferenceRow(
             showDialog = true
         },
     )
-    OverlayDialog(
-        title = "${title}目标",
+    AnimatedOverlayDialog(
+        title = dialogTitle,
         summary = "输入 ${range.first}–${range.last} $unit",
         show = showDialog,
         onDismissRequest = { showDialog = false },
@@ -960,34 +961,46 @@ fun AppearanceSettingsScreen(
                         title = "顶部渐变模糊",
                         summary = "顶栏下方的 miuix 渐进模糊（progressive blur）",
                     )
+                    InputDialogPreferenceRow(
+                        title = "渐变模糊范围",
+                        unit = "dp",
+                        value = settings.topGradientBlurRangeDp,
+                        range = 0..240,
+                        summary = "控制顶部模糊从标题栏向下延伸的高度",
+                        dialogTitle = "渐变模糊范围",
+                        onValueChange = viewModel::setTopGradientBlurRangeDp,
+                    )
                 }
             }
         }
     }
 
-    editing?.let { slot ->
-        val current = when (slot) {
+    val slot = editing
+    val current = when (slot) {
             RingSlot.PROTEIN -> settings.proteinRingColor
             RingSlot.CARBS -> settings.carbsRingColor
             RingSlot.FAT -> settings.fatRingColor
+            null -> settings.proteinRingColor
         }
-        ColorPickerDialog(
-            title = when (slot) {
-                RingSlot.PROTEIN -> "蛋白质圆环颜色"
-                RingSlot.CARBS -> "碳水圆环颜色"
-                RingSlot.FAT -> "脂肪圆环颜色"
-            },
-            selected = current,
-            onSelect = { color ->
-                when (slot) {
-                    RingSlot.PROTEIN -> viewModel.setProteinRingColor(color)
-                    RingSlot.CARBS -> viewModel.setCarbsRingColor(color)
-                    RingSlot.FAT -> viewModel.setFatRingColor(color)
-                }
-            },
-            onDismiss = { editing = null },
-        )
-    }
+    ColorPickerDialog(
+        show = slot != null,
+        title = when (slot) {
+            RingSlot.PROTEIN -> "蛋白质圆环颜色"
+            RingSlot.CARBS -> "碳水圆环颜色"
+            RingSlot.FAT -> "脂肪圆环颜色"
+            null -> "选择颜色"
+        },
+        selected = current,
+        onSelect = { color ->
+            when (slot) {
+                RingSlot.PROTEIN -> viewModel.setProteinRingColor(color)
+                RingSlot.CARBS -> viewModel.setCarbsRingColor(color)
+                RingSlot.FAT -> viewModel.setFatRingColor(color)
+                null -> Unit
+            }
+        },
+        onDismiss = { editing = null },
+    )
 }
 
 private enum class RingSlot { PROTEIN, CARBS, FAT }
@@ -1014,14 +1027,15 @@ private fun RingColorRow(
 
 @Composable
 private fun ColorPickerDialog(
+    show: Boolean,
     title: String,
     selected: Long,
     onSelect: (Long) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    OverlayDialog(
+    AnimatedOverlayDialog(
         title = title,
-        show = true,
+        show = show,
         onDismissRequest = onDismiss,
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {

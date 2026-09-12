@@ -48,6 +48,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -65,7 +66,7 @@ import com.foodcalorie.app.ui.screens.ApiSettingsScreen
 import com.foodcalorie.app.ui.screens.AppearanceSettingsScreen
 import com.foodcalorie.app.ui.screens.AboutScreen
 import com.foodcalorie.app.ui.screens.CalorieTargetScreen
-import com.foodcalorie.app.ui.screens.DatabaseSettingsScreen
+import com.foodcalorie.app.ui.screens.FoodDatabaseScreen
 import com.foodcalorie.app.ui.screens.MineHubScreen
 import com.foodcalorie.app.ui.screens.PersonalInfoScreen
 import com.foodcalorie.app.ui.screens.StatsScreen
@@ -89,8 +90,10 @@ import top.yukonga.miuix.kmp.icon.basic.Close
 import top.yukonga.miuix.kmp.icon.os4.ChevronBackward
 import top.yukonga.miuix.kmp.icon.os4.GridView
 import top.yukonga.miuix.kmp.nav.core.NavDisplay
+import top.yukonga.miuix.kmp.nav.core.NavDisplayEffects
 import top.yukonga.miuix.kmp.nav.core.rememberNavBackStack
 import top.yukonga.miuix.kmp.nav.transition.NavSwipeDirection
+import top.yukonga.miuix.kmp.nav.transition.NavTransitions
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import java.time.LocalDate
 
@@ -190,9 +193,27 @@ fun FoodAppRoot() {
             val aboutList = rememberLazyListState()
             val addList = rememberLazyListState()
 
-            LaunchedEffect(selectedTab, mineTop, todayManagement) {
-                appBarState.heightOffset = 0f
-                appBarState.contentOffset = 0f
+            val activeList = when {
+                selectedTab == 0 -> todayList
+                selectedTab == 1 -> statsList
+                else -> when (mineTop) {
+                    MineRoute.Hub -> mineList
+                    MineRoute.Api -> apiList
+                    MineRoute.Target -> targetList
+                    MineRoute.Profile -> profileList
+                    MineRoute.Database -> databaseList
+                    MineRoute.Appearance -> appearanceList
+                    MineRoute.About -> aboutList
+                }
+            }
+
+            // Each destination keeps its own LazyListState. Restore the app-bar state from that
+            // destination instead of always expanding it when the bottom tab changes.
+            LaunchedEffect(selectedTab, mineTop, todayManagement, activeList.canScrollBackward) {
+                withFrameNanos { }
+                val scrolled = activeList.canScrollBackward
+                appBarState.heightOffset = if (scrolled) appBarState.heightOffsetLimit else 0f
+                appBarState.contentOffset = if (scrolled) -100f else 0f
             }
 
             LaunchedEffect(selectedDate) {
@@ -292,11 +313,6 @@ fun FoodAppRoot() {
                     )
                 },
                 content = { padding ->
-                    val activeList: LazyListState = when {
-                        selectedTab == 0 -> todayList
-                        selectedTab == 1 -> statsList
-                        else -> mineList
-                    }
                     @Suppress("UNUSED_VARIABLE")
                     val contentScrolled = activeList.canScrollBackward
 
@@ -342,8 +358,14 @@ fun FoodAppRoot() {
                                 )
                                 else -> NavDisplay(
                                     backStack = mineBackStack,
-                                    modifier = Modifier.fillMaxSize(),
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .background(MiuixTheme.colorScheme.surface),
                                     onBack = { mineBackStack.removeLastOrNull() },
+                                    // Use the library's native Miuix transition explicitly so the
+                                    // route host does not fall back to an implicit/transparent one.
+                                    transition = NavTransitions.MiuixDefault,
+                                    effects = NavDisplayEffects.Default,
                                 ) {
                                     entry<MineRoute.Hub> {
                                         MineHubScreen(
@@ -384,7 +406,7 @@ fun FoodAppRoot() {
                                         )
                                     }
                                     entry<MineRoute.Database>(swipeDismiss = NavSwipeDirection.LeftToRight) {
-                                        DatabaseSettingsScreen(
+                                        FoodDatabaseScreen(
                                             viewModel = settingsVm,
                                             contentPadding = padding,
                                             scrollBehavior = scrollBehavior,
@@ -415,7 +437,8 @@ fun FoodAppRoot() {
                                 .asPaddingValues()
                                 .calculateTopPadding()
                             val progressiveHeight =
-                                statusBarHeight + CollapsibleTopAppBarDefaults.CollapsedHeight + 72.dp
+                                statusBarHeight + CollapsibleTopAppBarDefaults.CollapsedHeight +
+                                    appSettings.topGradientBlurRangeDp.dp
                             Box(
                                 modifier = Modifier
                                     .align(Alignment.TopCenter)

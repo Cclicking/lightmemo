@@ -1,9 +1,13 @@
 package com.foodcalorie.app.ui.screens
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -18,14 +22,17 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.background
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -39,13 +46,15 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import kotlin.math.abs
 import androidx.compose.ui.unit.sp
+import kotlin.math.abs
 import com.foodcalorie.app.domain.FoodLog
 import com.foodcalorie.app.domain.MealType
 import com.foodcalorie.app.domain.Nutrition
 import com.foodcalorie.app.ui.basic.SharedScrollBehavior as ScrollBehavior
+import com.foodcalorie.app.ui.components.AnimatedOverlayDialog
 import com.foodcalorie.app.ui.utils.overScrollVertical
 import com.foodcalorie.app.viewmodel.AddFoodUiState
 import com.foodcalorie.app.viewmodel.AddStep
@@ -54,6 +63,8 @@ import java.time.LocalDate
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import kotlin.math.roundToInt
+import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.anim.folmeSpring
 import top.yukonga.miuix.kmp.basic.Button
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
@@ -64,7 +75,6 @@ import top.yukonga.miuix.kmp.basic.NumberPicker
 import top.yukonga.miuix.kmp.basic.ProgressIndicatorDefaults
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.overlay.OverlayDialog
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.utils.PressFeedbackType
 
@@ -96,6 +106,8 @@ fun TodayScreen(
     val date by viewModel.date.collectAsState()
     var selectedEntry by remember { mutableStateOf<FoodLog?>(null) }
     var deleteEntry by remember { mutableStateOf<FoodLog?>(null) }
+    var showDetail by remember { mutableStateOf(false) }
+    var showDelete by remember { mutableStateOf(false) }
 
     DatePickerOverlay(
         show = showDatePicker,
@@ -107,57 +119,143 @@ fun TodayScreen(
         },
     )
     selectedEntry?.let { entry ->
-        FoodDetailOverlay(entry = entry, onDismiss = { selectedEntry = null })
+        FoodDetailOverlay(
+            entry = entry,
+            show = showDetail,
+            onDismiss = { showDetail = false },
+            onDismissFinished = { selectedEntry = null },
+        )
     }
     deleteEntry?.let { entry ->
         DeleteFoodOverlay(
             entry = entry,
-            onDismiss = { deleteEntry = null },
+            show = showDelete,
+            onDismiss = { showDelete = false },
+            onDismissFinished = { deleteEntry = null },
             onDelete = {
                 viewModel.delete(entry.id)
-                deleteEntry = null
+                showDelete = false
             },
         )
     }
 
-    AnimatedContent(
-        targetState = date,
-        transitionSpec = { fadeIn() togetherWith fadeOut() },
-        label = "selectedDate",
-    ) { displayedDate ->
-        var horizontalDrag by remember(displayedDate) { mutableStateOf(0f) }
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .pointerInput(displayedDate, managementMode) {
-                    if (!managementMode) {
-                        detectHorizontalDragGestures(
-                            onDragStart = { horizontalDrag = 0f },
-                            onHorizontalDrag = { change, amount ->
-                                if (kotlin.math.abs(amount) > 1f) change.consume()
-                                horizontalDrag += amount
-                            },
-                            onDragEnd = {
-                                when {
-                                    horizontalDrag > 72f -> viewModel.previousDay()
-                                    horizontalDrag < -72f && displayedDate < LocalDate.now() -> viewModel.nextDay()
-                                }
-                                horizontalDrag = 0f
-                            },
-                        )
-                    }
+    var horizontalDrag by remember { mutableFloatStateOf(0f) }
+    var swipeOffset by remember { mutableFloatStateOf(0f) }
+    var swipeWidthPx by remember { mutableIntStateOf(0) }
+    val swipeScope = androidx.compose.runtime.rememberCoroutineScope()
+    LaunchedEffect(date) {
+        horizontalDrag = 0f
+        swipeOffset = 0f
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .onSizeChanged { swipeWidthPx = it.width },
+    ) {
+        AnimatedContent(
+            targetState = date,
+            transitionSpec = {
+                val direction = if (targetState > initialState) 1 else -1
+                (slideInHorizontally(
+                    animationSpec = tween(240),
+                    initialOffsetX = { width -> direction * width / 4 },
+                ) + fadeIn(animationSpec = tween(160))) togetherWith
+                    (slideOutHorizontally(
+                        animationSpec = tween(180),
+                        targetOffsetX = { width -> -direction * width / 8 },
+                    ) + fadeOut(animationSpec = tween(120)))
+            },
+            label = "selectedDate",
+        ) { displayedDate ->
+            val canShowNext = displayedDate < LocalDate.now()
+            val dragging = abs(swipeOffset) > 0.5f
+            val showPreview = dragging && (swipeOffset > 0f || canShowNext)
+            if (showPreview && swipeWidthPx > 0) {
+                val previewDate = if (swipeOffset < 0f) {
+                    displayedDate.plusDays(1)
+                } else {
+                    displayedDate.minusDays(1)
                 }
-                .overScrollVertical()
-                .then(if (scrollBehavior != null) Modifier.nestedScroll(scrollBehavior.nestedScrollConnection) else Modifier),
-            state = listState,
-            contentPadding = PaddingValues(
-                start = 16.dp,
-                end = 16.dp,
-                top = contentPadding.calculateTopPadding() + 4.dp,
-                bottom = contentPadding.calculateBottomPadding() + 12.dp,
-            ),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
+                val previewOffset = swipeOffset + if (swipeOffset < 0f) {
+                    swipeWidthPx.toFloat()
+                } else {
+                    -swipeWidthPx.toFloat()
+                }
+                DaySwipePreview(
+                    date = previewDate,
+                    entries = state.entriesByDate[previewDate.toEpochDay()].orEmpty(),
+                    target = state.target,
+                    modifier = Modifier.offset { IntOffset(previewOffset.roundToInt(), 0) },
+                )
+            }
+
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .offset { IntOffset(swipeOffset.roundToInt(), 0) }
+                    .pointerInput(displayedDate, managementMode, swipeWidthPx) {
+                        if (!managementMode) {
+                            detectHorizontalDragGestures(
+                                onDragStart = {
+                                    horizontalDrag = 0f
+                                    swipeOffset = 0f
+                                },
+                                onHorizontalDrag = { change, amount ->
+                                    if (abs(amount) > 1f) change.consume()
+                                    horizontalDrag += amount
+                                    val maxOffset = (swipeWidthPx * 0.92f).coerceAtLeast(180f)
+                                    swipeOffset = horizontalDrag.coerceIn(-maxOffset, maxOffset)
+                                },
+                                onDragEnd = {
+                                    val threshold = maxOf(72f, swipeWidthPx * 0.18f)
+                                    val goPrevious = horizontalDrag > threshold
+                                    val goNext = horizontalDrag < -threshold && canShowNext
+                                    val targetOffset = when {
+                                        goPrevious || goNext -> {
+                                            val pageWidth = swipeWidthPx.coerceAtLeast(320).toFloat()
+                                            if (horizontalDrag > 0f) pageWidth else -pageWidth
+                                        }
+                                        else -> 0f
+                                    }
+                                    swipeScope.launch {
+                                        val settle = Animatable(swipeOffset)
+                                        settle.animateTo(
+                                            targetValue = targetOffset,
+                                            animationSpec = tween(if (targetOffset == 0f) 220 else 180),
+                                        ) { swipeOffset = value }
+                                        when {
+                                            goPrevious -> viewModel.previousDay()
+                                            goNext -> viewModel.nextDay()
+                                        }
+                                        horizontalDrag = 0f
+                                        swipeOffset = 0f
+                                    }
+                                },
+                                onDragCancel = {
+                                    swipeScope.launch {
+                                        val settle = Animatable(swipeOffset)
+                                        settle.animateTo(0f, animationSpec = tween(220)) {
+                                            swipeOffset = value
+                                        }
+                                        horizontalDrag = 0f
+                                        swipeOffset = 0f
+                                    }
+                                },
+                            )
+                        }
+                    }
+                    .overScrollVertical()
+                    .then(if (scrollBehavior != null) Modifier.nestedScroll(scrollBehavior.nestedScrollConnection) else Modifier),
+                state = listState,
+                contentPadding = PaddingValues(
+                    start = 16.dp,
+                    end = 16.dp,
+                    top = contentPadding.calculateTopPadding() + 4.dp,
+                    bottom = contentPadding.calculateBottomPadding() + 12.dp,
+                ),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
             item {
                 Text(
                     text = displayedDate.format(dateFormatter),
@@ -165,7 +263,7 @@ fun TodayScreen(
                     color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                     modifier = Modifier
                         .clickable(role = Role.Button, onClick = onShowDatePicker)
-                        .padding(horizontal = 12.dp, vertical = 4.dp),
+                        .padding(start = 12.dp, top = 4.dp, end = 12.dp, bottom = 0.dp),
                 )
             }
 
@@ -221,10 +319,22 @@ fun TodayScreen(
                         item(key = "saved-${meal.name}-${row.first().id}") {
                             FoodCardRow(
                                 left = {
-                                    FoodCard(row[0], managementMode, { selectedEntry = row[0] }, { deleteEntry = row[0] })
+                                    FoodCard(row[0], managementMode, {
+                                        selectedEntry = row[0]
+                                        showDetail = true
+                                    }, {
+                                        deleteEntry = row[0]
+                                        showDelete = true
+                                    })
                                 },
                                 right = row.getOrNull(1)?.let { entry ->
-                                    { FoodCard(entry, managementMode, { selectedEntry = entry }, { deleteEntry = entry }) }
+                                    { FoodCard(entry, managementMode, {
+                                        selectedEntry = entry
+                                        showDetail = true
+                                    }, {
+                                        deleteEntry = entry
+                                        showDelete = true
+                                    }) }
                                 },
                             )
                         }
@@ -240,6 +350,76 @@ fun TodayScreen(
                         Text(
                             text = "拍照识别或手动添加一餐，开始统计热量",
                             style = MiuixTheme.textStyles.subtitle,
+                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                        )
+                    }
+                }
+            }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DaySwipePreview(
+    date: LocalDate,
+    entries: List<FoodLog>,
+    target: Float,
+    modifier: Modifier = Modifier,
+) {
+    val total = entries.fold(Nutrition()) { acc, entry -> acc + entry.nutrition }
+    val progress = if (target <= 0f) 0f else (total.caloriesKcal / target).toFloat().coerceIn(0f, 1f)
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .background(MiuixTheme.colorScheme.background),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 28.dp, end = 28.dp, top = 26.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                text = date.format(dateFormatter),
+                style = MiuixTheme.textStyles.subtitle,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+            )
+            Card(
+                cornerRadius = 20.dp,
+                modifier = Modifier.fillMaxWidth(),
+                insideMargin = PaddingValues(16.dp),
+            ) {
+                Text("实时预览", style = MiuixTheme.textStyles.subtitle)
+                Spacer(Modifier.height(4.dp))
+                Row(verticalAlignment = Alignment.Bottom) {
+                    Text(total.caloriesKcal.toInt().toString(), fontSize = 34.sp, fontWeight = FontWeight.Bold)
+                    Text(
+                        " / ${target.toInt()} kcal",
+                        style = MiuixTheme.textStyles.subtitle,
+                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                        modifier = Modifier.padding(start = 4.dp, bottom = 6.dp),
+                    )
+                }
+                Spacer(Modifier.height(8.dp))
+                LinearProgressIndicator(progress = progress, modifier = Modifier.fillMaxWidth(), height = 9.dp)
+                if (entries.isEmpty()) {
+                    Spacer(Modifier.height(12.dp))
+                    Text("当天还没有记录", style = MiuixTheme.textStyles.footnote2, color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
+                } else {
+                    Spacer(Modifier.height(12.dp))
+                    entries.take(3).forEach { entry ->
+                        Text(
+                            "${entry.name} · ${entry.nutrition.caloriesKcal.toInt()} kcal",
+                            style = MiuixTheme.textStyles.footnote1,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    if (entries.size > 3) {
+                        Text(
+                            "还有 ${entries.size - 3} 条记录",
+                            style = MiuixTheme.textStyles.footnote2,
                             color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                         )
                     }
@@ -412,7 +592,12 @@ private fun PendingFoodCard(name: String, grams: Double, nutrition: Nutrition, o
 }
 
 @Composable
-private fun FoodDetailOverlay(entry: FoodLog, onDismiss: () -> Unit) {
+private fun FoodDetailOverlay(
+    entry: FoodLog,
+    show: Boolean,
+    onDismiss: () -> Unit,
+    onDismissFinished: () -> Unit,
+) {
     val timeText = entry.mealMinuteOfDay?.let { minute ->
         String.format("%02d:%02d", minute / 60, minute % 60)
     }
@@ -421,11 +606,12 @@ private fun FoodDetailOverlay(entry: FoodLog, onDismiss: () -> Unit) {
         add(entry.mealType.label)
         timeText?.let { add(it) }
     }
-    OverlayDialog(
-        show = true,
+    AnimatedOverlayDialog(
+        show = show,
         title = entry.name,
         summary = summaryParts.joinToString(" · "),
         onDismissRequest = onDismiss,
+        onDismissFinished = onDismissFinished,
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             if (!entry.note.isNullOrBlank() || entry.mealTags.isNotEmpty()) {
@@ -514,8 +700,20 @@ private fun FoodDetailOverlay(entry: FoodLog, onDismiss: () -> Unit) {
 }
 
 @Composable
-private fun DeleteFoodOverlay(entry: FoodLog, onDismiss: () -> Unit, onDelete: () -> Unit) {
-    OverlayDialog(show = true, title = entry.name, summary = "要删除这张食物卡片吗？", onDismissRequest = onDismiss) {
+private fun DeleteFoodOverlay(
+    entry: FoodLog,
+    show: Boolean,
+    onDismiss: () -> Unit,
+    onDismissFinished: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    AnimatedOverlayDialog(
+        show = show,
+        title = entry.name,
+        summary = "要删除这张食物卡片吗？",
+        onDismissRequest = onDismiss,
+        onDismissFinished = onDismissFinished,
+    ) {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Button(
                 onClick = onDelete,
@@ -537,7 +735,7 @@ private fun DatePickerOverlay(show: Boolean, date: LocalDate, onDismiss: () -> U
         if (day > maxDay) day = maxDay
     }
 
-    OverlayDialog(show = show, title = "选择日期", onDismissRequest = onDismiss) {
+    AnimatedOverlayDialog(show = show, title = "选择日期", onDismissRequest = onDismiss) {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(modifier = Modifier.fillMaxWidth()) {
                 NumberPicker(value = year, onValueChange = { year = it }, range = 2020..LocalDate.now().year, label = { "${it}年" }, visibleItemCount = 3, modifier = Modifier.weight(1.25f))

@@ -19,6 +19,7 @@ import kotlinx.coroutines.launch
 data class TodayUiState(
     val date: LocalDate = LocalDate.now(),
     val entries: List<FoodLog> = emptyList(),
+    val entriesByDate: Map<Long, List<FoodLog>> = emptyMap(),
     val target: Float = 1800f,
     val total: Nutrition = Nutrition(),
 ) {
@@ -34,13 +35,15 @@ class TodayViewModel(app: Application) : AndroidViewModel(app) {
     val date: StateFlow<LocalDate> = _date
 
     val uiState: StateFlow<TodayUiState> = combine(
-        combine(repo.logs, _date) { logs, date -> logs.filter { it.dateEpochDay == date.toEpochDay() } },
+        repo.logs,
         settingsRepo.settings,
         _date,
-    ) { entries, settings, date ->
+    ) { logs, settings, date ->
+        val entries = logs.filter { it.dateEpochDay == date.toEpochDay() }
         TodayUiState(
             date = date,
             entries = entries,
+            entriesByDate = logs.groupBy { it.dateEpochDay },
             target = settings.dailyCalorieTarget,
             total = entries.fold(Nutrition()) { acc, item -> acc + item.nutrition },
         )
@@ -70,11 +73,14 @@ class StatsViewModel(app: Application) : AndroidViewModel(app) {
         val rangeDays: Int = 7,
         val daily: List<DayNutritionSummary> = emptyList(),
         val averageKcal: Double = 0.0,
+        val averageNutrition: Nutrition = Nutrition(),
         val maxKcal: Double = 0.0,
         val daysHitTarget: Int = 0,
+        val daysOverTarget: Int = 0,
+        val loggedDays: Int = 0,
         val target: Float = 1800f,
     ) {
-        val hasData: Boolean get() = daily.isNotEmpty()
+        val hasData: Boolean get() = loggedDays > 0
     }
 
     val uiState: StateFlow<StatsUiState> = combine(
@@ -87,19 +93,25 @@ class StatsViewModel(app: Application) : AndroidViewModel(app) {
         val to = today.toEpochDay()
         val filtered = logs.filter { it.dateEpochDay in from..to }
         val grouped = filtered.groupBy { it.dateEpochDay }
-        val daily = grouped.map { (day, items) ->
+        val daily = (0 until days).map { offset ->
+            val day = from + offset
             DayNutritionSummary(
                 dateEpochDay = day,
-                total = items.fold(Nutrition()) { acc, i -> acc + i.nutrition },
+                total = grouped[day].orEmpty().fold(Nutrition()) { acc, i -> acc + i.nutrition },
             )
-        }.sortedBy { it.dateEpochDay }
+        }
+        val logged = daily.filter { it.total.caloriesKcal > 0.0 }
         val target = settings.dailyCalorieTarget.toDouble()
         StatsUiState(
             rangeDays = days,
             daily = daily,
-            averageKcal = if (daily.isEmpty()) 0.0 else daily.map { it.total.caloriesKcal }.average(),
+            averageKcal = if (logged.isEmpty()) 0.0 else logged.map { it.total.caloriesKcal }.average(),
+            averageNutrition = logged.fold(Nutrition()) { acc, day -> acc + day.total }
+                .times(1.0 / logged.size.coerceAtLeast(1)),
             maxKcal = daily.maxOfOrNull { it.total.caloriesKcal } ?: 0.0,
-            daysHitTarget = daily.count { it.total.caloriesKcal in 0.0..target },
+            daysHitTarget = logged.count { it.total.caloriesKcal in 0.0..target },
+            daysOverTarget = logged.count { it.total.caloriesKcal > target },
+            loggedDays = logged.size,
             target = settings.dailyCalorieTarget,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), StatsUiState())

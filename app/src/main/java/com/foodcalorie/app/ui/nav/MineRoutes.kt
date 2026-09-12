@@ -32,7 +32,7 @@ fun MineRoute.largeTitle(): String = when (this) {
     MineRoute.Profile -> "个人信息"
     MineRoute.Api -> "AI设置"
     MineRoute.Target -> "每日目标"
-    MineRoute.Database -> "数据库设置"
+    MineRoute.Database -> "数据库"
     MineRoute.Appearance -> "个性化设置"
     MineRoute.About -> "关于"
 }

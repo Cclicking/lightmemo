@@ -71,6 +71,10 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
         repo.updateTopGradientBlurEnabled(value)
     }
 
+    fun setTopGradientBlurRangeDp(value: Int) = viewModelScope.launch {
+        repo.updateTopGradientBlurRangeDp(value)
+    }
+
     /** 将推荐热量与营养素写入目标。 */
     fun applyRecommendedTarget() = viewModelScope.launch {
         val nutrients = settings.value.recommendedNutrients ?: return@launch

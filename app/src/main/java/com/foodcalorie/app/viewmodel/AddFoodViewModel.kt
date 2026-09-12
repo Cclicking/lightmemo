@@ -14,6 +14,7 @@ import com.foodcalorie.app.domain.Nutrition
 import com.foodcalorie.app.domain.FoodComponent
 import com.foodcalorie.app.domain.MealRecognition
 import com.foodcalorie.app.domain.RecognizedDish
+import com.foodcalorie.app.domain.NutritionReference
 import com.foodcalorie.app.network.RecognitionException
 import java.io.ByteArrayOutputStream
 import java.time.LocalDate
@@ -74,6 +75,15 @@ data class AddFoodUiState(
     val estimatedPortionGrams: Double? = null,
     val showPresetSheet: Boolean = false,
     val presets: List<PresetFood> = DefaultPresetFoods,
+    val databaseSearch: DatabaseSearchState? = null,
+)
+
+data class DatabaseSearchState(
+    val componentId: String,
+    val query: String,
+    val loading: Boolean = false,
+    val results: List<NutritionReference> = emptyList(),
+    val error: String? = null,
 )
 
 fun defaultMealType(): MealType {
@@ -189,6 +199,57 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
         _uiState.value = _uiState.value.copy(showPresetSheet = false)
     }
 
+    fun openComponentSearch(component: FoodComponent) {
+        _uiState.value = _uiState.value.copy(
+            databaseSearch = DatabaseSearchState(
+                componentId = component.id,
+                query = component.name,
+                loading = true,
+            ),
+        )
+        searchComponentDatabase(component.id, component.name)
+    }
+
+    fun searchComponentDatabase(componentId: String, query: String) {
+        val trimmed = query.trim()
+        if (trimmed.isBlank()) {
+            _uiState.updateDatabaseSearch(componentId) { it.copy(query = query, loading = false, results = emptyList(), error = "请输入食物名称") }
+            return
+        }
+        _uiState.updateDatabaseSearch(componentId) { it.copy(query = query, loading = true, error = null) }
+        viewModelScope.launch {
+            try {
+                val results = nutritionDatabase.searchCandidates(
+                    query = trimmed,
+                    apiKey = settings.value.foodDataCentralApiKey,
+                    limit = 20,
+                )
+                _uiState.updateDatabaseSearch(componentId) {
+                    it.copy(loading = false, results = results, error = if (results.isEmpty()) "没有找到相近的食物" else null)
+                }
+            } catch (e: Exception) {
+                _uiState.updateDatabaseSearch(componentId) {
+                    it.copy(loading = false, results = emptyList(), error = e.message ?: "数据库查询失败")
+                }
+            }
+        }
+    }
+
+    fun selectComponentReference(componentId: String, reference: NutritionReference) {
+        val step = _uiState.value.step as? AddStep.Review ?: return
+        _uiState.value = _uiState.value.copy(
+            step = step.copy(result = step.result.copy(
+                dishes = step.result.dishes.map { it.withReference(componentId, reference) },
+            )),
+            databaseSearch = null,
+        )
+        notify("已匹配：${reference.description}")
+    }
+
+    fun closeComponentSearch() {
+        _uiState.value = _uiState.value.copy(databaseSearch = null)
+    }
+
     fun updatePreset(updated: PresetFood) {
         _uiState.value = _uiState.value.copy(
             presets = _uiState.value.presets.map { if (it.id == updated.id) updated else it },
@@ -235,6 +296,7 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
             recognizing = false,
             manualNutrition = null,
             showPresetSheet = false,
+            databaseSearch = null,
         )
     }
 
@@ -561,4 +623,24 @@ private fun FoodComponent.withWeight(grams: Double): FoodComponent {
         weightMinG = (grams * minRatio).coerceAtMost(grams),
         weightMaxG = (grams * maxRatio).coerceAtLeast(grams),
     )
+}
+
+private fun RecognizedDish.withReference(
+    componentId: String,
+    reference: NutritionReference,
+): RecognizedDish = copy(
+    components = components.map { component ->
+        if (component.id == componentId) component.copy(nutritionReference = reference) else component
+    },
+    children = children.map { it.withReference(componentId, reference) },
+)
+
+private inline fun MutableStateFlow<AddFoodUiState>.updateDatabaseSearch(
+    componentId: String,
+    transform: (DatabaseSearchState) -> DatabaseSearchState,
+) {
+    val current = value.databaseSearch ?: return
+    if (current.componentId == componentId) {
+        value = value.copy(databaseSearch = transform(current))
+    }
 }

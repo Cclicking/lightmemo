@@ -58,6 +58,8 @@ data class AppSettings(
     val carbsRingColor: Long = 0xFF2F7D2B,
     val fatRingColor: Long = 0xFFFFB300,
     val topGradientBlurEnabled: Boolean = true,
+    /** 顶部渐变模糊覆盖范围，单位 dp。 */
+    val topGradientBlurRangeDp: Int = 72,
 ) {
     val activePreset: ApiPreset
         get() = apiPresets.firstOrNull { it.id == activePresetId }
@@ -151,6 +153,7 @@ class SettingsRepository(private val context: Context) {
         val CARBS_RING = longPreferencesKey("carbs_ring_color")
         val FAT_RING = longPreferencesKey("fat_ring_color")
         val TOP_GRADIENT_BLUR = booleanPreferencesKey("top_gradient_blur_enabled")
+        val TOP_GRADIENT_BLUR_RANGE = intPreferencesKey("top_gradient_blur_range_dp")
     }
 
     val settings: Flow<AppSettings> = context.settingsStore.data.map { prefs ->
@@ -185,6 +188,7 @@ class SettingsRepository(private val context: Context) {
             carbsRingColor = prefs[Keys.CARBS_RING] ?: 0xFF2F7D2B,
             fatRingColor = prefs[Keys.FAT_RING] ?: 0xFFFFB300,
             topGradientBlurEnabled = prefs[Keys.TOP_GRADIENT_BLUR] ?: true,
+            topGradientBlurRangeDp = (prefs[Keys.TOP_GRADIENT_BLUR_RANGE] ?: 72).coerceIn(0, 240),
         )
     }
 
@@ -357,5 +361,9 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun updateTopGradientBlurEnabled(value: Boolean) {
         context.settingsStore.edit { it[Keys.TOP_GRADIENT_BLUR] = value }
+    }
+
+    suspend fun updateTopGradientBlurRangeDp(value: Int) {
+        context.settingsStore.edit { it[Keys.TOP_GRADIENT_BLUR_RANGE] = value.coerceIn(0, 240) }
     }
 }

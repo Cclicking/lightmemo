@@ -129,8 +129,8 @@ fun MineHubScreen(
                         onClick = onApi,
                     )
                     ArrowPreference(
-                        title = "数据库设置",
-                        summary = "营养库与在线 API 连接情况",
+                        title = "食物数据库",
+                        summary = "浏览离线食物，点击查看营养素",
                         endActions = {
                             Text(
                                 text = if (settings.foodDataCentralApiKey.isNotBlank()) "在线已配置" else "离线优先",

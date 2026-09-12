@@ -36,6 +36,12 @@ class FoodDataCentralClient(
         val chinaAvailable: Boolean,
     )
 
+    enum class DatabaseSource {
+        ALL,
+        CHINA,
+        USDA,
+    }
+
     /** 仅探测离线资产是否存在，避免触发全库解析。 */
     fun offlineStatus(): OfflineDbStatus {
         return OfflineDbStatus(
@@ -62,16 +68,71 @@ class FoodDataCentralClient(
         if (normalized.isBlank()) return@withContext null
         val cacheKey = "lookup:$normalized"
         val resolved = memoryCache[cacheKey] ?: findUsdaLocal(normalized)
-            ?: apiKey.takeIf { it.isNotBlank() }?.let { search(normalized, it) }
+            ?: apiKey.takeIf { it.isNotBlank() }?.let { searchOnline(normalized, it, 8).firstOrNull() }
             ?: findChinaLocal(query, query)
         resolved?.also { memoryCache[cacheKey] = it }
+    }
+
+    /**
+     * Returns ranked matches for a component that the automatic enrichment could not resolve.
+     * Local data is always searched first; the optional USDA API is only used when configured.
+     */
+    suspend fun searchCandidates(
+        query: String,
+        apiKey: String,
+        limit: Int = 20,
+    ): List<NutritionReference> = withContext(Dispatchers.IO) {
+        val trimmed = query.trim()
+        if (trimmed.isBlank()) return@withContext emptyList()
+
+        val localUsda = findUsdaCandidates(trimmed, limit)
+        val localChina = findChinaCandidates(trimmed, trimmed, limit)
+        val online = apiKey.takeIf { it.isNotBlank() }
+            ?.let { searchOnline(trimmed, it, limit) }
+            .orEmpty()
+
+        (localChina + localUsda + online)
+            .distinctBy { "${it.dataType}:${it.sourceId}" }
+            .take(limit.coerceAtLeast(1))
+    }
+
+    /** Returns a lightweight, searchable view of the bundled offline database. */
+    suspend fun browseOffline(
+        query: String = "",
+        source: DatabaseSource = DatabaseSource.ALL,
+        limit: Int = 120,
+    ): List<NutritionReference> = withContext(Dispatchers.IO) {
+        val sourceItems = buildList {
+            if (source == DatabaseSource.ALL || source == DatabaseSource.CHINA) {
+                addAll(chinaFoods.map { it.reference })
+            }
+            if (source == DatabaseSource.ALL || source == DatabaseSource.USDA) {
+                addAll(usdaFoods.map { it.reference })
+            }
+        }
+        val normalized = query.trim()
+        if (normalized.isBlank()) {
+            sourceItems
+                .distinctBy { "${it.dataType}:${it.sourceId}" }
+                .take(limit.coerceAtLeast(1))
+        } else {
+            searchCandidates(normalized, "", limit)
+                .filter { candidate ->
+                    source == DatabaseSource.ALL || when (source) {
+                        DatabaseSource.CHINA -> candidate.dataType.contains("中国")
+                        DatabaseSource.USDA -> !candidate.dataType.contains("中国")
+                        DatabaseSource.ALL -> true
+                    }
+                }
+        }
     }
 
     private fun resolve(component: FoodComponent, apiKey: String): NutritionReference? {
         val key = "component:${component.databaseQuery.lowercase()}|${component.chinaDatabaseQuery}"
         val resolved = memoryCache[key]
             ?: findUsdaLocal(component.databaseQuery)
-            ?: apiKey.takeIf { it.isNotBlank() }?.let { search(component.databaseQuery, it) }
+            ?: apiKey.takeIf { it.isNotBlank() }
+                ?.let { searchOnline(component.databaseQuery, it, 8).firstOrNull() }
             ?: findChinaLocal(component.chinaDatabaseQuery, component.databaseQuery)
         return resolved?.also { memoryCache[key] = it }
     }
@@ -90,6 +151,20 @@ class FoodDataCentralClient(
             ?.first
             ?: return null
         return match.reference
+    }
+
+    private fun findUsdaCandidates(query: String, limit: Int): List<NutritionReference> {
+        val normalized = normalize(query)
+        val terms = normalized.split(' ').filter { it.length > 1 }.toSet()
+        if (terms.isEmpty()) return emptyList()
+        return usdaFoods.asSequence()
+            .map { food -> food to matchScore(normalized, terms, food.normalizedDescription) }
+            .filter { it.second >= 0.5 }
+            .sortedByDescending { it.second }
+            .map { it.first.reference }
+            .distinctBy { it.sourceId }
+            .take(limit)
+            .toList()
     }
 
     private fun preferredReference(terms: Set<String>): NutritionReference? {
@@ -131,6 +206,38 @@ class FoodDataCentralClient(
             .filter { it.second >= 0.75 }
             .maxByOrNull { it.second }
             ?.first?.reference
+    }
+
+    private fun findChinaCandidates(
+        chineseQuery: String,
+        englishQuery: String,
+        limit: Int,
+    ): List<NutritionReference> {
+        val chinese = normalizeChinese(chineseQuery)
+        if (chinese.isNotBlank()) {
+            val chineseMatches = chinaFoods.asSequence()
+                .map { food -> food to chineseScore(chinese, food.normalizedChineseName) }
+                .filter { it.second >= 0.25 }
+                .sortedByDescending { it.second }
+                .map { it.first.reference }
+                .distinctBy { it.sourceId }
+                .take(limit)
+                .toList()
+            if (chineseMatches.isNotEmpty()) return chineseMatches
+        }
+
+        val english = normalize(englishQuery)
+        val terms = english.split(' ').filter { it.length > 1 }.toSet()
+        if (terms.isEmpty()) return emptyList()
+        return chinaFoods.asSequence()
+            .filter { it.normalizedEnglishName.isNotBlank() }
+            .map { food -> food to matchScore(english, terms, food.normalizedEnglishName) }
+            .filter { it.second >= 0.5 }
+            .sortedByDescending { it.second }
+            .map { it.first.reference }
+            .distinctBy { it.sourceId }
+            .take(limit)
+            .toList()
     }
 
     private fun chineseScore(query: String, candidate: String): Double {
@@ -205,10 +312,10 @@ class FoodDataCentralClient(
         GZIPInputStream(context.assets.open("$baseName.gz"))
     }
 
-    private fun search(query: String, apiKey: String): NutritionReference? {
+    private fun searchOnline(query: String, apiKey: String, limit: Int): List<NutritionReference> {
         val body = json.encodeToString(
             SearchRequest.serializer(),
-            SearchRequest(query = query),
+            SearchRequest(query = query, pageSize = limit.coerceIn(1, 50)),
         )
         val request = Request.Builder()
             .url("https://api.nal.usda.gov/fdc/v1/foods/search?api_key=$apiKey")
@@ -221,7 +328,7 @@ class FoodDataCentralClient(
             val result = json.decodeFromString<SearchResponse>(response.body?.string().orEmpty())
             return result.foods.asSequence()
                 .mapNotNull { it.toReferenceOrNull() }
-                .firstOrNull()
+                .toList()
         }
     }
 }

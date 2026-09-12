@@ -69,9 +69,13 @@ import com.foodcalorie.app.domain.FoodComponent
 import com.foodcalorie.app.domain.MealRecognition
 import com.foodcalorie.app.domain.RecognizedDish
 import com.foodcalorie.app.ui.basic.SharedScrollBehavior as ScrollBehavior
+import com.foodcalorie.app.ui.components.AnimatedOverlayDialog
+import com.foodcalorie.app.ui.components.DropdownPref
+import com.foodcalorie.app.ui.overlay.BlurBottomSheet
 import com.foodcalorie.app.ui.utils.overScrollVertical
 import com.foodcalorie.app.viewmodel.AddFoodViewModel
 import com.foodcalorie.app.viewmodel.AddStep
+import com.foodcalorie.app.viewmodel.DatabaseSearchState
 import com.foodcalorie.app.viewmodel.DefaultMealTags
 import com.foodcalorie.app.viewmodel.PresetFood
 import com.foodcalorie.app.viewmodel.QuantityMode
@@ -100,9 +104,7 @@ import top.yukonga.miuix.kmp.icon.os4.Edit
 import top.yukonga.miuix.kmp.icon.os4.FavoritesFill
 import top.yukonga.miuix.kmp.icon.os4.Image
 import top.yukonga.miuix.kmp.icon.os4.Photos
-import top.yukonga.miuix.kmp.overlay.OverlayDialog
 import top.yukonga.miuix.kmp.preference.ArrowPreference
-import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
 import top.yukonga.miuix.kmp.theme.LocalContentColor
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.utils.PressFeedbackType
@@ -185,28 +187,25 @@ fun AddFoodRoute(
     }
 
     // 预设弹层
-    if (state.showPresetSheet) {
-        PresetOverlay(
-            presets = state.presets,
-            onDismiss = viewModel::closePresetSheet,
-            onSelect = viewModel::applyPreset,
-            onUpdate = viewModel::updatePreset,
-        )
-    }
+    PresetOverlay(
+        show = state.showPresetSheet,
+        presets = state.presets,
+        onDismiss = viewModel::closePresetSheet,
+        onSelect = viewModel::applyPreset,
+        onUpdate = viewModel::updatePreset,
+    )
+
+    DatabaseMatchOverlay(
+        searchState = state.databaseSearch,
+        onDismiss = viewModel::closeComponentSearch,
+        onSearch = viewModel::searchComponentDatabase,
+        onSelect = viewModel::selectComponentReference,
+    )
 
     Box(modifier = Modifier.fillMaxWidth()) {
         AnimatedContent(
             targetState = state.step,
-            transitionSpec = {
-                val isLeavingToRoot = targetState is AddStep.PickSource
-                if (isLeavingToRoot) {
-                    (slideInVertically { -it / 3 } + fadeIn()) togetherWith
-                        (slideOutVertically { it } + fadeOut())
-                } else {
-                    (slideInVertically { it } + fadeIn()) togetherWith
-                        (slideOutVertically { -it / 4 } + fadeOut())
-                }
-            },
+            transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(120)) },
             label = "addFoodStep",
         ) { step ->
             when (step) {
@@ -275,6 +274,7 @@ fun AddFoodRoute(
                     onWeightChange = viewModel::updateComponentWeight,
                     onRemoveComponent = viewModel::removeComponent,
                     onRemoveDish = viewModel::removeDish,
+                    onDatabaseSearch = viewModel::openComponentSearch,
                     onSave = {
                         viewModel.saveRecognized(step.result, step.imageUri)
                         onDone()
@@ -314,26 +314,24 @@ private fun PickSourceContent(
     var showDatePicker by remember { mutableStateOf(false) }
     var showTimePicker by remember { mutableStateOf(false) }
 
-    if (showDatePicker) {
-        MealDatePickerOverlay(
-            date = LocalDate.ofEpochDay(targetDateEpochDay),
-            onDismiss = { showDatePicker = false },
-            onConfirm = {
-                onDateChange(it)
-                showDatePicker = false
-            },
-        )
-    }
-    if (showTimePicker) {
-        MealTimePickerOverlay(
-            minuteOfDay = minuteOfDay,
-            onDismiss = { showTimePicker = false },
-            onConfirm = {
-                onMinuteChange(it)
-                showTimePicker = false
-            },
-        )
-    }
+    MealDatePickerOverlay(
+        show = showDatePicker,
+        date = LocalDate.ofEpochDay(targetDateEpochDay),
+        onDismiss = { showDatePicker = false },
+        onConfirm = {
+            onDateChange(it)
+            showDatePicker = false
+        },
+    )
+    MealTimePickerOverlay(
+        show = showTimePicker,
+        minuteOfDay = minuteOfDay,
+        onDismiss = { showTimePicker = false },
+        onConfirm = {
+            onMinuteChange(it)
+            showTimePicker = false
+        },
+    )
 
     Column(
         modifier = Modifier
@@ -692,7 +690,7 @@ private fun ManualEntryContent(
             insideMargin = PaddingValues(0.dp),
         ) {
             Column {
-                OverlayDropdownPreference(
+                DropdownPref(
                     title = "计量方式",
                     summary = if (quantityMode == QuantityMode.GRAMS) "按克重录入" else "用大模型估计重量",
                     items = QuantityMode.entries.map { it.label },
@@ -818,31 +816,29 @@ private fun ManualEntryContent(
         }
     }
 
-    if (showGramsDialog) {
-        NumberInputDialog(
-            title = "克数",
-            summary = "输入可食用重量",
-            initial = grams,
-            onDismiss = { showGramsDialog = false },
-            onConfirm = { value ->
-                grams = value
-                showGramsDialog = false
-            },
-        )
-    }
-    if (showPortionDialog) {
-        NumberInputDialog(
-            title = "份数",
-            summary = "例如 1 碗、2 份",
-            initial = portionCount.formatInput(),
-            allowDecimal = true,
-            onDismiss = { showPortionDialog = false },
-            onConfirm = { value ->
-                value.toDoubleOrNull()?.let(onPortionCountChange)
-                showPortionDialog = false
-            },
-        )
-    }
+    NumberInputDialog(
+        show = showGramsDialog,
+        title = "克数",
+        summary = "输入可食用重量",
+        initial = grams,
+        onDismiss = { showGramsDialog = false },
+        onConfirm = { value ->
+            grams = value
+            showGramsDialog = false
+        },
+    )
+    NumberInputDialog(
+        show = showPortionDialog,
+        title = "份数",
+        summary = "例如 1 碗、2 份",
+        initial = portionCount.formatInput(),
+        allowDecimal = true,
+        onDismiss = { showPortionDialog = false },
+        onConfirm = { value ->
+            value.toDoubleOrNull()?.let(onPortionCountChange)
+            showPortionDialog = false
+        },
+    )
 }
 
 @Composable
@@ -863,21 +859,21 @@ private fun NutritionArrowRow(
         },
         onClick = { showDialog = true },
     )
-    if (showDialog) {
-        NumberInputDialog(
-            title = title,
-            initial = value,
-            onDismiss = { showDialog = false },
-            onConfirm = { draft ->
-                onValueChange(draft)
-                showDialog = false
-            },
-        )
-    }
+    NumberInputDialog(
+        show = showDialog,
+        title = title,
+        initial = value,
+        onDismiss = { showDialog = false },
+        onConfirm = { draft ->
+            onValueChange(draft)
+            showDialog = false
+        },
+    )
 }
 
 @Composable
 private fun NumberInputDialog(
+    show: Boolean,
     title: String,
     summary: String? = null,
     initial: String,
@@ -886,10 +882,10 @@ private fun NumberInputDialog(
     onConfirm: (String) -> Unit,
 ) {
     var draft by remember { mutableStateOf(initial) }
-    OverlayDialog(
+    AnimatedOverlayDialog(
         title = title,
         summary = summary,
-        show = true,
+        show = show,
         onDismissRequest = onDismiss,
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -925,6 +921,7 @@ private fun NumberInputDialog(
 
 @Composable
 private fun MealDatePickerOverlay(
+    show: Boolean,
     date: LocalDate,
     onDismiss: () -> Unit,
     onConfirm: (LocalDate) -> Unit,
@@ -935,7 +932,7 @@ private fun MealDatePickerOverlay(
     val maxDay = java.time.YearMonth.of(year, month).lengthOfMonth()
     LaunchedEffect(maxDay) { if (day > maxDay) day = maxDay }
 
-    OverlayDialog(show = true, title = "选择日期", onDismissRequest = onDismiss) {
+    AnimatedOverlayDialog(show = show, title = "选择日期", onDismissRequest = onDismiss) {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(modifier = Modifier.fillMaxWidth()) {
                 NumberPicker(
@@ -983,6 +980,7 @@ private fun MealDatePickerOverlay(
 
 @Composable
 private fun MealTimePickerOverlay(
+    show: Boolean,
     minuteOfDay: Int,
     onDismiss: () -> Unit,
     onConfirm: (Int) -> Unit,
@@ -990,7 +988,7 @@ private fun MealTimePickerOverlay(
     var hour by remember(minuteOfDay) { mutableStateOf(minuteOfDay / 60) }
     var minute by remember(minuteOfDay) { mutableStateOf(minuteOfDay % 60) }
 
-    OverlayDialog(show = true, title = "选择时间", onDismissRequest = onDismiss) {
+    AnimatedOverlayDialog(show = show, title = "选择时间", onDismissRequest = onDismiss) {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(modifier = Modifier.fillMaxWidth()) {
                 NumberPicker(
@@ -1030,16 +1028,25 @@ private fun MealTimePickerOverlay(
 
 @Composable
 private fun PresetOverlay(
+    show: Boolean,
     presets: List<PresetFood>,
     onDismiss: () -> Unit,
     onSelect: (PresetFood) -> Unit,
     onUpdate: (PresetFood) -> Unit,
 ) {
     var editing by remember { mutableStateOf<PresetFood?>(null) }
-
-    OverlayDialog(show = true, title = "预设食物", summary = "点击录入，点编辑可改热量与营养", onDismissRequest = onDismiss) {
+    BlurBottomSheet(
+        show = show,
+        title = "预设食物",
+        dimBackground = true,
+        sheetOffsetDp = 0.dp,
+        onDismissRequest = onDismiss,
+    ) {
         LazyColumn(
-            modifier = Modifier.height(360.dp),
+            modifier = Modifier
+                .heightIn(min = 220.dp, max = 500.dp)
+                .navigationBarsPadding()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             items(presets, key = { it.id }) { preset ->
@@ -1085,36 +1092,43 @@ private fun PresetOverlay(
         }
     }
 
-    editing?.let { preset ->
-        PresetEditDialog(
-            preset = preset,
-            onDismiss = { editing = null },
-            onSave = { updated ->
-                onUpdate(updated)
-                editing = null
-            },
-        )
-    }
+    PresetEditDialog(
+        show = editing != null,
+        preset = editing,
+        onDismiss = { editing = null },
+        onSave = { updated ->
+            onUpdate(updated)
+            editing = null
+        },
+    )
 }
 
 @Composable
 private fun PresetEditDialog(
-    preset: PresetFood,
+    show: Boolean,
+    preset: PresetFood?,
     onDismiss: () -> Unit,
     onSave: (PresetFood) -> Unit,
 ) {
-    var name by remember(preset.id) { mutableStateOf(preset.name) }
-    var grams by remember(preset.id) { mutableStateOf(preset.defaultGrams.formatInput()) }
-    var kcal by remember(preset.id) { mutableStateOf(preset.nutrition?.caloriesKcal?.formatInput() ?: "") }
-    var protein by remember(preset.id) { mutableStateOf(preset.nutrition?.proteinG?.formatInput() ?: "") }
-    var carbs by remember(preset.id) { mutableStateOf(preset.nutrition?.carbsG?.formatInput() ?: "") }
-    var fat by remember(preset.id) { mutableStateOf(preset.nutrition?.fatG?.formatInput() ?: "") }
+    var displayedPreset by remember { mutableStateOf<PresetFood?>(null) }
+    LaunchedEffect(preset) {
+        if (preset != null) displayedPreset = preset
+    }
+    val currentPreset = displayedPreset
+    if (currentPreset == null) return
+    var name by remember(currentPreset.id) { mutableStateOf(currentPreset.name) }
+    var grams by remember(currentPreset.id) { mutableStateOf(currentPreset.defaultGrams.formatInput()) }
+    var kcal by remember(currentPreset.id) { mutableStateOf(currentPreset.nutrition?.caloriesKcal?.formatInput() ?: "") }
+    var protein by remember(currentPreset.id) { mutableStateOf(currentPreset.nutrition?.proteinG?.formatInput() ?: "") }
+    var carbs by remember(currentPreset.id) { mutableStateOf(currentPreset.nutrition?.carbsG?.formatInput() ?: "") }
+    var fat by remember(currentPreset.id) { mutableStateOf(currentPreset.nutrition?.fatG?.formatInput() ?: "") }
 
-    OverlayDialog(
+    AnimatedOverlayDialog(
         title = "编辑预设",
         summary = "修改名称、默认克重与营养数据",
-        show = true,
+        show = show,
         onDismissRequest = onDismiss,
+        onDismissFinished = { if (!show) displayedPreset = null },
     ) {
         Column(
             modifier = Modifier
@@ -1179,9 +1193,9 @@ private fun PresetEditDialog(
                 Button(
                     onClick = {
                         onSave(
-                            preset.copy(
-                                name = name.trim().ifBlank { preset.name },
-                                defaultGrams = grams.toDoubleOrNull()?.takeIf { it > 0.0 } ?: preset.defaultGrams,
+                            currentPreset.copy(
+                                name = name.trim().ifBlank { currentPreset.name },
+                                defaultGrams = grams.toDoubleOrNull()?.takeIf { it > 0.0 } ?: currentPreset.defaultGrams,
                                 nutrition = Nutrition(
                                     caloriesKcal = kcal.toDoubleOrNull() ?: 0.0,
                                     proteinG = protein.toDoubleOrNull() ?: 0.0,
@@ -1211,6 +1225,7 @@ private fun ReviewContent(
     onWeightChange: (String, Double) -> Unit,
     onRemoveComponent: (String) -> Unit,
     onRemoveDish: (String) -> Unit,
+    onDatabaseSearch: (FoodComponent) -> Unit,
     onSave: () -> Unit,
     listState: LazyListState,
 ) {
@@ -1285,6 +1300,7 @@ private fun ReviewContent(
                 onWeightChange = onWeightChange,
                 onRemoveComponent = onRemoveComponent,
                 onRemoveDish = onRemoveDish,
+                onDatabaseSearch = onDatabaseSearch,
             )
         }
 
@@ -1355,6 +1371,7 @@ private fun DishResultCard(
     onWeightChange: (String, Double) -> Unit,
     onRemoveComponent: (String) -> Unit,
     onRemoveDish: (String) -> Unit,
+    onDatabaseSearch: (FoodComponent) -> Unit,
 ) {
     var expanded by remember(dish.id) { mutableStateOf(true) }
     // ArrowRight 默认向右；展开时逆时针 90°（向上），收起再转 180°（向下）
@@ -1426,6 +1443,7 @@ private fun DishResultCard(
                             component = component,
                             onWeightChange = onWeightChange,
                             onRemove = onRemoveComponent,
+                            onMatch = onDatabaseSearch,
                         )
                     }
                     dish.children.forEach { child ->
@@ -1443,6 +1461,7 @@ private fun DishResultCard(
                                 component = component,
                                 onWeightChange = onWeightChange,
                                 onRemove = onRemoveComponent,
+                                onMatch = onDatabaseSearch,
                             )
                         }
                     }
@@ -1465,6 +1484,7 @@ private fun ComponentResultRow(
     component: FoodComponent,
     onWeightChange: (String, Double) -> Unit,
     onRemove: (String) -> Unit,
+    onMatch: (FoodComponent) -> Unit,
 ) {
     var input by remember(component.id) { mutableStateOf(component.estimatedWeightG.formatInput()) }
     var showEdit by remember { mutableStateOf(false) }
@@ -1487,6 +1507,14 @@ private fun ComponentResultRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+            if (ref == null) {
+                Text(
+                    text = "手动匹配数据库",
+                    style = MiuixTheme.textStyles.footnote1,
+                    color = MiuixTheme.colorScheme.primary,
+                    modifier = Modifier.clickable { onMatch(component) },
+                )
+            }
         }
 
         // 克重
@@ -1519,18 +1547,110 @@ private fun ComponentResultRow(
         )
     }
 
-    if (showEdit) {
-        NumberInputDialog(
-            title = component.name,
-            summary = "修改克重",
-            initial = input,
-            onDismiss = { showEdit = false },
-            onConfirm = { draft ->
-                input = draft
-                draft.toDoubleOrNull()?.let { onWeightChange(component.id, it) }
-                showEdit = false
-            },
-        )
+    NumberInputDialog(
+        show = showEdit,
+        title = component.name,
+        summary = "修改克重",
+        initial = input,
+        onDismiss = { showEdit = false },
+        onConfirm = { draft ->
+            input = draft
+            draft.toDoubleOrNull()?.let { onWeightChange(component.id, it) }
+            showEdit = false
+        },
+    )
+}
+
+@Composable
+private fun DatabaseMatchOverlay(
+    searchState: DatabaseSearchState?,
+    onDismiss: () -> Unit,
+    onSearch: (String, String) -> Unit,
+    onSelect: (String, com.foodcalorie.app.domain.NutritionReference) -> Unit,
+) {
+    var displayedState by remember { mutableStateOf<DatabaseSearchState?>(null) }
+    LaunchedEffect(searchState) {
+        if (searchState != null) displayedState = searchState
+    }
+    var query by remember(displayedState?.componentId) {
+        mutableStateOf(displayedState?.query.orEmpty())
+    }
+
+    val current = displayedState
+    if (current != null) {
+        AnimatedOverlayDialog(
+            show = searchState != null,
+            title = "手动匹配数据库",
+            summary = "选择正确的食物后会立即回填营养数据",
+            onDismissRequest = onDismiss,
+            onDismissFinished = { displayedState = null },
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                TextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    label = "搜索食物名称",
+                    singleLine = true,
+                    colors = sheetFieldColors(),
+                    modifier = Modifier.fillMaxWidth(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
+                )
+                Button(
+                    onClick = { onSearch(current.componentId, query) },
+                    enabled = !current.loading && query.isNotBlank(),
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColorsPrimary(),
+                ) {
+                    Text(if (current.loading) "查询中…" else "查询数据库")
+                }
+                if (current.loading) {
+                    LinearProgressIndicator(progress = null, modifier = Modifier.fillMaxWidth())
+                }
+                current.error?.let {
+                    Text(
+                        text = it,
+                        style = MiuixTheme.textStyles.footnote2,
+                        color = MiuixTheme.colorScheme.error,
+                    )
+                }
+                LazyColumn(
+                    modifier = Modifier.heightIn(max = 320.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    items(current.results, key = { "${it.dataType}:${it.sourceId}" }) { reference ->
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            cornerRadius = 14.dp,
+                            insideMargin = PaddingValues(12.dp),
+                            onClick = { onSelect(current.componentId, reference) },
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(reference.description, style = MiuixTheme.textStyles.body1)
+                                    Text(
+                                        text = "每 100g · ${reference.dataType}",
+                                        style = MiuixTheme.textStyles.footnote2,
+                                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    text = "${reference.per100g.caloriesKcal.toInt()} kcal",
+                                    style = MiuixTheme.textStyles.title4,
+                                    fontWeight = FontWeight.SemiBold,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
