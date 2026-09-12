@@ -109,6 +109,60 @@ class FoodRecognitionClient(
         parseChatCompletion(raw)
     }
 
+    suspend fun recognizeText(
+        baseUrl: String,
+        apiKey: String,
+        model: String,
+        foodName: String,
+        grams: Double,
+    ): RecognizedFood = withContext(Dispatchers.IO) {
+        if (baseUrl.isBlank() || apiKey.isBlank()) {
+            throw RecognitionException("请先在设置中填写 API Base URL 与 API Key")
+        }
+        if (foodName.isBlank()) {
+            throw RecognitionException("请输入食物名称")
+        }
+
+        val amount = grams.takeIf { it > 0.0 } ?: 100.0
+        val prompt = """
+            你是营养分析助手。请根据食物名称和摄入克数，估算这一份食物的营养。
+            食物名称：$foodName
+            摄入克数：${amount.formatForPrompt()} 克
+            只输出 JSON，不要 markdown，格式：
+            {"items":[{"name":"食物名","grams":${amount.formatForPrompt()},"caloriesKcal":200.0,"proteinG":10.0,"carbsG":20.0,"fatG":5.0}]}
+            caloriesKcal 为这${amount.formatForPrompt()}克的热量，单位 kcal；蛋白质/碳水/脂肪为这份食物的含量，单位 g。
+            只能返回一个 items 元素；无法判断时也要给出合理估算，不要返回空数组。
+        """.trimIndent()
+        val bodyObj = ChatRequest(
+            model = model.ifBlank { "gpt-4o-mini" },
+            messages = listOf(
+                ChatMessage(
+                    role = "system",
+                    content = listOf(ContentPart(type = "text", text = "You output strict JSON only.")),
+                ),
+                ChatMessage(
+                    role = "user",
+                    content = listOf(ContentPart(type = "text", text = prompt)),
+                ),
+            ),
+        )
+        val bodyText = json.encodeToString(ChatRequest.serializer(), bodyObj)
+        val request = Request.Builder()
+            .url(baseUrl.trimEnd('/') + "/chat/completions")
+            .addHeader("Authorization", "Bearer $apiKey")
+            .addHeader("Content-Type", "application/json")
+            .post(bodyText.toRequestBody("application/json".toMediaType()))
+            .build()
+
+        val response = httpClient.newCall(request).execute()
+        val raw = response.body?.string().orEmpty()
+        if (!response.isSuccessful) {
+            throw RecognitionException("识别失败 HTTP ${response.code}: ${raw.take(200)}")
+        }
+        parseChatCompletion(raw).firstOrNull()
+            ?: throw RecognitionException("无法识别该食物，请检查名称后重试")
+    }
+
     internal fun parseChatCompletion(raw: String): List<RecognizedFood> {
         return try {
             val root = json.parseToJsonElement(raw).jsonObject
@@ -158,4 +212,7 @@ class FoodRecognitionClient(
         }
         return trimmed.substring(start, end + 1)
     }
+
+    private fun Double.formatForPrompt(): String =
+        if (this % 1.0 == 0.0) toInt().toString() else this.toString()
 }

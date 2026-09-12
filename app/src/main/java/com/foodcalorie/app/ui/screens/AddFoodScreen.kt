@@ -6,16 +6,12 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -26,14 +22,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -59,7 +54,8 @@ import top.yukonga.miuix.kmp.icon.os4.Edit
 import top.yukonga.miuix.kmp.icon.os4.Image
 import top.yukonga.miuix.kmp.icon.os4.Photos
 import top.yukonga.miuix.kmp.theme.MiuixTheme
-import top.yukonga.miuix.kmp.utils.overScrollVertical
+
+private val AddFoodSheetHeight = 640.dp
 
 @Composable
 fun AddFoodRoute(
@@ -127,11 +123,12 @@ fun AddFoodRoute(
         }
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    Box(modifier = Modifier.fillMaxWidth()) {
         when (val step = state.step) {
             is AddStep.PickSource -> PickSourceContent(
                 padding = contentPadding,
                 configured = settings.isRecognitionConfigured,
+                recognizing = state.recognizing,
                 mealType = state.mealType,
                 onMealType = viewModel::setMealType,
                 error = state.error,
@@ -154,6 +151,11 @@ fun AddFoodRoute(
                 padding = contentPadding,
                 mealType = state.mealType,
                 onMealType = viewModel::setMealType,
+                configured = settings.isRecognitionConfigured,
+                recognizing = state.recognizing,
+                nutritionSuggestion = state.manualNutrition,
+                error = state.error,
+                onRecognize = viewModel::recognizeManual,
                 onSave = { name, grams, nutrition ->
                     viewModel.saveManual(name, grams, nutrition)
                     onDone()
@@ -176,31 +178,6 @@ fun AddFoodRoute(
             )
         }
 
-        if (state.recognizing) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.35f))
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        onClick = {},
-                    ),
-                contentAlignment = Alignment.Center,
-            ) {
-                Card(modifier = Modifier.padding(24.dp), insideMargin = PaddingValues(24.dp)) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("正在识别食物...", style = MiuixTheme.textStyles.title3)
-                        Spacer(Modifier.height(8.dp))
-                        Text(
-                            text = "图片将发送到你配置的视觉 API",
-                            style = MiuixTheme.textStyles.subtitle,
-                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                        )
-                    }
-                }
-            }
-        }
     }
 }
 
@@ -208,6 +185,7 @@ fun AddFoodRoute(
 private fun PickSourceContent(
     padding: PaddingValues,
     configured: Boolean,
+    recognizing: Boolean,
     mealType: MealType,
     onMealType: (MealType) -> Unit,
     error: String?,
@@ -220,13 +198,13 @@ private fun PickSourceContent(
     val connection = scrollBehavior?.nestedScrollConnection
     Column(
         modifier = Modifier
-            .fillMaxSize()
-            .overScrollVertical()
+            .fillMaxWidth()
             .then(if (connection != null) Modifier.nestedScroll(connection) else Modifier)
             .verticalScroll(rememberScrollState())
+            .height(AddFoodSheetHeight)
             .padding(
-                start = 16.dp,
-                end = 16.dp,
+                start = 12.dp,
+                end = 12.dp,
                 top = padding.calculateTopPadding() + 8.dp,
                 bottom = padding.calculateBottomPadding() + 12.dp,
             ),
@@ -258,7 +236,7 @@ private fun PickSourceContent(
 
         Button(
             onClick = onCamera,
-            enabled = configured,
+            enabled = configured && !recognizing,
             modifier = Modifier.fillMaxWidth(),
         ) {
             Icon(MiuixIcons.Os4.Image, contentDescription = null)
@@ -268,7 +246,7 @@ private fun PickSourceContent(
 
         Button(
             onClick = onGallery,
-            enabled = configured,
+            enabled = configured && !recognizing,
             modifier = Modifier.fillMaxWidth(),
         ) {
             Icon(MiuixIcons.Os4.Photos, contentDescription = null)
@@ -278,6 +256,7 @@ private fun PickSourceContent(
 
         Button(
             onClick = onManual,
+            enabled = !recognizing,
             modifier = Modifier.fillMaxWidth(),
         ) {
             Icon(MiuixIcons.Os4.Edit, contentDescription = null)
@@ -300,26 +279,40 @@ private fun ManualEntryContent(
     padding: PaddingValues,
     mealType: MealType,
     onMealType: (MealType) -> Unit,
+    configured: Boolean,
+    recognizing: Boolean,
+    nutritionSuggestion: Nutrition?,
+    error: String?,
+    onRecognize: (String, Double) -> Unit,
     onSave: (String, Double, Nutrition) -> Unit,
     scrollBehavior: ScrollBehavior?,
 ) {
     var name by remember { mutableStateOf("") }
-    var grams by remember { mutableStateOf("") }
+    var grams by remember { mutableStateOf("100") }
     var kcal by remember { mutableStateOf("") }
     var protein by remember { mutableStateOf("") }
     var carbs by remember { mutableStateOf("") }
     var fat by remember { mutableStateOf("") }
     val connection = scrollBehavior?.nestedScrollConnection
 
+    LaunchedEffect(nutritionSuggestion) {
+        nutritionSuggestion?.let { nutrition ->
+            kcal = nutrition.caloriesKcal.formatInput()
+            protein = nutrition.proteinG.formatInput()
+            carbs = nutrition.carbsG.formatInput()
+            fat = nutrition.fatG.formatInput()
+        }
+    }
+
     Column(
         modifier = Modifier
-            .fillMaxSize()
-            .overScrollVertical()
+            .fillMaxWidth()
             .then(if (connection != null) Modifier.nestedScroll(connection) else Modifier)
             .verticalScroll(rememberScrollState())
+            .height(AddFoodSheetHeight)
             .padding(
-                start = 16.dp,
-                end = 16.dp,
+                start = 12.dp,
+                end = 12.dp,
                 top = padding.calculateTopPadding() + 8.dp,
                 bottom = padding.calculateBottomPadding() + 12.dp,
             ),
@@ -336,11 +329,35 @@ private fun ManualEntryContent(
         TextField(
             value = grams,
             onValueChange = { grams = it },
-            label = "克数",
+            label = "克数（默认 100g）",
             singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
             modifier = Modifier.fillMaxWidth(),
         )
+        Button(
+            onClick = {
+                val amount = grams.toDoubleOrNull()?.takeIf { it > 0.0 } ?: 100.0
+                onRecognize(name, amount)
+            },
+            enabled = configured && !recognizing && name.isNotBlank(),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(if (recognizing) "正在识别营养..." else "自动识别热量与营养")
+        }
+        if (!configured) {
+            Text(
+                text = "自动识别需要先在「我的 → 识别 API」配置服务；也可以继续手动填写。",
+                style = MiuixTheme.textStyles.subtitle,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+            )
+        }
+        if (error != null) {
+            Text(
+                text = error,
+                color = MiuixTheme.colorScheme.error,
+                style = MiuixTheme.textStyles.subtitle,
+            )
+        }
         TextField(
             value = kcal,
             onValueChange = { kcal = it },
@@ -379,7 +396,7 @@ private fun ManualEntryContent(
                 if (n.isEmpty()) return@Button
                 onSave(
                     n,
-                    grams.toDoubleOrNull() ?: 0.0,
+                    grams.toDoubleOrNull()?.takeIf { it > 0.0 } ?: 100.0,
                     Nutrition(
                         caloriesKcal = kcal.toDoubleOrNull() ?: 0.0,
                         proteinG = protein.toDoubleOrNull() ?: 0.0,
@@ -395,6 +412,9 @@ private fun ManualEntryContent(
         }
     }
 }
+
+private fun Double.formatInput(): String =
+    if (this % 1.0 == 0.0) toInt().toString() else "%.1f".format(this)
 
 @Composable
 private fun ReviewContent(
@@ -412,13 +432,13 @@ private fun ReviewContent(
 
     LazyColumn(
         modifier = Modifier
-            .fillMaxSize()
-            .overScrollVertical()
-            .then(if (connection != null) Modifier.nestedScroll(connection) else Modifier),
+            .fillMaxWidth()
+            .then(if (connection != null) Modifier.nestedScroll(connection) else Modifier)
+            .height(AddFoodSheetHeight),
         state = listState,
         contentPadding = PaddingValues(
-            start = 16.dp,
-            end = 16.dp,
+            start = 12.dp,
+            end = 12.dp,
             top = padding.calculateTopPadding() + 8.dp,
             bottom = padding.calculateBottomPadding() + 12.dp,
         ),

@@ -15,11 +15,13 @@ import com.foodcalorie.app.domain.RecognizedFood
 import com.foodcalorie.app.network.RecognitionException
 import java.io.ByteArrayOutputStream
 import java.time.LocalDate
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -39,6 +41,7 @@ data class AddFoodUiState(
     val recognizing: Boolean = false,
     val error: String? = null,
     val mealType: MealType = defaultMealType(),
+    val manualNutrition: Nutrition? = null,
 )
 
 fun defaultMealType(): MealType {
@@ -66,26 +69,83 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
         com.foodcalorie.app.data.AppSettings(),
     )
 
+    private val eventChannel = Channel<String>(Channel.BUFFERED)
+    val events = eventChannel.receiveAsFlow()
+
+    private fun notify(message: String) {
+        eventChannel.trySend(message)
+    }
+
     fun setMealType(type: MealType) {
         _uiState.value = _uiState.value.copy(mealType = type)
     }
 
     fun openManual() {
-        _uiState.value = _uiState.value.copy(step = AddStep.Manual, error = null)
+        _uiState.value = _uiState.value.copy(
+            step = AddStep.Manual,
+            error = null,
+            manualNutrition = null,
+        )
     }
 
     fun backToPick() {
-        _uiState.value = _uiState.value.copy(step = AddStep.PickSource, error = null, recognizing = false)
+        _uiState.value = _uiState.value.copy(
+            step = AddStep.PickSource,
+            error = null,
+            recognizing = false,
+            manualNutrition = null,
+        )
+    }
+
+    fun recognizeManual(name: String, grams: Double) {
+        val trimmedName = name.trim()
+        if (trimmedName.isEmpty()) {
+            notify("请输入食物名称")
+            _uiState.value = _uiState.value.copy(error = "请输入食物名称")
+            return
+        }
+        viewModelScope.launch {
+            val current = settings.value
+            if (!current.isRecognitionConfigured) {
+                notify("请先在设置中配置 API Key 与 Base URL")
+                _uiState.value = _uiState.value.copy(error = "请先在设置中配置 API Key 与 Base URL")
+                return@launch
+            }
+            _uiState.value = _uiState.value.copy(recognizing = true, error = null)
+            notify("已开始识别营养，完成后自动回填")
+            try {
+                val item = client.recognizeText(
+                    baseUrl = current.baseUrl,
+                    apiKey = current.apiKey,
+                    model = current.model,
+                    foodName = trimmedName,
+                    grams = grams,
+                )
+                _uiState.value = _uiState.value.copy(
+                    recognizing = false,
+                    manualNutrition = item.nutrition,
+                )
+                notify("营养识别完成，已自动回填")
+            } catch (e: RecognitionException) {
+                notify(e.message ?: "识别失败")
+                _uiState.value = _uiState.value.copy(recognizing = false, error = e.message)
+            } catch (e: Exception) {
+                notify(e.message ?: "识别失败")
+                _uiState.value = _uiState.value.copy(recognizing = false, error = e.message ?: "识别失败")
+            }
+        }
     }
 
     fun recognizeFromUri(uri: Uri) {
         viewModelScope.launch {
             val current = settings.value
             if (!current.isRecognitionConfigured) {
+                notify("请先在设置中配置 API Key 与 Base URL")
                 _uiState.value = _uiState.value.copy(error = "请先在设置中配置 API Key 与 Base URL")
                 return@launch
             }
             _uiState.value = _uiState.value.copy(recognizing = true, error = null, step = AddStep.PickSource)
+            notify("已开始识别食物，结果将在后台返回")
             try {
                 val base64 = withContext(Dispatchers.IO) { encodeImage(uri) }
                 val items = client.recognize(
@@ -99,9 +159,12 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
                     recognizing = false,
                     step = AddStep.Review(imageUri = uri.toString(), items = items),
                 )
+                notify("食物识别完成，请确认结果")
             } catch (e: RecognitionException) {
+                notify(e.message ?: "识别失败")
                 _uiState.value = _uiState.value.copy(recognizing = false, error = e.message)
             } catch (e: Exception) {
+                notify(e.message ?: "识别失败")
                 _uiState.value = _uiState.value.copy(recognizing = false, error = e.message ?: "识别失败")
             }
         }
@@ -119,6 +182,7 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
                 ),
             )
             _uiState.value = _uiState.value.copy(step = AddStep.PickSource, error = null)
+            notify("食物已保存")
         }
     }
 
@@ -139,6 +203,7 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
                 )
             }
             _uiState.value = _uiState.value.copy(step = AddStep.PickSource, error = null)
+            notify("食物已保存")
         }
     }
 
