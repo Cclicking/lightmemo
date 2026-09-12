@@ -1,9 +1,11 @@
 package com.foodcalorie.app.data
 
 import android.content.Context
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import java.util.UUID
@@ -51,6 +53,11 @@ data class AppSettings(
     val ageYears: Int = 0,
     val gender: Gender = Gender.MALE,
     val activityLevel: ActivityLevel = ActivityLevel.MEDIUM,
+    /** ARGB；默认与 TodayScreen 宏量环一致 */
+    val proteinRingColor: Long = 0xFFF3A17C,
+    val carbsRingColor: Long = 0xFF2F7D2B,
+    val fatRingColor: Long = 0xFFFFB300,
+    val topGradientBlurEnabled: Boolean = true,
 ) {
     val activePreset: ApiPreset
         get() = apiPresets.firstOrNull { it.id == activePresetId }
@@ -140,6 +147,10 @@ class SettingsRepository(private val context: Context) {
         val PROTEIN = floatPreferencesKey("protein_target_g")
         val FAT = floatPreferencesKey("fat_target_g")
         val CARBS = floatPreferencesKey("carbs_target_g")
+        val PROTEIN_RING = longPreferencesKey("protein_ring_color")
+        val CARBS_RING = longPreferencesKey("carbs_ring_color")
+        val FAT_RING = longPreferencesKey("fat_ring_color")
+        val TOP_GRADIENT_BLUR = booleanPreferencesKey("top_gradient_blur_enabled")
     }
 
     val settings: Flow<AppSettings> = context.settingsStore.data.map { prefs ->
@@ -170,6 +181,10 @@ class SettingsRepository(private val context: Context) {
             activityLevel = prefs[Keys.ACTIVITY]?.let { name ->
                 ActivityLevel.entries.firstOrNull { it.name == name }
             } ?: ActivityLevel.MEDIUM,
+            proteinRingColor = prefs[Keys.PROTEIN_RING] ?: 0xFFF3A17C,
+            carbsRingColor = prefs[Keys.CARBS_RING] ?: 0xFF2F7D2B,
+            fatRingColor = prefs[Keys.FAT_RING] ?: 0xFFFFB300,
+            topGradientBlurEnabled = prefs[Keys.TOP_GRADIENT_BLUR] ?: true,
         )
     }
 
@@ -326,5 +341,21 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun updateActivityLevel(value: ActivityLevel) {
         context.settingsStore.edit { it[Keys.ACTIVITY] = value.name }
+    }
+
+    suspend fun updateProteinRingColor(value: Long) {
+        context.settingsStore.edit { it[Keys.PROTEIN_RING] = value }
+    }
+
+    suspend fun updateCarbsRingColor(value: Long) {
+        context.settingsStore.edit { it[Keys.CARBS_RING] = value }
+    }
+
+    suspend fun updateFatRingColor(value: Long) {
+        context.settingsStore.edit { it[Keys.FAT_RING] = value }
+    }
+
+    suspend fun updateTopGradientBlurEnabled(value: Boolean) {
+        context.settingsStore.edit { it[Keys.TOP_GRADIENT_BLUR] = value }
     }
 }

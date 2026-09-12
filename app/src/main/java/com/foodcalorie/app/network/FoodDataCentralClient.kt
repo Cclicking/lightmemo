@@ -31,6 +31,24 @@ class FoodDataCentralClient(
     private val usdaFoods: List<LocalFood> by lazy { loadUsdaFoods() }
     private val chinaFoods: List<ChinaFood> by lazy { loadChinaFoods() }
 
+    data class OfflineDbStatus(
+        val usdaAvailable: Boolean,
+        val chinaAvailable: Boolean,
+    )
+
+    /** 仅探测离线资产是否存在，避免触发全库解析。 */
+    fun offlineStatus(): OfflineDbStatus {
+        return OfflineDbStatus(
+            usdaAvailable = assetsExist("fdc_sr_legacy_macros.tsv", "fdc_sr_legacy_macros.tsv.gz"),
+            chinaAvailable = assetsExist("china_food_composition.tsv", "china_food_composition.tsv.gz"),
+        )
+    }
+
+    private fun assetsExist(vararg names: String): Boolean {
+        val listed = runCatching { context.assets.list("").orEmpty().toSet() }.getOrDefault(emptySet())
+        return names.any { it in listed }
+    }
+
     suspend fun enrich(meal: MealRecognition, apiKey: String): MealRecognition = withContext(Dispatchers.IO) {
         val components = meal.dishes.flatMap { it.allComponents }.distinctBy { it.id }
         val matches = components.associate { component ->

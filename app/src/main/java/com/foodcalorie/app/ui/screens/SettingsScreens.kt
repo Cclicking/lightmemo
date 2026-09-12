@@ -19,15 +19,22 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.foodcalorie.app.FoodApp
 import com.foodcalorie.app.data.ActivityLevel
 import com.foodcalorie.app.data.Gender
 import com.foodcalorie.app.ui.basic.SharedScrollBehavior as ScrollBehavior
@@ -44,6 +51,7 @@ import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.overlay.OverlayDialog
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
+import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 /** SmallTitle 与下方内容之间的间距 */
@@ -73,10 +81,6 @@ fun ApiSettingsScreen(
     var systemBackground by remember(settings.activePresetId) {
         mutableStateOf(settings.systemBackground)
     }
-    var foodDataCentralApiKey by remember(settings.foodDataCentralApiKey) {
-        mutableStateOf(settings.foodDataCentralApiKey)
-    }
-
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -196,30 +200,6 @@ fun ApiSettingsScreen(
                     singleLine = true,
                     visualTransformation = PasswordVisualTransformation(),
                     modifier = Modifier.fillMaxWidth(),
-                )
-
-                Spacer(Modifier.height(FieldToTitleSpacing))
-                SmallTitle(
-                    text = "USDA FoodData Central API Key",
-                    modifier = Modifier.offset(x = (-16).dp),
-                )
-                Spacer(Modifier.height(TitleToFieldSpacing))
-                TextField(
-                    value = foodDataCentralApiKey,
-                    onValueChange = {
-                        foodDataCentralApiKey = it
-                        viewModel.setFoodDataCentralApiKey(it)
-                    },
-                    singleLine = true,
-                    visualTransformation = PasswordVisualTransformation(),
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Spacer(Modifier.height(12.dp))
-                Text(
-                    text = "查询顺序：USDA 离线库 → USDA 在线 API → 中国食物成分离线库。此 Key 可留空。",
-                    style = MiuixTheme.textStyles.footnote2,
-                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                    modifier = Modifier.padding(horizontal = FootnoteHorizontalPadding),
                 )
 
                 Spacer(Modifier.height(FieldToTitleSpacing))
@@ -761,3 +741,411 @@ private fun RecommendCard(
 
 private fun formatMacro(value: Float): String =
     if (value % 1f == 0f) value.toInt().toString() else "%.1f".format(value)
+
+@Composable
+fun DatabaseSettingsScreen(
+    viewModel: SettingsViewModel,
+    contentPadding: PaddingValues,
+    scrollBehavior: ScrollBehavior?,
+    listState: LazyListState,
+) {
+    val settings by viewModel.settings.collectAsState()
+    val context = LocalContext.current
+    var fdcApiKey by remember(settings.foodDataCentralApiKey) {
+        mutableStateOf(settings.foodDataCentralApiKey)
+    }
+    val offlineStatus = remember {
+        runCatching {
+            (context.applicationContext as FoodApp).nutritionDatabase.offlineStatus()
+        }.getOrNull()
+    }
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .overScrollVertical()
+            .then(
+                if (scrollBehavior != null) {
+                    Modifier.nestedScroll(scrollBehavior.nestedScrollConnection)
+                } else {
+                    Modifier
+                },
+            ),
+        state = listState,
+        contentPadding = PaddingValues(
+            start = 16.dp,
+            end = 16.dp,
+            top = contentPadding.calculateTopPadding(),
+            bottom = contentPadding.calculateBottomPadding() + 12.dp,
+        ),
+    ) {
+        item {
+            Column {
+                SmallTitle(
+                    text = "连接情况",
+                    modifier = Modifier.offset(x = (-16).dp),
+                )
+                Spacer(Modifier.height(TitleToFieldSpacing))
+                Card(
+                    cornerRadius = 20.dp,
+                    modifier = Modifier.fillMaxWidth(),
+                    insideMargin = PaddingValues(0.dp),
+                ) {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        StatusRow(
+                            title = "USDA 离线库",
+                            summary = "本地 SR Legacy 宏量营养素库",
+                            status = when {
+                                offlineStatus == null -> "检测中"
+                                offlineStatus.usdaAvailable -> "已就绪"
+                                else -> "不可用"
+                            },
+                        )
+                        StatusRow(
+                            title = "中国食物成分表",
+                            summary = "本地第 6 版离线库",
+                            status = when {
+                                offlineStatus == null -> "检测中"
+                                offlineStatus.chinaAvailable -> "已就绪"
+                                else -> "不可用"
+                            },
+                        )
+                        StatusRow(
+                            title = "USDA 在线 API",
+                            summary = "离线未命中时的可选补充",
+                            status = if (settings.foodDataCentralApiKey.isNotBlank()) "已配置" else "未配置",
+                        )
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    text = "查询顺序：USDA 离线库 → USDA 在线 API → 中国食物成分离线库。",
+                    style = MiuixTheme.textStyles.footnote2,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    modifier = Modifier.padding(horizontal = FootnoteHorizontalPadding),
+                )
+
+                Spacer(Modifier.height(FieldToTitleSpacing))
+                SmallTitle(
+                    text = "USDA FoodData Central API Key",
+                    modifier = Modifier.offset(x = (-16).dp),
+                )
+                Spacer(Modifier.height(TitleToFieldSpacing))
+                TextField(
+                    value = fdcApiKey,
+                    onValueChange = {
+                        fdcApiKey = it
+                        viewModel.setFoodDataCentralApiKey(it)
+                    },
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    text = "可留空。填写后仅在本地库未命中时调用在线检索。",
+                    style = MiuixTheme.textStyles.footnote2,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    modifier = Modifier.padding(horizontal = FootnoteHorizontalPadding),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun StatusRow(
+    title: String,
+    summary: String,
+    status: String,
+) {
+    ArrowPreference(
+        title = title,
+        summary = summary,
+        endActions = {
+            Text(
+                text = status,
+                fontSize = 14.5.sp,
+                color = MiuixTheme.colorScheme.onSurfaceVariantActions,
+            )
+        },
+    )
+}
+
+private val RingColorPalette = listOf(
+    0xFFF3A17C,
+    0xFF2F7D2B,
+    0xFFFFB300,
+    0xFF8EAEFF,
+    0xFFE85D75,
+    0xFF9B6DFF,
+    0xFF2BB3A3,
+    0xFF6B7280,
+)
+
+@Composable
+fun AppearanceSettingsScreen(
+    viewModel: SettingsViewModel,
+    contentPadding: PaddingValues,
+    scrollBehavior: ScrollBehavior?,
+    listState: LazyListState,
+) {
+    val settings by viewModel.settings.collectAsState()
+    var editing by remember { mutableStateOf<RingSlot?>(null) }
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .overScrollVertical()
+            .then(
+                if (scrollBehavior != null) {
+                    Modifier.nestedScroll(scrollBehavior.nestedScrollConnection)
+                } else {
+                    Modifier
+                },
+            ),
+        state = listState,
+        contentPadding = PaddingValues(
+            start = 16.dp,
+            end = 16.dp,
+            top = contentPadding.calculateTopPadding(),
+            bottom = contentPadding.calculateBottomPadding() + 12.dp,
+        ),
+    ) {
+        item {
+            Column {
+                SmallTitle(
+                    text = "今日页圆环颜色",
+                    modifier = Modifier.offset(x = (-16).dp),
+                )
+                Spacer(Modifier.height(TitleToFieldSpacing))
+                Card(
+                    cornerRadius = 20.dp,
+                    modifier = Modifier.fillMaxWidth(),
+                    insideMargin = PaddingValues(0.dp),
+                ) {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        RingColorRow(
+                            title = "蛋白质",
+                            color = Color(settings.proteinRingColor),
+                            onClick = { editing = RingSlot.PROTEIN },
+                        )
+                        RingColorRow(
+                            title = "碳水",
+                            color = Color(settings.carbsRingColor),
+                            onClick = { editing = RingSlot.CARBS },
+                        )
+                        RingColorRow(
+                            title = "脂肪",
+                            color = Color(settings.fatRingColor),
+                            onClick = { editing = RingSlot.FAT },
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(FieldToTitleSpacing))
+                SmallTitle(
+                    text = "顶部效果",
+                    modifier = Modifier.offset(x = (-16).dp),
+                )
+                Spacer(Modifier.height(TitleToFieldSpacing))
+                Card(
+                    cornerRadius = 20.dp,
+                    modifier = Modifier.fillMaxWidth(),
+                    insideMargin = PaddingValues(0.dp),
+                ) {
+                    SwitchPreference(
+                        checked = settings.topGradientBlurEnabled,
+                        onCheckedChange = { viewModel.setTopGradientBlurEnabled(it) },
+                        title = "顶部渐变模糊",
+                        summary = "顶栏下方的 miuix 渐进模糊（progressive blur）",
+                    )
+                }
+            }
+        }
+    }
+
+    editing?.let { slot ->
+        val current = when (slot) {
+            RingSlot.PROTEIN -> settings.proteinRingColor
+            RingSlot.CARBS -> settings.carbsRingColor
+            RingSlot.FAT -> settings.fatRingColor
+        }
+        ColorPickerDialog(
+            title = when (slot) {
+                RingSlot.PROTEIN -> "蛋白质圆环颜色"
+                RingSlot.CARBS -> "碳水圆环颜色"
+                RingSlot.FAT -> "脂肪圆环颜色"
+            },
+            selected = current,
+            onSelect = { color ->
+                when (slot) {
+                    RingSlot.PROTEIN -> viewModel.setProteinRingColor(color)
+                    RingSlot.CARBS -> viewModel.setCarbsRingColor(color)
+                    RingSlot.FAT -> viewModel.setFatRingColor(color)
+                }
+            },
+            onDismiss = { editing = null },
+        )
+    }
+}
+
+private enum class RingSlot { PROTEIN, CARBS, FAT }
+
+@Composable
+private fun RingColorRow(
+    title: String,
+    color: Color,
+    onClick: () -> Unit,
+) {
+    ArrowPreference(
+        title = title,
+        endActions = {
+            Box(
+                modifier = Modifier
+                    .size(28.dp)
+                    .clip(androidx.compose.foundation.shape.CircleShape)
+                    .background(color),
+            )
+        },
+        onClick = onClick,
+    )
+}
+
+@Composable
+private fun ColorPickerDialog(
+    title: String,
+    selected: Long,
+    onSelect: (Long) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    OverlayDialog(
+        title = title,
+        show = true,
+        onDismissRequest = onDismiss,
+    ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            RingColorPalette.chunked(4).forEachIndexed { rowIndex, chunk ->
+                if (rowIndex > 0) Spacer(Modifier.height(10.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    chunk.forEach { color ->
+                        val selectedHere = color == selected
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(36.dp)
+                                .clip(androidx.compose.foundation.shape.RoundedCornerShape(10.dp))
+                                .background(Color(color))
+                                .then(
+                                    if (selectedHere) {
+                                        Modifier.padding(2.dp)
+                                    } else {
+                                        Modifier
+                                    }
+                                )
+                                .clickable {
+                                    onSelect(color)
+                                    onDismiss()
+                                },
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = "选择一种颜色后立即生效",
+                style = MiuixTheme.textStyles.footnote2,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+            )
+        }
+    }
+}
+
+@Composable
+fun AboutScreen(
+    contentPadding: PaddingValues,
+    scrollBehavior: ScrollBehavior?,
+    listState: LazyListState,
+) {
+    val context = LocalContext.current
+    val packageInfo = remember {
+        runCatching {
+            context.packageManager.getPackageInfo(context.packageName, 0)
+        }.getOrNull()
+    }
+    val versionName = packageInfo?.versionName ?: "—"
+    val versionCode = packageInfo?.longVersionCode?.toString() ?: "—"
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .overScrollVertical()
+            .then(
+                if (scrollBehavior != null) {
+                    Modifier.nestedScroll(scrollBehavior.nestedScrollConnection)
+                } else {
+                    Modifier
+                },
+            ),
+        state = listState,
+        contentPadding = PaddingValues(
+            start = 16.dp,
+            end = 16.dp,
+            top = contentPadding.calculateTopPadding(),
+            bottom = contentPadding.calculateBottomPadding() + 12.dp,
+        ),
+    ) {
+        item {
+            Column {
+                SmallTitle(
+                    text = "应用信息",
+                    modifier = Modifier.offset(x = (-16).dp),
+                )
+                Spacer(Modifier.height(TitleToFieldSpacing))
+                Card(
+                    cornerRadius = 20.dp,
+                    modifier = Modifier.fillMaxWidth(),
+                    insideMargin = PaddingValues(0.dp),
+                ) {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        StatusRow(
+                            title = "应用名称",
+                            summary = "热量记录与营养识别",
+                            status = "Food Calorie",
+                        )
+                        StatusRow(
+                            title = "版本",
+                            summary = "versionName / versionCode",
+                            status = "$versionName ($versionCode)",
+                        )
+                        StatusRow(
+                            title = "包名",
+                            summary = "applicationId",
+                            status = context.packageName,
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(FieldToTitleSpacing))
+                SmallTitle(
+                    text = "说明",
+                    modifier = Modifier.offset(x = (-16).dp),
+                )
+                Spacer(Modifier.height(TitleToFieldSpacing))
+                Card(
+                    cornerRadius = 20.dp,
+                    modifier = Modifier.fillMaxWidth(),
+                    insideMargin = PaddingValues(16.dp),
+                ) {
+                    Text(
+                        text = "本应用用于拍照识别食物、记录一餐热量与宏量营养素，并提供离线营养库与可选在线 API 查询。",
+                        style = MiuixTheme.textStyles.body1,
+                    )
+                }
+            }
+        }
+    }
+}

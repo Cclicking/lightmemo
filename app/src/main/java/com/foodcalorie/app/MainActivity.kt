@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.unit.sp
 import com.foodcalorie.app.ui.basic.CollapsibleTopAppBar
+import com.foodcalorie.app.ui.basic.CollapsibleTopAppBarDefaults
 import com.foodcalorie.app.ui.basic.rememberCollapsibleTopAppBarState
 import com.foodcalorie.app.ui.basic.rememberSharedScrollBehavior
 import com.foodcalorie.app.ui.basic.LiquidTopBarButton
@@ -51,14 +52,20 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigationevent.OnBackInvokedDefaultInput
 import androidx.navigationevent.compose.LocalNavigationEventDispatcherOwner
 import androidx.navigationevent.compose.rememberNavigationEventDispatcherOwner
+import com.foodcalorie.app.ui.nav.MineRoute
+import com.foodcalorie.app.ui.nav.largeTitle
 import com.foodcalorie.app.ui.screens.AddFoodRoute
 import com.foodcalorie.app.ui.screens.ApiSettingsScreen
+import com.foodcalorie.app.ui.screens.AppearanceSettingsScreen
+import com.foodcalorie.app.ui.screens.AboutScreen
 import com.foodcalorie.app.ui.screens.CalorieTargetScreen
+import com.foodcalorie.app.ui.screens.DatabaseSettingsScreen
 import com.foodcalorie.app.ui.screens.MineHubScreen
 import com.foodcalorie.app.ui.screens.PersonalInfoScreen
 import com.foodcalorie.app.ui.screens.StatsScreen
@@ -70,13 +77,20 @@ import com.foodcalorie.app.viewmodel.SettingsViewModel
 import com.foodcalorie.app.viewmodel.StatsViewModel
 import com.foodcalorie.app.viewmodel.TodayViewModel
 import top.yukonga.miuix.kmp.basic.Scaffold
+import top.yukonga.miuix.kmp.blur.ProgressiveBlur
 import top.yukonga.miuix.kmp.blur.isRuntimeShaderSupported
+import top.yukonga.miuix.kmp.blur.layerBackdrop as miuixLayerBackdrop
+import top.yukonga.miuix.kmp.blur.progressiveTextureBlur
+import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop as rememberMiuixLayerBackdrop
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.basic.Close
 import top.yukonga.miuix.kmp.icon.os4.ChevronBackward
 import top.yukonga.miuix.kmp.icon.os4.GridView
+import top.yukonga.miuix.kmp.nav.core.NavDisplay
+import top.yukonga.miuix.kmp.nav.core.rememberNavBackStack
+import top.yukonga.miuix.kmp.nav.transition.NavSwipeDirection
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import java.time.LocalDate
 
@@ -135,13 +149,6 @@ private enum class AppTab(val title: String) {
     MINE("我的"),
 }
 
-private enum class MineSection {
-    HUB,
-    PROFILE,
-    API,
-    TARGET,
-}
-
 /** Nexio visual shell; food state stays owned by the existing ViewModels. */
 @Composable
 fun FoodAppRoot() {
@@ -158,10 +165,17 @@ fun FoodAppRoot() {
             var showAdd by remember { mutableStateOf(false) }
             var showDatePicker by remember { mutableStateOf(false) }
             var todayManagement by rememberSaveable { mutableStateOf(false) }
-            var mineSection by rememberSaveable { mutableStateOf(MineSection.HUB) }
+            val mineBackStack = rememberNavBackStack<MineRoute>(MineRoute.Hub)
+            val mineTop = (mineBackStack.lastOrNull() as? MineRoute) ?: MineRoute.Hub
             val addState by addVm.uiState.collectAsState()
             val selectedDate by todayVm.date.collectAsState()
+            val appSettings by settingsVm.settings.collectAsState()
             val backdrop = rememberLayerBackdrop()
+            val surfaceColor = MiuixTheme.colorScheme.surface
+            val miuixBackdrop = rememberMiuixLayerBackdrop {
+                drawRect(surfaceColor)
+                drawContent()
+            }
 
             val appBarState = rememberCollapsibleTopAppBarState()
             val scrollBehavior = rememberSharedScrollBehavior(state = appBarState)
@@ -171,9 +185,12 @@ fun FoodAppRoot() {
             val apiList = rememberLazyListState()
             val targetList = rememberLazyListState()
             val profileList = rememberLazyListState()
+            val databaseList = rememberLazyListState()
+            val appearanceList = rememberLazyListState()
+            val aboutList = rememberLazyListState()
             val addList = rememberLazyListState()
 
-            LaunchedEffect(selectedTab, mineSection, todayManagement) {
+            LaunchedEffect(selectedTab, mineTop, todayManagement) {
                 appBarState.heightOffset = 0f
                 appBarState.contentOffset = 0f
             }
@@ -190,14 +207,14 @@ fun FoodAppRoot() {
                 }
             }
 
-            BackHandler(enabled = selectedTab == 2 && mineSection != MineSection.HUB) {
-                mineSection = MineSection.HUB
+            BackHandler(enabled = selectedTab == 2 && mineBackStack.size > 1) {
+                mineBackStack.removeLastOrNull()
             }
             BackHandler(enabled = selectedTab == 0 && todayManagement) {
                 todayManagement = false
             }
 
-            val showBack = (selectedTab == 2 && mineSection != MineSection.HUB) || (selectedTab == 0 && todayManagement)
+            val showBack = (selectedTab == 2 && mineBackStack.size > 1) || (selectedTab == 0 && todayManagement)
             val largeTitle = when {
                 selectedTab == 0 && todayManagement -> "管理食物卡片"
                 selectedTab == 0 -> when (selectedDate) {
@@ -205,20 +222,13 @@ fun FoodAppRoot() {
                     LocalDate.now().minusDays(1) -> "昨日"
                     else -> "${selectedDate.monthValue}月${selectedDate.dayOfMonth}日"
                 }
-                selectedTab == 2 -> when (mineSection) {
-                    MineSection.HUB -> "我的"
-                    MineSection.PROFILE -> "个人信息"
-                    MineSection.API -> "识别 API"
-                    MineSection.TARGET -> "每日目标"
-                }
+                selectedTab == 2 -> mineTop.largeTitle()
                 else -> AppTab.entries[selectedTab].title
             }
             val compactTitle = when {
                 selectedTab == 0 && todayManagement -> "管理食物卡片"
                 selectedTab == 0 -> "今日"
-                selectedTab == 2 && mineSection == MineSection.API -> "识别 API"
-                selectedTab == 2 && mineSection == MineSection.TARGET -> "每日目标"
-                selectedTab == 2 && mineSection == MineSection.PROFILE -> "个人信息"
+                selectedTab == 2 -> mineTop.largeTitle()
                 else -> AppTab.entries[selectedTab].title
             }
 
@@ -228,12 +238,17 @@ fun FoodAppRoot() {
                     CollapsibleTopAppBar(
                         title = compactTitle,
                         largeTitle = largeTitle,
+                        showGradientOverlay = true,
                         scrollBehavior = scrollBehavior,
                         startAction = when {
                             showBack -> { { glassAlpha: Float, shadowAlpha: Float ->
                                 LiquidTopBarButton(
                                 onClick = {
-                                    if (selectedTab == 0) todayManagement = false else mineSection = MineSection.HUB
+                                    if (selectedTab == 0) {
+                                        todayManagement = false
+                                    } else if (mineBackStack.size > 1) {
+                                        mineBackStack.removeLastOrNull()
+                                    }
                                 },
                                 backdrop = backdrop,
                                 icon = MiuixIcons.Os4.ChevronBackward,
@@ -263,7 +278,6 @@ fun FoodAppRoot() {
                             selectedTab = it
                             todayManagement = false
                             showDatePicker = false
-                            if (it == 2) mineSection = MineSection.HUB
                         },
                         liquidGlassBackdrop = backdrop,
                         addButton = {
@@ -286,65 +300,136 @@ fun FoodAppRoot() {
                     @Suppress("UNUSED_VARIABLE")
                     val contentScrolled = activeList.canScrollBackward
 
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .then(if (glassSupported) Modifier.layerBackdrop(backdrop) else Modifier)
-                            .background(MiuixTheme.colorScheme.surface),
-                    ) {
-                        when {
-                            selectedTab == 0 -> TodayScreen(
-                                viewModel = todayVm,
-                                contentPadding = padding,
-                                scrollBehavior = scrollBehavior,
-                                listState = todayList,
-                                addState = addState,
-                                managementMode = todayManagement,
-                                showDatePicker = showDatePicker,
-                                onShowDatePicker = { showDatePicker = true },
-                                onDismissDatePicker = { showDatePicker = false },
-                                onAddClick = {
-                                    addVm.setTargetDate(selectedDate)
-                                    showAdd = true
-                                },
-                            )
-                            selectedTab == 1 -> StatsScreen(
-                                viewModel = statsVm,
-                                contentPadding = padding,
-                                scrollBehavior = scrollBehavior,
-                                listState = statsList,
-                            )
-                            else -> when (mineSection) {
-                                MineSection.HUB -> MineHubScreen(
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .then(
+                                    if (glassSupported) {
+                                        Modifier
+                                            .miuixLayerBackdrop(miuixBackdrop)
+                                            .layerBackdrop(backdrop)
+                                    } else {
+                                        Modifier
+                                    },
+                                )
+                                .background(MiuixTheme.colorScheme.surface),
+                        ) {
+                            when {
+                                selectedTab == 0 -> TodayScreen(
+                                    viewModel = todayVm,
                                     contentPadding = padding,
                                     scrollBehavior = scrollBehavior,
-                                    listState = mineList,
-                                    viewModel = settingsVm,
-                                    onApi = { mineSection = MineSection.API },
-                                    onTarget = { mineSection = MineSection.TARGET },
-                                    onProfile = { mineSection = MineSection.PROFILE },
+                                    listState = todayList,
+                                    addState = addState,
+                                    managementMode = todayManagement,
+                                    showDatePicker = showDatePicker,
+                                    proteinRingColor = Color(appSettings.proteinRingColor),
+                                    carbsRingColor = Color(appSettings.carbsRingColor),
+                                    fatRingColor = Color(appSettings.fatRingColor),
+                                    onShowDatePicker = { showDatePicker = true },
+                                    onDismissDatePicker = { showDatePicker = false },
+                                    onAddClick = {
+                                        addVm.setTargetDate(selectedDate)
+                                        showAdd = true
+                                    },
                                 )
-                                MineSection.PROFILE -> PersonalInfoScreen(
-                                    viewModel = settingsVm,
+                                selectedTab == 1 -> StatsScreen(
+                                    viewModel = statsVm,
                                     contentPadding = padding,
                                     scrollBehavior = scrollBehavior,
-                                    listState = profileList,
+                                    listState = statsList,
                                 )
-                                MineSection.API -> ApiSettingsScreen(
-                                    viewModel = settingsVm,
-                                    contentPadding = padding,
-                                    scrollBehavior = scrollBehavior,
-                                    listState = apiList,
-                                )
-                                MineSection.TARGET -> CalorieTargetScreen(
-                                    viewModel = settingsVm,
-                                    contentPadding = padding,
-                                    scrollBehavior = scrollBehavior,
-                                    listState = targetList,
-                                )
+                                else -> NavDisplay(
+                                    backStack = mineBackStack,
+                                    modifier = Modifier.fillMaxSize(),
+                                    onBack = { mineBackStack.removeLastOrNull() },
+                                ) {
+                                    entry<MineRoute.Hub> {
+                                        MineHubScreen(
+                                            contentPadding = padding,
+                                            scrollBehavior = scrollBehavior,
+                                            listState = mineList,
+                                            viewModel = settingsVm,
+                                            onApi = { mineBackStack.add(MineRoute.Api) },
+                                            onTarget = { mineBackStack.add(MineRoute.Target) },
+                                            onProfile = { mineBackStack.add(MineRoute.Profile) },
+                                            onDatabase = { mineBackStack.add(MineRoute.Database) },
+                                            onAppearance = { mineBackStack.add(MineRoute.Appearance) },
+                                            onAbout = { mineBackStack.add(MineRoute.About) },
+                                        )
+                                    }
+                                    entry<MineRoute.Profile>(swipeDismiss = NavSwipeDirection.LeftToRight) {
+                                        PersonalInfoScreen(
+                                            viewModel = settingsVm,
+                                            contentPadding = padding,
+                                            scrollBehavior = scrollBehavior,
+                                            listState = profileList,
+                                        )
+                                    }
+                                    entry<MineRoute.Api>(swipeDismiss = NavSwipeDirection.LeftToRight) {
+                                        ApiSettingsScreen(
+                                            viewModel = settingsVm,
+                                            contentPadding = padding,
+                                            scrollBehavior = scrollBehavior,
+                                            listState = apiList,
+                                        )
+                                    }
+                                    entry<MineRoute.Target>(swipeDismiss = NavSwipeDirection.LeftToRight) {
+                                        CalorieTargetScreen(
+                                            viewModel = settingsVm,
+                                            contentPadding = padding,
+                                            scrollBehavior = scrollBehavior,
+                                            listState = targetList,
+                                        )
+                                    }
+                                    entry<MineRoute.Database>(swipeDismiss = NavSwipeDirection.LeftToRight) {
+                                        DatabaseSettingsScreen(
+                                            viewModel = settingsVm,
+                                            contentPadding = padding,
+                                            scrollBehavior = scrollBehavior,
+                                            listState = databaseList,
+                                        )
+                                    }
+                                    entry<MineRoute.Appearance>(swipeDismiss = NavSwipeDirection.LeftToRight) {
+                                        AppearanceSettingsScreen(
+                                            viewModel = settingsVm,
+                                            contentPadding = padding,
+                                            scrollBehavior = scrollBehavior,
+                                            listState = appearanceList,
+                                        )
+                                    }
+                                    entry<MineRoute.About>(swipeDismiss = NavSwipeDirection.LeftToRight) {
+                                        AboutScreen(
+                                            contentPadding = padding,
+                                            scrollBehavior = scrollBehavior,
+                                            listState = aboutList,
+                                        )
+                                    }
+                                }
                             }
                         }
 
+                        if (glassSupported && appSettings.topGradientBlurEnabled) {
+                            val statusBarHeight = androidx.compose.foundation.layout.WindowInsets.statusBars
+                                .asPaddingValues()
+                                .calculateTopPadding()
+                            val progressiveHeight =
+                                statusBarHeight + CollapsibleTopAppBarDefaults.CollapsedHeight + 72.dp
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.TopCenter)
+                                    .fillMaxWidth()
+                                    .height(progressiveHeight)
+                                    .progressiveTextureBlur(
+                                        backdrop = miuixBackdrop,
+                                        shape = RectangleShape,
+                                        blurRadius = 24f,
+                                        gradient = ProgressiveBlur.Top,
+                                        enabled = true,
+                                    ),
+                            )
+                        }
                     }
 
                     var sheetContentBackdrop by remember { mutableStateOf<com.kyant.backdrop.Backdrop?>(null) }

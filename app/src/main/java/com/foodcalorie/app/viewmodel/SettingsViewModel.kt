@@ -61,6 +61,16 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setActivityLevel(value: ActivityLevel) = viewModelScope.launch { repo.updateActivityLevel(value) }
 
+    fun setProteinRingColor(value: Long) = viewModelScope.launch { repo.updateProteinRingColor(value) }
+
+    fun setCarbsRingColor(value: Long) = viewModelScope.launch { repo.updateCarbsRingColor(value) }
+
+    fun setFatRingColor(value: Long) = viewModelScope.launch { repo.updateFatRingColor(value) }
+
+    fun setTopGradientBlurEnabled(value: Boolean) = viewModelScope.launch {
+        repo.updateTopGradientBlurEnabled(value)
+    }
+
     /** 将推荐热量与营养素写入目标。 */
     fun applyRecommendedTarget() = viewModelScope.launch {
         val nutrients = settings.value.recommendedNutrients ?: return@launch

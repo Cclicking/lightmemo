@@ -72,9 +72,9 @@ private val dateFormatter = DateTimeFormatter.ofPattern("M月d日 EEEE", Locale.
 private const val ProteinTarget = 120f
 private const val CarbsTarget = 250f
 private const val FatTarget = 60f
-private val ProteinColor = Color(0xFFF3A17C)
-private val CarbsColor = Color(0xFF2F7D2B)
-private val FatColor = Color(0xFFFFB300)
+private val ProteinColorDefault = Color(0xFFF3A17C)
+private val CarbsColorDefault = Color(0xFF2F7D2B)
+private val FatColorDefault = Color(0xFFFFB300)
 
 @Composable
 fun TodayScreen(
@@ -85,6 +85,9 @@ fun TodayScreen(
     addState: AddFoodUiState,
     managementMode: Boolean,
     showDatePicker: Boolean,
+    proteinRingColor: Color = ProteinColorDefault,
+    carbsRingColor: Color = CarbsColorDefault,
+    fatRingColor: Color = FatColorDefault,
     onShowDatePicker: () -> Unit,
     onDismissDatePicker: () -> Unit,
     onAddClick: () -> Unit,
@@ -167,7 +170,15 @@ fun TodayScreen(
             }
 
             if (!managementMode) {
-                item { NutritionSummaryCard(state.total, state.target) }
+                item {
+                    NutritionSummaryCard(
+                        total = state.total,
+                        calorieTarget = state.target,
+                        proteinColor = proteinRingColor,
+                        carbsColor = carbsRingColor,
+                        fatColor = fatRingColor,
+                    )
+                }
                 item {
                     Button(onClick = onAddClick, modifier = Modifier.fillMaxWidth()) { Text("记录食物") }
                 }
@@ -239,7 +250,13 @@ fun TodayScreen(
 }
 
 @Composable
-private fun NutritionSummaryCard(total: Nutrition, calorieTarget: Float) {
+private fun NutritionSummaryCard(
+    total: Nutrition,
+    calorieTarget: Float,
+    proteinColor: Color = ProteinColorDefault,
+    carbsColor: Color = CarbsColorDefault,
+    fatColor: Color = FatColorDefault,
+) {
     val progress by animateFloatAsState(
         targetValue = if (calorieTarget <= 0f) 0f else (total.caloriesKcal / calorieTarget).toFloat().coerceIn(0f, 1f),
         animationSpec = folmeSpring(damping = 1f, response = 0.6f),
@@ -261,9 +278,9 @@ private fun NutritionSummaryCard(total: Nutrition, calorieTarget: Float) {
         LinearProgressIndicator(progress = progress, modifier = Modifier.fillMaxWidth(), height = 10.dp)
         Spacer(Modifier.height(16.dp))
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            MacroRing("蛋白质", total.proteinG, ProteinTarget, ProteinColor, Modifier.weight(1f))
-            MacroRing("碳水", total.carbsG, CarbsTarget, CarbsColor, Modifier.weight(1f))
-            MacroRing("脂肪", total.fatG, FatTarget, FatColor, Modifier.weight(1f))
+            MacroRing("蛋白质", total.proteinG, ProteinTarget, proteinColor, Modifier.weight(1f))
+            MacroRing("碳水", total.carbsG, CarbsTarget, carbsColor, Modifier.weight(1f))
+            MacroRing("脂肪", total.fatG, FatTarget, fatColor, Modifier.weight(1f))
         }
     }
 }
@@ -462,9 +479,9 @@ private fun FoodDetailOverlay(entry: FoodLog, onDismiss: () -> Unit) {
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceEvenly,
                 ) {
-                    CompactMacroRing("蛋白质", entry.nutrition.proteinG, ProteinTarget, ProteinColor, Modifier.weight(1f))
-                    CompactMacroRing("碳水", entry.nutrition.carbsG, CarbsTarget, CarbsColor, Modifier.weight(1f))
-                    CompactMacroRing("脂肪", entry.nutrition.fatG, FatTarget, FatColor, Modifier.weight(1f))
+                    CompactMacroRing("蛋白质", entry.nutrition.proteinG, ProteinTarget, ProteinColorDefault, Modifier.weight(1f))
+                    CompactMacroRing("碳水", entry.nutrition.carbsG, CarbsTarget, CarbsColorDefault, Modifier.weight(1f))
+                    CompactMacroRing("脂肪", entry.nutrition.fatG, FatTarget, FatColorDefault, Modifier.weight(1f))
                 }
             }
             SmallTitle(
