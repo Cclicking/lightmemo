@@ -11,6 +11,7 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -72,6 +73,11 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+/**
+ * Glass chrome must sit *outside* the layerBackdrop recording.
+ * Sampling a backdrop that contains the glass node creates a render-tree cycle
+ * and overflows the native HWUI stack.
+ */
 @Composable
 fun FoodAppRoot() {
     val todayVm: TodayViewModel = viewModel()
@@ -89,81 +95,95 @@ fun FoodAppRoot() {
             val navInset = with(density) { WindowInsets.navigationBars.getBottom(this).toDp() }
             val bottomPad = (navInset + 16.dp).coerceAtLeast(20.dp)
 
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .layerBackdrop(backdrop),
-            ) {
-                Scaffold(
-                    modifier = Modifier.fillMaxSize(),
-                    bottomBar = {
-                        if (!showAdd) {
+            Box(modifier = Modifier.fillMaxSize()) {
+                // Only the page body is recorded. Glass nav draws on top, outside this layer.
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .then(if (glassSupported) Modifier.layerBackdrop(backdrop) else Modifier),
+                ) {
+                    Scaffold(
+                        modifier = Modifier.fillMaxSize(),
+                        bottomBar = {
+                            // Reserve space so content is not under the floating glass bar.
                             Box(
                                 modifier = Modifier
+                                    .fillMaxWidth()
                                     .navigationBarsPadding()
                                     .padding(bottom = bottomPad)
-                                    .padding(horizontal = 16.dp),
-                                contentAlignment = Alignment.BottomCenter,
-                            ) {
-                                if (glassSupported) {
-                                    val items = listOf(
-                                        GlassNavigationItem(MiuixIcons.Home, "今日"),
-                                        GlassNavigationItem(MiuixIcons.Os4.Image, "统计"),
-                                        GlassNavigationItem(MiuixIcons.Os4.Settings, "设置"),
-                                    )
-                                    GlassNavigationBar(
-                                        items = items,
-                                        selectedIndex = selectedTab,
-                                        onSelect = { selectedTab = it },
-                                        backdrop = backdrop,
-                                    )
-                                } else {
-                                    FloatingNavigationBar {
-                                        FloatingNavigationBarItem(
-                                            selected = selectedTab == 0,
-                                            onClick = { selectedTab = 0 },
-                                            icon = MiuixIcons.Home,
-                                            label = "今日",
-                                        )
-                                        FloatingNavigationBarItem(
-                                            selected = selectedTab == 1,
-                                            onClick = { selectedTab = 1 },
-                                            icon = MiuixIcons.Os4.Image,
-                                            label = "统计",
-                                        )
-                                        FloatingNavigationBarItem(
-                                            selected = selectedTab == 2,
-                                            onClick = { selectedTab = 2 },
-                                            icon = MiuixIcons.Os4.Settings,
-                                            label = "设置",
-                                        )
-                                    }
-                                }
+                                    .padding(horizontal = 16.dp)
+                                    .padding(top = 54.dp),
+                            )
+                        },
+                    ) { padding ->
+                        when {
+                            showAdd -> AddFoodRoute(
+                                viewModel = addVm,
+                                onDone = { showAdd = false },
+                            )
+                            selectedTab == 0 -> TodayScreen(
+                                viewModel = todayVm,
+                                contentPadding = padding,
+                                onAddClick = { showAdd = true },
+                                backdrop = null,
+                            )
+                            selectedTab == 1 -> StatsScreen(
+                                viewModel = statsVm,
+                                contentPadding = padding,
+                                backdrop = null,
+                            )
+                            else -> SettingsScreen(
+                                viewModel = settingsVm,
+                                contentPadding = padding,
+                                backdrop = null,
+                            )
+                        }
+                    }
+                }
+
+                if (!showAdd) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .navigationBarsPadding()
+                            .padding(bottom = bottomPad)
+                            .padding(horizontal = 16.dp),
+                        contentAlignment = Alignment.BottomCenter,
+                    ) {
+                        if (glassSupported) {
+                            val items = listOf(
+                                GlassNavigationItem(MiuixIcons.Home, "今日"),
+                                GlassNavigationItem(MiuixIcons.Os4.Image, "统计"),
+                                GlassNavigationItem(MiuixIcons.Os4.Settings, "设置"),
+                            )
+                            GlassNavigationBar(
+                                items = items,
+                                selectedIndex = selectedTab,
+                                onSelect = { selectedTab = it },
+                                backdrop = backdrop,
+                            )
+                        } else {
+                            FloatingNavigationBar {
+                                FloatingNavigationBarItem(
+                                    selected = selectedTab == 0,
+                                    onClick = { selectedTab = 0 },
+                                    icon = MiuixIcons.Home,
+                                    label = "今日",
+                                )
+                                FloatingNavigationBarItem(
+                                    selected = selectedTab == 1,
+                                    onClick = { selectedTab = 1 },
+                                    icon = MiuixIcons.Os4.Image,
+                                    label = "统计",
+                                )
+                                FloatingNavigationBarItem(
+                                    selected = selectedTab == 2,
+                                    onClick = { selectedTab = 2 },
+                                    icon = MiuixIcons.Os4.Settings,
+                                    label = "设置",
+                                )
                             }
                         }
-                    },
-                ) { padding ->
-                    when {
-                        showAdd -> AddFoodRoute(
-                            viewModel = addVm,
-                            onDone = { showAdd = false },
-                        )
-                        selectedTab == 0 -> TodayScreen(
-                            viewModel = todayVm,
-                            contentPadding = padding,
-                            onAddClick = { showAdd = true },
-                            backdrop = backdrop,
-                        )
-                        selectedTab == 1 -> StatsScreen(
-                            viewModel = statsVm,
-                            contentPadding = padding,
-                            backdrop = backdrop,
-                        )
-                        else -> SettingsScreen(
-                            viewModel = settingsVm,
-                            contentPadding = padding,
-                            backdrop = backdrop,
-                        )
                     }
                 }
             }
