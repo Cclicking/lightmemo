@@ -2,7 +2,21 @@ package com.foodcalorie.app.ui.screens
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.animation.core.animate
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import kotlin.math.abs
+import kotlin.math.roundToInt
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -36,7 +50,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.customActions
@@ -141,7 +154,7 @@ fun StatsScreen(
         }
         item {
             StatsCalendar(
-                days = state.daily,
+                days = state.calendarDays,
                 target = state.target,
                 selectedEpochDay = selectedDay?.dateEpochDay,
                 expanded = calendarExpanded,
@@ -226,46 +239,89 @@ private fun StatsCalendar(
         label = "calendarExpansion",
     )
     val summaries = remember(days) { days.associateBy { it.dateEpochDay } }
-    val pageStart = if (expanded) anchor.withDayOfMonth(1)
-        else anchor.minusDays(anchor.dayOfWeek.value.toLong() - 1)
-    Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-        Text(
-            text = if (expanded) "${anchor.year}年${anchor.monthValue}月"
-                else "${pageStart.monthValue}月${pageStart.dayOfMonth}日 — ${pageStart.plusDays(6).monthValue}月${pageStart.plusDays(6).dayOfMonth}日",
-            style = MiuixTheme.textStyles.footnote2,
-            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-            modifier = Modifier.padding(start = 6.dp, bottom = 10.dp),
-        )
-        val gestureModifier = Modifier.fillMaxWidth().clipToBounds()
+    var offset by remember(expanded, anchor) { mutableFloatStateOf(0f) }
+    var width by remember { mutableIntStateOf(0) }
+    var settling by remember { mutableStateOf<Job?>(null) }
+    val scope = rememberCoroutineScope()
+    val flingThreshold = with(LocalDensity.current) { 400.dp.toPx() }
+    DisposableEffect(expanded, anchor) {
+        onDispose { settling?.cancel() }
+    }
+    fun settle(direction: Int) {
+        settling?.cancel()
+        settling = scope.launch {
+            animate(offset, -direction * width.toFloat(), animationSpec = tween(250)) { value, _ ->
+                offset = value
+            }
+            offset = 0f
+            if (direction != 0) onMove(direction)
+        }
+    }
+    // Measure all three pages so months with different row counts interpolate in height.
+    Layout(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).clipToBounds()
+            .onSizeChanged { width = it.width }
             .semantics {
                 customActions = listOf(
-                    CustomAccessibilityAction(if (expanded) "上个月" else "上一周") { onMove(-1); true },
-                    CustomAccessibilityAction(if (expanded) "下个月" else "下一周") { onMove(1); true },
+                    CustomAccessibilityAction(if (expanded) "上个月" else "上一周") { settle(-1); true },
+                    CustomAccessibilityAction(if (expanded) "下个月" else "下一周") { settle(1); true },
                 )
             }
-            .pointerInput(expanded, anchor) {
-                var distance = 0f
-                detectHorizontalDragGestures(
-                    onDragStart = { distance = 0f },
-                    onDragCancel = { distance = 0f },
-                    onDragEnd = {
-                        if (kotlin.math.abs(distance) > 48.dp.toPx()) onMove(if (distance < 0) 1 else -1)
-                    },
-                ) { change, amount ->
-                    change.consume()
-                    distance += amount
+            .draggable(
+                state = rememberDraggableState { amount ->
+                    offset = (offset + amount).coerceIn(-width.toFloat(), width.toFloat())
+                },
+                orientation = Orientation.Horizontal,
+                startDragImmediately = settling?.isActive == true,
+                onDragStarted = { settling?.cancel() },
+                onDragStopped = { velocity ->
+                    val direction = when {
+                        abs(velocity) > flingThreshold -> if (velocity < 0) 1 else -1
+                        abs(offset) > width * 0.25f -> if (offset < 0) 1 else -1
+                        else -> 0
+                    }
+                    settle(direction)
+                },
+            ),
+        content = {
+            for (direction in -1..1) {
+                val pageAnchor = if (expanded) anchor.plusMonths(direction.toLong())
+                    else anchor.plusWeeks(direction.toLong())
+                val pageStart = pageAnchor.minusDays(pageAnchor.dayOfWeek.value.toLong() - 1)
+                Column(
+                    Modifier.fillMaxWidth().then(
+                        if (direction != 0) Modifier.clearAndSetSemantics { } else Modifier,
+                    ),
+                ) {
+                    Text(
+                        text = if (expanded) "${pageAnchor.year}年${pageAnchor.monthValue}月"
+                            else "${pageStart.monthValue}月${pageStart.dayOfMonth}日 — ${pageStart.plusDays(6).monthValue}月${pageStart.plusDays(6).dayOfMonth}日",
+                        style = MiuixTheme.textStyles.footnote2,
+                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                        modifier = Modifier.padding(start = 6.dp, bottom = 10.dp),
+                    )
+                    CalendarRows(
+                        modifier = Modifier.fillMaxWidth().clipToBounds(),
+                        anchor = pageAnchor,
+                        selectedEpochDay = selectedEpochDay,
+                        summaries = summaries,
+                        target = target,
+                        expansion = expansion,
+                        onSelect = { if (direction == 0 && offset == 0f) onSelect(it) },
+                    )
                 }
             }
-        // Expansion is a measured layout transition so the following cards move with it.
-        CalendarRows(
-            modifier = gestureModifier,
-            anchor = anchor,
-            selectedEpochDay = selectedEpochDay,
-            summaries = summaries,
-            target = target,
-            expansion = expansion,
-            onSelect = onSelect,
-        )
+        },
+    ) { measurables, constraints ->
+        val pages = measurables.map { it.measure(constraints.copy(minHeight = 0)) }
+        val progress = if (constraints.maxWidth > 0) (abs(offset) / constraints.maxWidth).coerceIn(0f, 1f) else 0f
+        val adjacent = if (offset > 0) pages[0] else pages[2]
+        val height = (pages[1].height + (adjacent.height - pages[1].height) * progress).roundToInt()
+        layout(constraints.maxWidth, height) {
+            pages.forEachIndexed { index, page ->
+                page.place((index - 1) * constraints.maxWidth + offset.roundToInt(), 0)
+            }
+        }
     }
 }
 

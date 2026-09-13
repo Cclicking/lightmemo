@@ -15,6 +15,7 @@ import com.foodcalorie.app.domain.FoodComponent
 import com.foodcalorie.app.domain.MealRecognition
 import com.foodcalorie.app.domain.RecognizedDish
 import com.foodcalorie.app.domain.NutritionReference
+import com.foodcalorie.app.domain.splitDishes
 import com.foodcalorie.app.network.RecognitionException
 import java.time.LocalDate
 import java.time.LocalTime
@@ -441,7 +442,7 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
                 if (visualResult.dishes.isEmpty()) {
                     throw RecognitionException("未能识别到可记录的食物，请换个说法")
                 }
-                val result = nutritionDatabase.enrich(visualResult, current.foodDataCentralApiKey)
+                val result = nutritionDatabase.enrich(visualResult, current.foodDataCentralApiKey).splitDishes()
                 _uiState.value = _uiState.value.copy(
                     recognizing = false,
                     step = AddStep.Review(imageUri = null, result = result),
@@ -490,7 +491,7 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
                 if (!visualResult.isFoodImage || visualResult.dishes.isEmpty()) {
                     throw RecognitionException("图片中没有识别到可记录的食物")
                 }
-                val result = nutritionDatabase.enrich(visualResult, current.foodDataCentralApiKey)
+                val result = nutritionDatabase.enrich(visualResult, current.foodDataCentralApiKey).splitDishes()
                 _uiState.value = _uiState.value.copy(
                     recognizing = false,
                     step = AddStep.Review(imageUri = uri.toString(), result = result),
@@ -565,6 +566,56 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
         _uiState.value = _uiState.value.copy(
             step = step.copy(result = step.result.copy(dishes = remaining)),
         )
+    }
+
+    fun replaceDish(dishId: String, name: String) {
+        val state = _uiState.value
+        val review = state.step as? AddStep.Review ?: return
+        val original = review.result.dishes.find { it.id == dishId } ?: return
+        if (state.recognizing || state.saving || name.isBlank()) return
+        val current = settings.value
+        if (!current.isRecognitionConfigured) {
+            notify("请先在设置中配置 API Key 与 Base URL")
+            return
+        }
+        _uiState.value = state.copy(recognizing = true, error = null)
+        recognitionJob = viewModelScope.launch {
+            try {
+                val visual = client.recognizeFromText(
+                    baseUrl = current.baseUrl,
+                    apiKey = current.apiKey,
+                    model = current.model,
+                    text = "${original.grams}克${name.trim()}",
+                    userDescription = "更正一道菜品，保持总重量，重新识别组成。",
+                    mealType = state.mealType.label,
+                    plateSize = state.plateSize,
+                )
+                val replacement = nutritionDatabase.enrich(visual, current.foodDataCentralApiKey).splitDishes()
+                require(replacement.dishes.isNotEmpty() && replacement.dishes.all { it.allComponents.isNotEmpty() }) {
+                    "未识别到新菜品，请重试"
+                }
+                val latest = _uiState.value.step as? AddStep.Review ?: return@launch
+                // Fresh IDs isolate replacement rows from old edit state and other recognition results.
+                val dishes = replacement.dishes.map { dish ->
+                    dish.copy(
+                        id = java.util.UUID.randomUUID().toString(),
+                        components = dish.components.map { it.copy(id = java.util.UUID.randomUUID().toString()) },
+                    )
+                }
+                _uiState.value = _uiState.value.copy(step = latest.copy(result = latest.result.copy(
+                    dishes = latest.result.dishes.flatMap { if (it.id == dishId) dishes else listOf(it) },
+                )))
+                notify("菜品已更换")
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                val message = e.message ?: "更换失败，请重试"
+                _uiState.value = _uiState.value.copy(error = message)
+                notify(message)
+            } finally {
+                _uiState.value = _uiState.value.copy(recognizing = false)
+            }
+        }
     }
 
     fun saveRecognized(result: MealRecognition, imageUri: String?, onSaved: () -> Unit = {}) {

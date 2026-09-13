@@ -132,6 +132,7 @@ class StatsViewModel(app: Application) : AndroidViewModel(app) {
         val rangeDays: Int = 7,
         val elapsedDays: Int = 0,
         val daily: List<DayNutritionSummary> = emptyList(),
+        val calendarDays: List<DayNutritionSummary> = emptyList(),
         val averageKcal: Double = 0.0,
         val averageNutrition: Nutrition = Nutrition(),
         val mealCalories: Map<MealType, Double> = emptyMap(),
@@ -172,12 +173,21 @@ class StatsViewModel(app: Application) : AndroidViewModel(app) {
                 total = grouped[day].orEmpty().fold(Nutrition()) { acc, i -> acc + i.nutrition },
             )
         }
+        // Include adjacent periods so their rings are already populated while dragging.
+        val previewFrom = start.minusMonths(1).minusWeeks(1).toEpochDay()
+        val previewTo = minOf(end.plusMonths(1).plusWeeks(1).toEpochDay(), today.toEpochDay())
+        val calendarDays = logs.filter { it.dateEpochDay in previewFrom..previewTo }
+            .groupBy { it.dateEpochDay }
+            .map { (epochDay, entries) ->
+                DayNutritionSummary(epochDay, entries.fold(Nutrition()) { total, entry -> total + entry.nutrition })
+            }
         val logged = daily.filter { grouped.containsKey(it.dateEpochDay) }
         val target = settings.dailyCalorieTarget.toDouble()
         StatsUiState(
             rangeDays = days,
             elapsedDays = (minOf(to, today.toEpochDay()) - from + 1).toInt().coerceIn(0, days),
             daily = daily,
+            calendarDays = calendarDays,
             averageKcal = if (logged.isEmpty()) 0.0 else logged.map { it.total.caloriesKcal }.average(),
             averageNutrition = logged.fold(Nutrition()) { acc, day -> acc + day.total }
                 .times(1.0 / logged.size.coerceAtLeast(1)),

@@ -105,6 +105,17 @@ data class MealRecognition(
     val nutritionMax: Nutrition get() = dishes.fold(Nutrition()) { total, dish -> total + dish.nutritionMax }
 }
 
+/** Promote recognized sub-dishes without losing components attached to their parent. */
+fun MealRecognition.splitDishes(): MealRecognition = copy(
+    dishes = dishes.flatMap { it.splitDishes() },
+)
+
+private fun RecognizedDish.splitDishes(): List<RecognizedDish> =
+    if (children.isEmpty()) listOf(this) else buildList {
+        if (components.isNotEmpty()) add(copy(children = emptyList()))
+        children.forEach { addAll(it.splitDishes()) }
+    }
+
 enum class MealType(val label: String) {
     BREAKFAST("早餐"),
     LUNCH("午餐"),

@@ -310,6 +310,8 @@ fun AddFoodRoute(
                     onRemoveComponent = viewModel::removeComponent,
                     onRemoveDish = viewModel::removeDish,
                     onDatabaseSearch = viewModel::openComponentSearch,
+                    onReplaceDish = viewModel::replaceDish,
+                    error = state.error,
                     onSave = {
                         viewModel.saveRecognized(step.result, step.imageUri, onDone)
                     },
@@ -1280,10 +1282,39 @@ private fun ReviewContent(
     onRemoveComponent: (String) -> Unit,
     onRemoveDish: (String) -> Unit,
     onDatabaseSearch: (FoodComponent) -> Unit,
+    onReplaceDish: (String, String) -> Unit,
+    error: String?,
     onSave: () -> Unit,
     listState: LazyListState,
 ) {
     val total = result.nutrition
+    var replacingDish by remember { mutableStateOf<RecognizedDish?>(null) }
+    var replacementName by remember { mutableStateOf("") }
+    AnimatedOverlayDialog(
+        show = replacingDish != null,
+        title = "更换菜品",
+        summary = "输入正确的菜品名称，按当前重量重新识别组成和营养",
+        onDismissRequest = { replacingDish = null },
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            TextField(
+                value = replacementName,
+                onValueChange = { replacementName = it },
+                label = "菜品名称",
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Button(
+                onClick = {
+                    replacingDish?.let { onReplaceDish(it.id, replacementName) }
+                    replacingDish = null
+                },
+                enabled = replacementName.isNotBlank() && !recognizing,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColorsPrimary(),
+            ) { Text("确认更换") }
+        }
+    }
 
     LazyColumn(
         modifier = Modifier
@@ -1355,6 +1386,11 @@ private fun ReviewContent(
                 onRemoveComponent = onRemoveComponent,
                 onRemoveDish = onRemoveDish,
                 onDatabaseSearch = onDatabaseSearch,
+                onReplaceDish = {
+                    replacingDish = it
+                    replacementName = it.name
+                },
+                enabled = !recognizing,
             )
         }
 
@@ -1374,6 +1410,11 @@ private fun ReviewContent(
         }
 
         item {
+            if (recognizing) {
+                LinearProgressIndicator(progress = null, modifier = Modifier.fillMaxWidth())
+                Text("正在更换菜品…", style = MiuixTheme.textStyles.subtitle)
+            }
+            error?.let { Text(it, color = MiuixTheme.colorScheme.error) }
             Button(
                 onClick = onSave,
                 enabled = !recognizing && result.dishes.isNotEmpty() && result.dishes.all { dish ->
@@ -1426,6 +1467,8 @@ private fun DishResultCard(
     onRemoveComponent: (String) -> Unit,
     onRemoveDish: (String) -> Unit,
     onDatabaseSearch: (FoodComponent) -> Unit,
+    onReplaceDish: (RecognizedDish) -> Unit,
+    enabled: Boolean,
 ) {
     var expanded by remember(dish.id) { mutableStateOf(true) }
     // ArrowRight 默认向右；展开时逆时针 90°（向上），收起再转 180°（向下）
@@ -1444,13 +1487,17 @@ private fun DishResultCard(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { expanded = !expanded }
                     .padding(16.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(dish.name, style = MiuixTheme.textStyles.title4, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        dish.name,
+                        style = MiuixTheme.textStyles.title4,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.clickable(enabled = enabled, onClickLabel = "更换菜品") { onReplaceDish(dish) },
+                    )
                     Text(
                         text = "约 ${dish.nutrition.caloriesKcal.toInt()} kcal · ${dish.grams.toInt()}g",
                         style = MiuixTheme.textStyles.subtitle,
@@ -1465,14 +1512,14 @@ private fun DishResultCard(
                         modifier = Modifier
                             .size(28.dp)
                             .clip(CircleShape)
-                            .clickable { onRemoveDish(dish.id) }
+                            .clickable(enabled = enabled) { onRemoveDish(dish.id) }
                             .padding(4.dp),
                     )
                     Box(
                         modifier = Modifier
                             .size(28.dp)
                             .clip(CircleShape)
-                            .background(MiuixTheme.colorScheme.onSurfaceVariantSummary.copy(alpha = 0.1f)),
+                            .clickable { expanded = !expanded },
                         contentAlignment = Alignment.Center,
                     ) {
                         Icon(
@@ -1575,7 +1622,7 @@ private fun ComponentResultRow(
         Box(
             modifier = Modifier
                 .clip(RoundedCornerShape(8.dp))
-                .background(MiuixTheme.colorScheme.onSurfaceVariantSummary.copy(alpha = 0.1f))
+                .background(MiuixTheme.colorScheme.onSurfaceVariantSummary.copy(alpha = 0.06f))
                 .clickable { showEdit = true }
                 .padding(horizontal = 10.dp, vertical = 6.dp),
         ) {
@@ -1586,7 +1633,8 @@ private fun ComponentResultRow(
             text = "${component.nutrition.caloriesKcal.toInt()} kcal",
             style = MiuixTheme.textStyles.body1,
             fontWeight = FontWeight.Medium,
-            modifier = Modifier.width(56.dp),
+            maxLines = 1,
+            softWrap = false,
         )
 
         Icon(
