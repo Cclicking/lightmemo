@@ -1,15 +1,7 @@
 package com.foodcalorie.app.ui.screens
 
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,34 +13,28 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.foundation.background
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlin.math.abs
 import com.foodcalorie.app.domain.FoodLog
 import com.foodcalorie.app.domain.MealType
 import com.foodcalorie.app.domain.Nutrition
@@ -62,8 +48,7 @@ import java.time.LocalDate
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
 import java.util.Locale
-import kotlin.math.roundToInt
-import kotlinx.coroutines.launch
+import kotlin.math.abs
 import top.yukonga.miuix.kmp.anim.folmeSpring
 import top.yukonga.miuix.kmp.basic.Button
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
@@ -94,6 +79,7 @@ fun TodayScreen(
     addState: AddFoodUiState,
     managementMode: Boolean,
     showDatePicker: Boolean,
+    calendarExpanded: Boolean = false,
     proteinRingColor: Color = ProteinColorDefault,
     carbsRingColor: Color = CarbsColorDefault,
     fatRingColor: Color = FatColorDefault,
@@ -154,301 +140,169 @@ fun TodayScreen(
         )
     }
 
-    var horizontalDrag by remember { mutableFloatStateOf(0f) }
-    var swipeOffset by remember { mutableFloatStateOf(0f) }
-    var swipeWidthPx by remember { mutableIntStateOf(0) }
-    val swipeScope = androidx.compose.runtime.rememberCoroutineScope()
-    LaunchedEffect(date) {
-        horizontalDrag = 0f
-        swipeOffset = 0f
+    val swipe = rememberDaySwipeState(date to calendarExpanded)
+    val progress = swipe.progress
+    val previewDate = when {
+        progress > 0f -> date.plusDays(1)
+        progress < 0f -> date.minusDays(1)
+        else -> null
     }
-
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .onSizeChanged { swipeWidthPx = it.width },
-    ) {
-        AnimatedContent(
-            targetState = date,
-            transitionSpec = {
-                val direction = if (targetState > initialState) 1 else -1
-                // ViewPager / Activity-style full-width horizontal page change.
-                slideInHorizontally(
-                    animationSpec = tween(300, easing = FastOutSlowInEasing),
-                    initialOffsetX = { width -> direction * width },
-                ) togetherWith slideOutHorizontally(
-                    animationSpec = tween(300, easing = FastOutSlowInEasing),
-                    targetOffsetX = { width -> -direction * width },
-                )
-            },
-            label = "selectedDate",
-        ) { displayedDate ->
-            val canShowNext = displayedDate < LocalDate.now()
-            val dragging = abs(swipeOffset) > 0.5f
-            val showPreview = dragging && (swipeOffset > 0f || canShowNext)
-            if (showPreview && swipeWidthPx > 0) {
-                val previewDate = if (swipeOffset < 0f) {
-                    displayedDate.plusDays(1)
-                } else {
-                    displayedDate.minusDays(1)
-                }
-                val previewOffset = swipeOffset + if (swipeOffset < 0f) {
-                    swipeWidthPx.toFloat()
-                } else {
-                    -swipeWidthPx.toFloat()
-                }
-                DaySwipePreview(
-                    date = previewDate,
-                    entries = state.entriesByDate[previewDate.toEpochDay()].orEmpty(),
-                    target = state.target,
-                    modifier = Modifier.offset { IntOffset(previewOffset.roundToInt(), 0) },
-                )
-            }
-
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .offset { IntOffset(swipeOffset.roundToInt(), 0) }
-                    .pointerInput(displayedDate, managementMode, swipeWidthPx) {
-                        if (!managementMode) {
-                            detectHorizontalDragGestures(
-                                onDragStart = {
-                                    horizontalDrag = 0f
-                                    swipeOffset = 0f
-                                },
-                                onHorizontalDrag = { change, amount ->
-                                    if (abs(amount) > 1f) change.consume()
-                                    horizontalDrag += amount
-                                    val maxOffset = (swipeWidthPx * 0.92f).coerceAtLeast(180f)
-                                    swipeOffset = horizontalDrag.coerceIn(-maxOffset, maxOffset)
-                                },
-                                onDragEnd = {
-                                    val threshold = maxOf(72f, swipeWidthPx * 0.18f)
-                                    val goPrevious = horizontalDrag > threshold
-                                    val goNext = horizontalDrag < -threshold && canShowNext
-                                    val targetOffset = when {
-                                        goPrevious || goNext -> {
-                                            val pageWidth = swipeWidthPx.coerceAtLeast(320).toFloat()
-                                            if (horizontalDrag > 0f) pageWidth else -pageWidth
-                                        }
-                                        else -> 0f
-                                    }
-                                    swipeScope.launch {
-                                        val settle = Animatable(swipeOffset)
-                                        settle.animateTo(
-                                            targetValue = targetOffset,
-                                            animationSpec = tween(if (targetOffset == 0f) 220 else 180),
-                                        ) { swipeOffset = value }
-                                        when {
-                                            goPrevious -> viewModel.previousDay()
-                                            goNext -> viewModel.nextDay()
-                                        }
-                                        horizontalDrag = 0f
-                                        swipeOffset = 0f
-                                    }
-                                },
-                                onDragCancel = {
-                                    swipeScope.launch {
-                                        val settle = Animatable(swipeOffset)
-                                        settle.animateTo(0f, animationSpec = tween(220)) {
-                                            swipeOffset = value
-                                        }
-                                        horizontalDrag = 0f
-                                        swipeOffset = 0f
-                                    }
-                                },
-                            )
-                        }
-                    }
-                    .overScrollVertical()
-                    .then(if (scrollBehavior != null) Modifier.nestedScroll(scrollBehavior.nestedScrollConnection) else Modifier),
-                state = listState,
-                contentPadding = PaddingValues(
-                    start = 16.dp,
-                    end = 16.dp,
-                    top = contentPadding.calculateTopPadding() + 4.dp,
-                    bottom = contentPadding.calculateBottomPadding() + 12.dp,
-                ),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-            if (deleted.isNotEmpty()) {
-                item {
-                    Button(onClick = viewModel::undoDelete, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
-                        Text("已删除「${deleted.last().name}」 · 撤销")
-                    }
-                }
-            }
-            operationError?.let { message -> item { Text(message) } }
-            readError?.let { message -> item { Text(message) } }
-            item {
-                Text(
-                    text = displayedDate.format(dateFormatter),
-                    style = MiuixTheme.textStyles.subtitle,
-                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                    modifier = Modifier
-                        .clickable(role = Role.Button, onClick = onShowDatePicker)
-                        .padding(start = 12.dp, top = 4.dp, end = 12.dp, bottom = 0.dp),
-                )
-            }
-
-            if (!managementMode) {
-                item {
-                    NutritionSummaryCard(
-                        total = state.total,
-                        calorieTarget = state.target,
-                        proteinTarget = state.proteinTarget,
-                        carbsTarget = state.carbsTarget,
-                        fatTarget = state.fatTarget,
-                        proteinColor = proteinRingColor,
-                        carbsColor = carbsRingColor,
-                        fatColor = fatRingColor,
-                    )
-                }
-                item {
-                    Button(onClick = onAddClick, modifier = Modifier.fillMaxWidth()) { Text("记录食物") }
-                }
-            } else {
-                item {
-                    Text(
-                        text = "点击卡片查看详情，点击删除按钮或长按卡片进行移除。",
-                        style = MiuixTheme.textStyles.subtitle,
-                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                        modifier = Modifier.padding(horizontal = 12.dp),
-                    )
-                }
-            }
-
-            val pendingForDate = addState.targetDateEpochDay == displayedDate.toEpochDay()
-            val pendingStep = addState.step as? AddStep.Review
-            MealType.entries.forEach { meal ->
-                val saved = state.entries.filter { it.mealType == meal }
-                val recognizingHere = pendingForDate && addState.recognizing && addState.mealType == meal
-                val pendingDishes = if (pendingForDate && addState.mealType == meal) pendingStep?.result?.dishes.orEmpty() else emptyList()
-                if (saved.isNotEmpty() || recognizingHere || pendingDishes.isNotEmpty()) {
-                    item {
-                        SmallTitle(
-                            text = meal.label,
-                            insideMargin = PaddingValues(start = 12.dp, top = 8.dp, end = 12.dp, bottom = 0.dp),
-                        )
-                    }
-                    if (recognizingHere) item { FoodCardRow(left = { RecognitionCard() }) }
-                    pendingDishes.chunked(2).forEach { row ->
-                        item(key = "pending-${meal.name}-${row.first().id}") {
-                            FoodCardRow(
-                                left = { PendingFoodCard(row[0].name, row[0].grams, row[0].nutrition, onAddClick) },
-                                right = row.getOrNull(1)?.let { dish ->
-                                    { PendingFoodCard(dish.name, dish.grams, dish.nutrition, onAddClick) }
-                                },
-                            )
-                        }
-                    }
-                    saved.chunked(2).forEach { row ->
-                        item(key = "saved-${meal.name}-${row.first().id}") {
-                            FoodCardRow(
-                                left = {
-                                    FoodCard(row[0], managementMode, {
-                                        selectedEntry = row[0]
-                                        showDetail = true
-                                    }, {
-                                        deleteEntry = row[0]
-                                        showDelete = true
-                                    })
-                                },
-                                right = row.getOrNull(1)?.let { entry ->
-                                    { FoodCard(entry, managementMode, {
-                                        selectedEntry = entry
-                                        showDetail = true
-                                    }, {
-                                        deleteEntry = entry
-                                        showDelete = true
-                                    }) }
-                                },
-                            )
-                        }
-                    }
-                }
-            }
-
-            if (state.entries.isEmpty() && (!pendingForDate || (!addState.recognizing && pendingStep == null))) {
-                item {
-                    Card(cornerRadius = 20.dp, modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(24.dp)) {
-                        Text("还没有记录", style = MiuixTheme.textStyles.title4)
-                        Spacer(Modifier.height(6.dp))
-                        Text(
-                            text = "拍照识别或手动添加一餐，开始统计热量",
-                            style = MiuixTheme.textStyles.subtitle,
-                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                        )
-                    }
-                }
-            }
-            }
+    val calendarDays = remember(state.entriesByDate) {
+        state.entriesByDate.map { (epoch, entries) ->
+            com.foodcalorie.app.domain.DayNutritionSummary(
+                epoch, entries.fold(Nutrition()) { total, entry -> total + entry.nutrition },
+            )
         }
     }
-}
-
-@Composable
-private fun DaySwipePreview(
-    date: LocalDate,
-    entries: List<FoodLog>,
-    target: Float,
-    modifier: Modifier = Modifier,
-) {
-    val total = entries.fold(Nutrition()) { acc, entry -> acc + entry.nutrition }
-    val progress = if (target <= 0f) 0f else (total.caloriesKcal / target).toFloat().coerceIn(0f, 1f)
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .background(MiuixTheme.colorScheme.background),
+    LazyColumn(
+        modifier = Modifier.fillMaxSize().overScrollVertical()
+            .then(if (scrollBehavior != null) Modifier.nestedScroll(scrollBehavior.nestedScrollConnection) else Modifier),
+        state = listState,
+        contentPadding = PaddingValues(
+            top = contentPadding.calculateTopPadding() + 4.dp,
+            bottom = contentPadding.calculateBottomPadding() + 12.dp,
+        ),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = 28.dp, end = 28.dp, top = 26.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Text(
-                text = date.format(dateFormatter),
-                style = MiuixTheme.textStyles.subtitle,
-                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-            )
-            Card(
-                cornerRadius = 20.dp,
-                modifier = Modifier.fillMaxWidth(),
-                insideMargin = PaddingValues(16.dp),
-            ) {
-                Text("实时预览", style = MiuixTheme.textStyles.subtitle)
-                Spacer(Modifier.height(4.dp))
-                Row(verticalAlignment = Alignment.Bottom) {
-                    Text(total.caloriesKcal.toInt().toString(), fontSize = 34.sp, fontWeight = FontWeight.Bold)
-                    Text(
-                        " / ${target.toInt()} kcal",
-                        style = MiuixTheme.textStyles.subtitle,
-                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                        modifier = Modifier.padding(start = 4.dp, bottom = 6.dp),
-                    )
+        if (deleted.isNotEmpty()) {
+            item {
+                Button(onClick = viewModel::undoDelete, enabled = !busy, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+                    Text("已删除「${deleted.last().name}」 · 撤销")
                 }
-                Spacer(Modifier.height(8.dp))
-                LinearProgressIndicator(progress = progress, modifier = Modifier.fillMaxWidth(), height = 9.dp)
-                if (entries.isEmpty()) {
-                    Spacer(Modifier.height(12.dp))
-                    Text("当天还没有记录", style = MiuixTheme.textStyles.footnote2, color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
-                } else {
-                    Spacer(Modifier.height(12.dp))
-                    entries.take(3).forEach { entry ->
+            }
+        }
+        operationError?.let { message -> item { Text(message, modifier = Modifier.padding(horizontal = 16.dp)) } }
+        readError?.let { message -> item { Text(message, modifier = Modifier.padding(horizontal = 16.dp)) } }
+        item(key = "date") {
+            if (managementMode) {
+                Text(
+                    text = date.format(dateFormatter),
+                    style = MiuixTheme.textStyles.subtitle,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    modifier = Modifier.padding(start = 28.dp, top = 4.dp),
+                )
+            } else {
+                DateCalendar(
+                    days = calendarDays,
+                    target = state.target,
+                    selectedEpochDay = date.toEpochDay(),
+                    expanded = calendarExpanded,
+                    anchor = date,
+                    daySwipeProgress = progress,
+                    previewEpochDay = previewDate?.toEpochDay(),
+                    canMoveNext = if (calendarExpanded) YearMonth.from(date) < YearMonth.now()
+                        else date.plusDays(7 - date.dayOfWeek.value.toLong()) < LocalDate.now(),
+                    onMove = { direction ->
+                        val next = if (calendarExpanded) date.plusMonths(direction.toLong())
+                            else date.plusWeeks(direction.toLong())
+                        viewModel.selectDate(minOf(next, LocalDate.now()))
+                    },
+                    onSelect = { viewModel.selectDate(LocalDate.ofEpochDay(it)) },
+                    title = { pageDate ->
                         Text(
-                            "${entry.name} · ${entry.nutrition.caloriesKcal.toInt()} kcal",
-                            style = MiuixTheme.textStyles.footnote1,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
+                            text = (if (previewDate != null && pageDate != date) previewDate else pageDate).format(dateFormatter),
+                            style = MiuixTheme.textStyles.subtitle,
+                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                            modifier = Modifier.clickable(role = Role.Button, onClick = onShowDatePicker)
+                                .padding(start = 12.dp, top = 4.dp, end = 12.dp, bottom = 10.dp),
+                        )
+                    },
+                )
+            }
+        }
+        item(key = "dayCards") {
+            DaySwipePages(
+                state = swipe,
+                enabled = !managementMode,
+                canMoveNext = date < LocalDate.now(),
+                onMove = { viewModel.selectDate(date.plusDays(it.toLong())) },
+            ) { direction ->
+                val displayedDate = date.plusDays(direction.toLong())
+                val pageEntries = state.entriesByDate[displayedDate.toEpochDay()].orEmpty()
+                val pageTotal = remember(pageEntries) {
+                    pageEntries.fold(Nutrition()) { total, entry -> total + entry.nutrition }
+                }
+                Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    if (!managementMode) {
+                        NutritionSummaryCard(
+                            total = pageTotal,
+                            calorieTarget = state.target,
+                            proteinTarget = state.proteinTarget,
+                            carbsTarget = state.carbsTarget,
+                            fatTarget = state.fatTarget,
+                            proteinColor = proteinRingColor,
+                            carbsColor = carbsRingColor,
+                            fatColor = fatRingColor,
+                        )
+                        Button(onClick = onAddClick, modifier = Modifier.fillMaxWidth()) { Text("记录食物") }
+                    } else {
+                        Text(
+                            text = "点击卡片查看详情，点击删除按钮或长按卡片进行移除。",
+                            style = MiuixTheme.textStyles.subtitle,
+                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                            modifier = Modifier.padding(horizontal = 12.dp),
                         )
                     }
-                    if (entries.size > 3) {
-                        Text(
-                            "还有 ${entries.size - 3} 条记录",
-                            style = MiuixTheme.textStyles.footnote2,
-                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                        )
+
+                    val pendingForDate = addState.targetDateEpochDay == displayedDate.toEpochDay()
+                    val pendingStep = addState.step as? AddStep.Review
+                    MealType.entries.forEach { meal ->
+                        val saved = pageEntries.filter { it.mealType == meal }
+                        val recognizingHere = pendingForDate && addState.recognizing && addState.mealType == meal
+                        val pendingDishes = if (pendingForDate && addState.mealType == meal) pendingStep?.result?.dishes.orEmpty() else emptyList()
+                        if (saved.isNotEmpty() || recognizingHere || pendingDishes.isNotEmpty()) {
+                            SmallTitle(
+                                text = meal.label,
+                                insideMargin = PaddingValues(start = 12.dp, top = 8.dp, end = 12.dp, bottom = 0.dp),
+                            )
+                            if (recognizingHere) FoodCardRow(left = { RecognitionCard() })
+                            pendingDishes.chunked(2).forEach { row ->
+                                androidx.compose.runtime.key("pending-${meal.name}-${row.first().id}") {
+                                    FoodCardRow(
+                                        left = { PendingFoodCard(row[0].name, row[0].grams, row[0].nutrition, onAddClick) },
+                                        right = row.getOrNull(1)?.let { dish ->
+                                            { PendingFoodCard(dish.name, dish.grams, dish.nutrition, onAddClick) }
+                                        },
+                                    )
+                                }
+                            }
+                            saved.chunked(2).forEach { row ->
+                                androidx.compose.runtime.key("saved-${meal.name}-${row.first().id}") {
+                                    FoodCardRow(
+                                        left = {
+                                            FoodCard(row[0], managementMode, {
+                                                selectedEntry = row[0]
+                                                showDetail = true
+                                            }, {
+                                                deleteEntry = row[0]
+                                                showDelete = true
+                                            })
+                                        },
+                                        right = row.getOrNull(1)?.let { entry ->
+                                            { FoodCard(entry, managementMode, {
+                                                selectedEntry = entry
+                                                showDetail = true
+                                            }, {
+                                                deleteEntry = entry
+                                                showDelete = true
+                                            }) }
+                                        },
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    if (pageEntries.isEmpty() && (!pendingForDate || (!addState.recognizing && pendingStep == null))) {
+                        Card(cornerRadius = 20.dp, modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(24.dp)) {
+                            Text("还没有记录", style = MiuixTheme.textStyles.title4)
+                            Spacer(Modifier.height(6.dp))
+                            Text(
+                                text = "拍照识别或手动添加一餐，开始统计热量",
+                                style = MiuixTheme.textStyles.subtitle,
+                                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                            )
+                        }
                     }
                 }
             }

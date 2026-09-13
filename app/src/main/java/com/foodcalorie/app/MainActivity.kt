@@ -177,6 +177,7 @@ fun FoodAppRoot() {
         CompositionLocalProvider(LocalGlassSupported provides glassSupported, LocalOverScrollState provides remember { OverScrollState() }) {
             var selectedTab by rememberSaveable { mutableIntStateOf(0) }
             var showAdd by rememberSaveable { mutableStateOf(false) }
+            var todayCalendarExpanded by rememberSaveable { mutableStateOf(false) }
             var statsCalendarExpanded by rememberSaveable { mutableStateOf(false) }
             var showDatePicker by remember { mutableStateOf(false) }
             LaunchedEffect(settingsError, settingsReadError) {
@@ -247,6 +248,7 @@ fun FoodAppRoot() {
                     scrollBehavior = scrollBehavior,
                     endAction = when (selectedTab) {
                         0 -> { { glassAlpha, shadowAlpha ->
+                            androidx.compose.foundation.layout.Row {
                             LiquidTopBarButton(
                                 onClick = {
                                     context.startActivity(
@@ -262,6 +264,15 @@ fun FoodAppRoot() {
                                 backdropAlpha = glassAlpha,
                                 shadowAlpha = shadowAlpha,
                             )
+                            LiquidTopBarButton(
+                                onClick = { todayCalendarExpanded = !todayCalendarExpanded },
+                                backdrop = backdrop,
+                                icon = MiuixIcons.Os4.Months,
+                                contentDescription = if (todayCalendarExpanded) "收起月视图" else "展开月视图",
+                                backdropAlpha = glassAlpha,
+                                shadowAlpha = shadowAlpha,
+                            )
+                            }
                         } }
                         1 -> { { glassAlpha, shadowAlpha ->
                             LiquidTopBarButton(
@@ -359,6 +370,7 @@ fun FoodAppRoot() {
                                         listState = todayList,
                                         addState = addState,
                                         managementMode = false,
+                                        calendarExpanded = todayCalendarExpanded,
                                         showDatePicker = showDatePicker,
                                         proteinRingColor = Color(appSettings.proteinRingColor),
                                         carbsRingColor = Color(appSettings.carbsRingColor),
