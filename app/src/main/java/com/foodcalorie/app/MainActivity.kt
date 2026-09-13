@@ -95,6 +95,7 @@ import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.basic.Close
 import top.yukonga.miuix.kmp.icon.os4.ChevronBackward
 import top.yukonga.miuix.kmp.icon.os4.GridView
+import top.yukonga.miuix.kmp.icon.os4.Months
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import java.time.LocalDate
 
@@ -176,6 +177,7 @@ fun FoodAppRoot() {
         CompositionLocalProvider(LocalGlassSupported provides glassSupported, LocalOverScrollState provides remember { OverScrollState() }) {
             var selectedTab by rememberSaveable { mutableIntStateOf(0) }
             var showAdd by rememberSaveable { mutableStateOf(false) }
+            var statsCalendarExpanded by rememberSaveable { mutableStateOf(false) }
             var showDatePicker by remember { mutableStateOf(false) }
             LaunchedEffect(settingsError, settingsReadError) {
                 (settingsError ?: settingsReadError)?.let { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
@@ -243,23 +245,36 @@ fun FoodAppRoot() {
                     largeTitle = largeTitle,
                     showGradientOverlay = true,
                     scrollBehavior = scrollBehavior,
-                    endAction = if (selectedTab == 0) { { glassAlpha, shadowAlpha ->
-                        LiquidTopBarButton(
-                            onClick = {
-                                context.startActivity(
-                                    android.content.Intent(
-                                        context,
-                                        com.foodcalorie.app.ui.secondary.ManageFoodCardsActivity::class.java,
-                                    ),
-                                )
-                            },
-                            backdrop = backdrop,
-                            icon = MiuixIcons.Os4.GridView,
-                            contentDescription = "管理食物卡片",
-                            backdropAlpha = glassAlpha,
-                            shadowAlpha = shadowAlpha,
-                        )
-                    } } else null,
+                    endAction = when (selectedTab) {
+                        0 -> { { glassAlpha, shadowAlpha ->
+                            LiquidTopBarButton(
+                                onClick = {
+                                    context.startActivity(
+                                        android.content.Intent(
+                                            context,
+                                            com.foodcalorie.app.ui.secondary.ManageFoodCardsActivity::class.java,
+                                        ),
+                                    )
+                                },
+                                backdrop = backdrop,
+                                icon = MiuixIcons.Os4.GridView,
+                                contentDescription = "管理食物卡片",
+                                backdropAlpha = glassAlpha,
+                                shadowAlpha = shadowAlpha,
+                            )
+                        } }
+                        1 -> { { glassAlpha, shadowAlpha ->
+                            LiquidTopBarButton(
+                                onClick = { statsCalendarExpanded = !statsCalendarExpanded },
+                                backdrop = backdrop,
+                                icon = MiuixIcons.Os4.Months,
+                                contentDescription = if (statsCalendarExpanded) "收起月视图" else "展开月视图",
+                                backdropAlpha = glassAlpha,
+                                shadowAlpha = shadowAlpha,
+                            )
+                        } }
+                        else -> null
+                    },
                 )
             }
 
@@ -360,6 +375,10 @@ fun FoodAppRoot() {
                                         contentPadding = padding,
                                         scrollBehavior = scrollBehavior,
                                         listState = statsList,
+                                        calendarExpanded = statsCalendarExpanded,
+                                        proteinRingColor = Color(appSettings.proteinRingColor),
+                                        carbsRingColor = Color(appSettings.carbsRingColor),
+                                        fatRingColor = Color(appSettings.fatRingColor),
                                     )
                                     else -> MineHubScreen(
                                         contentPadding = padding,

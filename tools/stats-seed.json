@@ -1,0 +1,30 @@
+{
+  "format": "food-calorie-logs",
+  "version": 1,
+  "logs": [
+    {"id":0,"name":"燕麦牛奶","mealType":"BREAKFAST","grams":100,"caloriesKcal":420,"proteinG":18,"carbsG":62,"fatG":12,"components":[],"imageUri":null,"dateEpochDay":20703,"createdAtMillis":1788739200000,"mealMinuteOfDay":480,"note":null,"mealTags":[]},
+    {"id":0,"name":"鸡肉饭","mealType":"LUNCH","grams":100,"caloriesKcal":680,"proteinG":42,"carbsG":78,"fatG":18,"components":[],"imageUri":null,"dateEpochDay":20703,"createdAtMillis":1788768000000,"mealMinuteOfDay":720,"note":null,"mealTags":[]},
+    {"id":0,"name":"番茄牛肉面","mealType":"DINNER","grams":100,"caloriesKcal":760,"proteinG":38,"carbsG":92,"fatG":22,"components":[],"imageUri":null,"dateEpochDay":20703,"createdAtMillis":1788796800000,"mealMinuteOfDay":1080,"note":null,"mealTags":[]},
+    {"id":0,"name":"酸奶","mealType":"SNACK","grams":100,"caloriesKcal":100,"proteinG":5,"carbsG":12,"fatG":3,"components":[],"imageUri":null,"dateEpochDay":20703,"createdAtMillis":1788804000000,"mealMinuteOfDay":1200,"note":null,"mealTags":[]},
+    {"id":0,"name":"全麦面包","mealType":"BREAKFAST","grams":100,"caloriesKcal":380,"proteinG":15,"carbsG":58,"fatG":10,"components":[],"imageUri":null,"dateEpochDay":20704,"createdAtMillis":1788825600000,"mealMinuteOfDay":480,"note":null,"mealTags":[]},
+    {"id":0,"name":"虾仁蔬菜饭","mealType":"LUNCH","grams":100,"caloriesKcal":540,"proteinG":35,"carbsG":64,"fatG":14,"components":[],"imageUri":null,"dateEpochDay":20704,"createdAtMillis":1788854400000,"mealMinuteOfDay":720,"note":null,"mealTags":[]},
+    {"id":0,"name":"清蒸鱼和蔬菜","mealType":"DINNER","grams":100,"caloriesKcal":660,"proteinG":45,"carbsG":38,"fatG":24,"components":[],"imageUri":null,"dateEpochDay":20704,"createdAtMillis":1788883200000,"mealMinuteOfDay":1080,"note":null,"mealTags":[]},
+    {"id":0,"name":"鸡蛋三明治","mealType":"BREAKFAST","grams":100,"caloriesKcal":450,"proteinG":22,"carbsG":48,"fatG":18,"components":[],"imageUri":null,"dateEpochDay":20705,"createdAtMillis":1788912000000,"mealMinuteOfDay":480,"note":null,"mealTags":[]},
+    {"id":0,"name":"牛肉蔬菜沙拉","mealType":"LUNCH","grams":100,"caloriesKcal":700,"proteinG":44,"carbsG":52,"fatG":28,"components":[],"imageUri":null,"dateEpochDay":20705,"createdAtMillis":1788940800000,"mealMinuteOfDay":720,"note":null,"mealTags":[]},
+    {"id":0,"name":"虾仁意面","mealType":"DINNER","grams":100,"caloriesKcal":620,"proteinG":32,"carbsG":76,"fatG":16,"components":[],"imageUri":null,"dateEpochDay":20705,"createdAtMillis":1788969600000,"mealMinuteOfDay":1080,"note":null,"mealTags":[]},
+    {"id":0,"name":"水果","mealType":"SNACK","grams":100,"caloriesKcal":80,"proteinG":1,"carbsG":20,"fatG":0,"components":[],"imageUri":null,"dateEpochDay":20705,"createdAtMillis":1788976800000,"mealMinuteOfDay":1200,"note":null,"mealTags":[]},
+    {"id":0,"name":"鸡蛋吐司","mealType":"BREAKFAST","grams":100,"caloriesKcal":500,"proteinG":24,"carbsG":55,"fatG":20,"components":[],"imageUri":null,"dateEpochDay":20706,"createdAtMillis":1788998400000,"mealMinuteOfDay":480,"note":null,"mealTags":[]},
+    {"id":0,"name":"照烧鸡腿饭","mealType":"LUNCH","grams":100,"caloriesKcal":650,"proteinG":40,"carbsG":72,"fatG":18,"components":[],"imageUri":null,"dateEpochDay":20706,"createdAtMillis":1789027200000,"mealMinuteOfDay":720,"note":null,"mealTags":[]},
+    {"id":0,"name":"豆腐牛肉煲","mealType":"DINNER","grams":100,"caloriesKcal":750,"proteinG":48,"carbsG":42,"fatG":30,"components":[],"imageUri":null,"dateEpochDay":20706,"createdAtMillis":1789056000000,"mealMinuteOfDay":1080,"note":null,"mealTags":[]},
+    {"id":0,"name":"牛奶","mealType":"BREAKFAST","grams":100,"caloriesKcal":400,"proteinG":20,"carbsG":45,"fatG":15,"components":[],"imageUri":null,"dateEpochDay":20707,"createdAtMillis":1789084800000,"mealMinuteOfDay":480,"note":null,"mealTags":[]},
+    {"id":0,"name":"番茄鸡胸肉饭","mealType":"LUNCH","grams":100,"caloriesKcal":600,"proteinG":46,"carbsG":68,"fatG":12,"components":[],"imageUri":null,"dateEpochDay":20707,"createdAtMillis":1789113600000,"mealMinuteOfDay":720,"note":null,"mealTags":[]},
+    {"id":0,"name":"烤鱼和玉米","mealType":"DINNER","grams":100,"caloriesKcal":700,"proteinG":42,"carbsG":55,"fatG":22,"components":[],"imageUri":null,"dateEpochDay":20707,"createdAtMillis":1789142400000,"mealMinuteOfDay":1080,"note":null,"mealTags":[]},
+    {"id":0,"name":"燕麦水果杯","mealType":"BREAKFAST","grams":100,"caloriesKcal":480,"proteinG":18,"carbsG":70,"fatG":14,"components":[],"imageUri":null,"dateEpochDay":20708,"createdAtMillis":1789171200000,"mealMinuteOfDay":480,"note":null,"mealTags":[]},
+    {"id":0,"name":"牛肉盖饭","mealType":"LUNCH","grams":100,"caloriesKcal":720,"proteinG":42,"carbsG":86,"fatG":22,"components":[],"imageUri":null,"dateEpochDay":20708,"createdAtMillis":1789200000000,"mealMinuteOfDay":720,"note":null,"mealTags":[]},
+    {"id":0,"name":"咖喱鸡肉","mealType":"DINNER","grams":100,"caloriesKcal":820,"proteinG":40,"carbsG":78,"fatG":32,"components":[],"imageUri":null,"dateEpochDay":20708,"createdAtMillis":1789228800000,"mealMinuteOfDay":1080,"note":null,"mealTags":[]},
+    {"id":0,"name":"坚果","mealType":"SNACK","grams":100,"caloriesKcal":150,"proteinG":5,"carbsG":8,"fatG":12,"components":[],"imageUri":null,"dateEpochDay":20708,"createdAtMillis":1789236000000,"mealMinuteOfDay":1200,"note":null,"mealTags":[]},
+    {"id":0,"name":"蔬菜鸡蛋卷","mealType":"BREAKFAST","grams":100,"caloriesKcal":450,"proteinG":25,"carbsG":36,"fatG":22,"components":[],"imageUri":null,"dateEpochDay":20709,"createdAtMillis":1789257600000,"mealMinuteOfDay":480,"note":null,"mealTags":[]},
+    {"id":0,"name":"三文鱼饭","mealType":"LUNCH","grams":100,"caloriesKcal":650,"proteinG":38,"carbsG":64,"fatG":24,"components":[],"imageUri":null,"dateEpochDay":20709,"createdAtMillis":1789286400000,"mealMinuteOfDay":720,"note":null,"mealTags":[]},
+    {"id":0,"name":"番茄虾仁汤","mealType":"DINNER","grams":100,"caloriesKcal":750,"proteinG":42,"carbsG":58,"fatG":26,"components":[],"imageUri":null,"dateEpochDay":20709,"createdAtMillis":1789315200000,"mealMinuteOfDay":1080,"note":null,"mealTags":[]}
+  ]
+}

@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.foodcalorie.app.FoodApp
 import com.foodcalorie.app.domain.DayNutritionSummary
 import com.foodcalorie.app.domain.FoodLog
+import com.foodcalorie.app.domain.MealType
 import com.foodcalorie.app.domain.Nutrition
 import java.time.LocalDate
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -125,33 +126,45 @@ class StatsViewModel(app: Application) : AndroidViewModel(app) {
     val readError: StateFlow<String?> = repo.readError
     private val settingsRepo = (app as FoodApp).settingsRepository
 
-    private val _rangeDays = MutableStateFlow(7)
-    val rangeDays: StateFlow<Int> = _rangeDays
+    private val period = MutableStateFlow<Pair<LocalDate, LocalDate>?>(null)
 
     data class StatsUiState(
         val rangeDays: Int = 7,
+        val elapsedDays: Int = 0,
         val daily: List<DayNutritionSummary> = emptyList(),
         val averageKcal: Double = 0.0,
         val averageNutrition: Nutrition = Nutrition(),
+        val mealCalories: Map<MealType, Double> = emptyMap(),
         val maxKcal: Double = 0.0,
         val daysHitTarget: Int = 0,
         val daysOverTarget: Int = 0,
         val loggedDays: Int = 0,
         val target: Float = 1800f,
+        val proteinTarget: Float = 120f,
+        val carbsTarget: Float = 250f,
+        val fatTarget: Float = 60f,
     ) {
         val hasData: Boolean get() = loggedDays > 0
     }
 
     val uiState: StateFlow<StatsUiState> = combine(
         repo.logs,
-        _rangeDays,
+        period,
         settingsRepo.settings,
         currentDateFlow(),
-    ) { logs, days, settings, today ->
-        val from = today.minusDays(days.toLong() - 1).toEpochDay()
-        val to = today.toEpochDay()
-        val filtered = logs.filter { it.dateEpochDay in from..to }
+    ) { logs, selectedPeriod, settings, today ->
+        val start = selectedPeriod?.first ?: today.minusDays(today.dayOfWeek.value.toLong() - 1)
+        val end = selectedPeriod?.second ?: start.plusDays(6)
+        val from = start.toEpochDay()
+        val to = end.toEpochDay()
+        val days = (to - from + 1).toInt()
+        val filtered = logs.filter { it.dateEpochDay in from..minOf(to, today.toEpochDay()) }
         val grouped = filtered.groupBy { it.dateEpochDay }
+        val mealCalories = MealType.entries.associateWith { mealType ->
+            filtered.asSequence()
+                .filter { it.mealType == mealType }
+                .sumOf { it.nutrition.caloriesKcal }
+        }
         val daily = (0 until days).map { offset ->
             val day = from + offset
             DayNutritionSummary(
@@ -163,20 +176,26 @@ class StatsViewModel(app: Application) : AndroidViewModel(app) {
         val target = settings.dailyCalorieTarget.toDouble()
         StatsUiState(
             rangeDays = days,
+            elapsedDays = (minOf(to, today.toEpochDay()) - from + 1).toInt().coerceIn(0, days),
             daily = daily,
             averageKcal = if (logged.isEmpty()) 0.0 else logged.map { it.total.caloriesKcal }.average(),
             averageNutrition = logged.fold(Nutrition()) { acc, day -> acc + day.total }
                 .times(1.0 / logged.size.coerceAtLeast(1)),
+            mealCalories = mealCalories,
             maxKcal = daily.maxOfOrNull { it.total.caloriesKcal } ?: 0.0,
             daysHitTarget = logged.count { it.total.caloriesKcal in 0.0..target },
             daysOverTarget = logged.count { it.total.caloriesKcal > target },
             loggedDays = logged.size,
             target = settings.dailyCalorieTarget,
+            proteinTarget = settings.effectiveProteinG.takeIf { it > 0f } ?: 120f,
+            carbsTarget = settings.effectiveCarbsG.takeIf { it > 0f } ?: 250f,
+            fatTarget = settings.effectiveFatG.takeIf { it > 0f } ?: 60f,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), StatsUiState())
 
-    fun setRange(days: Int) {
-        _rangeDays.value = if (days == 30) 30 else 7
+    fun setPeriod(start: LocalDate, end: LocalDate) {
+        require(!end.isBefore(start))
+        period.value = start to end
     }
 }
 
