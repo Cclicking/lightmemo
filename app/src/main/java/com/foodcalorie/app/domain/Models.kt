@@ -2,6 +2,7 @@ package com.foodcalorie.app.domain
 
 import java.time.LocalDate
 
+@kotlinx.serialization.Serializable
 data class Nutrition(
     val caloriesKcal: Double = 0.0,
     val proteinG: Double = 0.0,

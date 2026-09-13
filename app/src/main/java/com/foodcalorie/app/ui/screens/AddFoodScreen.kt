@@ -46,6 +46,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -77,7 +78,7 @@ import com.foodcalorie.app.viewmodel.AddFoodViewModel
 import com.foodcalorie.app.viewmodel.AddStep
 import com.foodcalorie.app.viewmodel.DatabaseSearchState
 import com.foodcalorie.app.viewmodel.DefaultMealTags
-import com.foodcalorie.app.viewmodel.PresetFood
+import com.foodcalorie.app.data.PresetFood
 import com.foodcalorie.app.viewmodel.QuantityMode
 import java.io.File
 import java.time.LocalDate
@@ -132,13 +133,17 @@ fun AddFoodRoute(
     val settings by viewModel.settings.collectAsState()
     val context = LocalContext.current
 
-    var cameraUri by remember { mutableStateOf<Uri?>(null) }
+    var cameraUriString by rememberSaveable { mutableStateOf<String?>(null) }
+    val cameraUri = cameraUriString?.let(Uri::parse)
     var cameraPermissionDenied by remember { mutableStateOf(false) }
 
     val galleryLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.PickVisualMedia(),
     ) { uri ->
-        if (uri != null) viewModel.recognizeFromUri(uri)
+        if (uri != null) {
+            runCatching { context.contentResolver.takePersistableUriPermission(uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+            viewModel.recognizeFromUri(uri)
+        }
     }
 
     val cameraLauncher = rememberLauncherForActivityResult(
@@ -177,7 +182,7 @@ fun AddFoodRoute(
             Manifest.permission.CAMERA,
         ) == PackageManager.PERMISSION_GRANTED
         val uri = prepareCameraUri()
-        cameraUri = uri
+        cameraUriString = uri.toString()
         if (granted) {
             cameraPermissionDenied = false
             cameraLauncher.launch(uri)
@@ -190,6 +195,8 @@ fun AddFoodRoute(
     PresetOverlay(
         show = state.showPresetSheet,
         presets = state.presets,
+        saving = state.saving,
+        error = state.error,
         onDismiss = viewModel::closePresetSheet,
         onSelect = viewModel::applyPreset,
         onUpdate = viewModel::updatePreset,
@@ -212,7 +219,7 @@ fun AddFoodRoute(
                 is AddStep.PickSource -> PickSourceContent(
                     padding = contentPadding,
                     configured = settings.isRecognitionConfigured,
-                    recognizing = state.recognizing,
+                    recognizing = state.recognizing || state.saving,
                     mealType = state.mealType,
                     onMealType = viewModel::setMealType,
                     quickInput = state.quickInput,
@@ -249,7 +256,7 @@ fun AddFoodRoute(
                     initialName = step.initialName,
                     initialGrams = step.initialGrams,
                     configured = settings.isRecognitionConfigured,
-                    recognizing = state.recognizing,
+                    recognizing = state.recognizing || state.saving,
                     nutritionSuggestion = state.manualNutrition,
                     error = state.error,
                     quantityMode = state.quantityMode,
@@ -260,15 +267,14 @@ fun AddFoodRoute(
                     onRecognizeGrams = viewModel::recognizeManual,
                     onRecognizePortions = viewModel::recognizeManualWithPortions,
                     onSave = { name, grams, nutrition ->
-                        viewModel.saveManual(name, grams, nutrition)
-                        onDone()
+                        viewModel.saveManual(name, grams, nutrition, onDone)
                     },
                 )
 
                 is AddStep.Review -> ReviewContent(
                     padding = contentPadding,
                     result = step.result,
-                    recognizing = state.recognizing,
+                    recognizing = state.recognizing || state.saving,
                     mealType = state.mealType,
                     onMealType = viewModel::setMealType,
                     onWeightChange = viewModel::updateComponentWeight,
@@ -276,8 +282,7 @@ fun AddFoodRoute(
                     onRemoveDish = viewModel::removeDish,
                     onDatabaseSearch = viewModel::openComponentSearch,
                     onSave = {
-                        viewModel.saveRecognized(step.result, step.imageUri)
-                        onDone()
+                        viewModel.saveRecognized(step.result, step.imageUri, onDone)
                     },
                     listState = listState,
                 )
@@ -336,9 +341,9 @@ private fun PickSourceContent(
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .height(AddFoodSheetHeight)
             .verticalScroll(rememberScrollState())
             .overScrollVertical()
-            .height(AddFoodSheetHeight)
             .navigationBarsPadding()
             .padding(
                 start = 16.dp,
@@ -628,12 +633,12 @@ private fun ManualEntryContent(
     onRecognizePortions: (String, Double) -> Unit,
     onSave: (String, Double, Nutrition) -> Unit,
 ) {
-    var name by remember { mutableStateOf(initialName) }
-    var grams by remember { mutableStateOf(initialGrams?.formatInput() ?: "100") }
-    var kcal by remember { mutableStateOf("") }
-    var protein by remember { mutableStateOf("") }
-    var carbs by remember { mutableStateOf("") }
-    var fat by remember { mutableStateOf("") }
+    var name by rememberSaveable { mutableStateOf(initialName) }
+    var grams by rememberSaveable { mutableStateOf(initialGrams?.formatInput() ?: "100") }
+    var kcal by rememberSaveable { mutableStateOf("") }
+    var protein by rememberSaveable { mutableStateOf("") }
+    var carbs by rememberSaveable { mutableStateOf("") }
+    var fat by rememberSaveable { mutableStateOf("") }
     var showPortionDialog by remember { mutableStateOf(false) }
     var showGramsDialog by remember { mutableStateOf(false) }
 
@@ -651,18 +656,20 @@ private fun ManualEntryContent(
     }
 
     val effectiveGrams = when (quantityMode) {
-        QuantityMode.GRAMS -> grams.toDoubleOrNull()?.takeIf { it > 0.0 } ?: 100.0
-        QuantityMode.PORTIONS -> estimatedGrams
-            ?: grams.toDoubleOrNull()?.takeIf { it > 0.0 }
-            ?: 100.0
+        QuantityMode.GRAMS -> grams.toDoubleOrNull() ?: Double.NaN
+        QuantityMode.PORTIONS -> if (estimatedGrams != null) grams.toDoubleOrNull() ?: Double.NaN else Double.NaN
     }
+    val validInput = effectiveGrams.isFinite() && effectiveGrams > 0.0 &&
+        listOf(kcal, protein, carbs, fat).all { value ->
+            value.toDoubleOrNull()?.let { it.isFinite() && it >= 0.0 } == true
+        }
 
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .height(AddFoodSheetHeight)
             .verticalScroll(rememberScrollState())
             .overScrollVertical()
-            .height(AddFoodSheetHeight)
             .navigationBarsPadding()
             .padding(
                 start = 16.dp,
@@ -752,7 +759,8 @@ private fun ManualEntryContent(
                     QuantityMode.PORTIONS -> onRecognizePortions(n, portionCount)
                 }
             },
-            enabled = configured && !recognizing && name.isNotBlank(),
+            enabled = configured && !recognizing && name.isNotBlank() &&
+                (quantityMode == QuantityMode.PORTIONS || (effectiveGrams.isFinite() && effectiveGrams > 0)),
             modifier = Modifier.fillMaxWidth(),
             colors = ButtonDefaults.buttonColorsPrimary(
                 color = Color(0xFF8EAEFF),
@@ -790,6 +798,9 @@ private fun ManualEntryContent(
             }
         }
 
+        if (!validInput) {
+            Text("请填写大于 0 的重量，以及非负的热量和营养素；无摄入的项目请填 0。")
+        }
         Button(
             onClick = {
                 val n = name.trim()
@@ -805,7 +816,7 @@ private fun ManualEntryContent(
                     ),
                 )
             },
-            enabled = name.isNotBlank(),
+            enabled = name.isNotBlank() && validInput && !recognizing,
             modifier = Modifier.fillMaxWidth(),
             colors = ButtonDefaults.buttonColorsPrimary(
                 color = Color(0xFF8EAEFF),
@@ -823,6 +834,15 @@ private fun ManualEntryContent(
         initial = grams,
         onDismiss = { showGramsDialog = false },
         onConfirm = { value ->
+            val before = grams.toDoubleOrNull()
+            val after = value.toDoubleOrNull()
+            if (before != null && before > 0 && after != null && after.isFinite() && after > 0) {
+                val ratio = after / before
+                kcal = kcal.toDoubleOrNull()?.times(ratio)?.formatInput() ?: kcal
+                protein = protein.toDoubleOrNull()?.times(ratio)?.formatInput() ?: protein
+                carbs = carbs.toDoubleOrNull()?.times(ratio)?.formatInput() ?: carbs
+                fat = fat.toDoubleOrNull()?.times(ratio)?.formatInput() ?: fat
+            }
             grams = value
             showGramsDialog = false
         },
@@ -881,7 +901,7 @@ private fun NumberInputDialog(
     onDismiss: () -> Unit,
     onConfirm: (String) -> Unit,
 ) {
-    var draft by remember { mutableStateOf(initial) }
+    var draft by remember(show, initial) { mutableStateOf(initial) }
     AnimatedOverlayDialog(
         title = title,
         summary = summary,
@@ -892,11 +912,7 @@ private fun NumberInputDialog(
             TextField(
                 value = draft,
                 onValueChange = { value ->
-                    draft = if (allowDecimal) {
-                        value.filter { it.isDigit() || it == '.' }
-                    } else {
-                        value.filter { it.isDigit() }
-                    }
+                    draft = value
                 },
                 singleLine = true,
                 colors = sheetFieldColors(),
@@ -909,6 +925,7 @@ private fun NumberInputDialog(
                 }
                 Button(
                     onClick = { onConfirm(draft) },
+                    enabled = draft.toDoubleOrNull()?.let { it.isFinite() && it >= 0 && (allowDecimal || it % 1.0 == 0.0) } == true,
                     modifier = Modifier.weight(1f),
                     colors = ButtonDefaults.buttonColorsPrimary(),
                 ) {
@@ -1030,9 +1047,11 @@ private fun MealTimePickerOverlay(
 private fun PresetOverlay(
     show: Boolean,
     presets: List<PresetFood>,
+    saving: Boolean,
+    error: String?,
     onDismiss: () -> Unit,
     onSelect: (PresetFood) -> Unit,
-    onUpdate: (PresetFood) -> Unit,
+    onUpdate: (PresetFood, () -> Unit) -> Unit,
 ) {
     var editing by remember { mutableStateOf<PresetFood?>(null) }
     BlurBottomSheet(
@@ -1045,8 +1064,8 @@ private fun PresetOverlay(
         LazyColumn(
             modifier = Modifier
                 .heightIn(min = 220.dp, max = 500.dp)
-                .navigationBarsPadding()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
+                .navigationBarsPadding(),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 61.dp, bottom = 12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             items(presets, key = { it.id }) { preset ->
@@ -1095,10 +1114,11 @@ private fun PresetOverlay(
     PresetEditDialog(
         show = editing != null,
         preset = editing,
-        onDismiss = { editing = null },
+        saving = saving,
+        error = error,
+        onDismiss = { if (!saving) editing = null },
         onSave = { updated ->
-            onUpdate(updated)
-            editing = null
+            onUpdate(updated) { editing = null }
         },
     )
 }
@@ -1107,6 +1127,8 @@ private fun PresetOverlay(
 private fun PresetEditDialog(
     show: Boolean,
     preset: PresetFood?,
+    saving: Boolean,
+    error: String?,
     onDismiss: () -> Unit,
     onSave: (PresetFood) -> Unit,
 ) {
@@ -1148,7 +1170,7 @@ private fun PresetEditDialog(
             )
             TextField(
                 value = grams,
-                onValueChange = { grams = it.filter { c -> c.isDigit() || c == '.' } },
+                onValueChange = { grams = it },
                 label = "默认克数 g",
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
@@ -1156,7 +1178,7 @@ private fun PresetEditDialog(
             )
             TextField(
                 value = kcal,
-                onValueChange = { kcal = it.filter { c -> c.isDigit() || c == '.' } },
+                onValueChange = { kcal = it },
                 label = "热量 kcal",
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
@@ -1164,7 +1186,7 @@ private fun PresetEditDialog(
             )
             TextField(
                 value = protein,
-                onValueChange = { protein = it.filter { c -> c.isDigit() || c == '.' } },
+                onValueChange = { protein = it },
                 label = "蛋白质 g",
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
@@ -1172,7 +1194,7 @@ private fun PresetEditDialog(
             )
             TextField(
                 value = carbs,
-                onValueChange = { carbs = it.filter { c -> c.isDigit() || c == '.' } },
+                onValueChange = { carbs = it },
                 label = "碳水 g",
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
@@ -1180,12 +1202,13 @@ private fun PresetEditDialog(
             )
             TextField(
                 value = fat,
-                onValueChange = { fat = it.filter { c -> c.isDigit() || c == '.' } },
+                onValueChange = { fat = it },
                 label = "脂肪 g",
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                 modifier = Modifier.fillMaxWidth(),
             )
+            error?.let { Text(it, color = MiuixTheme.colorScheme.error) }
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
                 Button(onClick = onDismiss, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors()) {
                     Text("取消")
@@ -1205,6 +1228,8 @@ private fun PresetEditDialog(
                             ),
                         )
                     },
+                    enabled = !saving && name.isNotBlank() && grams.toDoubleOrNull()?.let { it.isFinite() && it > 0 } == true &&
+                        listOf(kcal, protein, carbs, fat).all { it.toDoubleOrNull()?.let { n -> n.isFinite() && n >= 0 } == true },
                     modifier = Modifier.weight(1f),
                     colors = ButtonDefaults.buttonColorsPrimary(),
                 ) {
@@ -1668,7 +1693,7 @@ fun MealTypeSelector(
 }
 
 private fun Double.formatInput(): String =
-    if (this % 1.0 == 0.0) toInt().toString() else "%.1f".format(this)
+    if (this % 1.0 == 0.0) toInt().toString() else "%.1f".format(java.util.Locale.ROOT, this)
 
 private fun Int.toLocalTime(): LocalTime = LocalTime.of(this / 60, this % 60)
 

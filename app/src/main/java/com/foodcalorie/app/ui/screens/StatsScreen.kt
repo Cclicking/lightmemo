@@ -53,6 +53,7 @@ fun StatsScreen(
     listState: LazyListState,
 ) {
     val state by viewModel.uiState.collectAsState()
+    val readError by viewModel.readError.collectAsState()
     val dayLabel = DateTimeFormatter.ofPattern("M/d")
     var selectedEpochDay by remember(state.rangeDays) {
         mutableLongStateOf(state.daily.lastOrNull()?.dateEpochDay ?: LocalDate.now().toEpochDay())
@@ -74,6 +75,7 @@ fun StatsScreen(
         ),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        readError?.let { message -> item { Text(message) } }
         item {
             val selected = if (state.rangeDays == 7) 0 else 1
             TabRow(
@@ -90,7 +92,7 @@ fun StatsScreen(
                 insideMargin = PaddingValues(16.dp),
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("饮食建议", style = MiuixTheme.textStyles.subtitle)
+                    Text("记录概况", style = MiuixTheme.textStyles.subtitle)
                     Text(recommendation(state), style = MiuixTheme.textStyles.body1)
                     Text(
                         "平均蛋白质 ${state.averageNutrition.proteinG.toInt()}g · 碳水 ${state.averageNutrition.carbsG.toInt()}g · 脂肪 ${state.averageNutrition.fatG.toInt()}g",
@@ -168,7 +170,7 @@ private fun SummaryCard(state: StatsViewModel.StatsUiState) {
                 Text("kcal / 记录日", style = MiuixTheme.textStyles.subtitle, modifier = Modifier.padding(bottom = 5.dp))
             }
             Text(
-                "记录 ${state.loggedDays}/${state.rangeDays} 天 · 达标 ${state.daysHitTarget} 天 · 超标 ${state.daysOverTarget} 天",
+                "记录 ${state.loggedDays}/${state.rangeDays} 天 · 未超目标 ${state.daysHitTarget} 天 · 超标 ${state.daysOverTarget} 天",
                 style = MiuixTheme.textStyles.subtitle,
                 color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
             )
@@ -185,11 +187,9 @@ private fun SummaryCard(state: StatsViewModel.StatsUiState) {
 }
 
 private fun recommendation(state: StatsViewModel.StatsUiState): String = when {
-    !state.hasData -> "先记录 2–3 天，统计页会根据你的目标给出更具体的建议。"
-    state.daysOverTarget > state.daysHitTarget -> "最近超出目标的天数偏多，可以先从减少高油、高糖饮品或零食开始。"
-    state.daysHitTarget >= (state.loggedDays * 0.8f).toInt().coerceAtLeast(1) -> "节奏保持得不错，继续把每餐分散记录，避免把热量集中到晚餐。"
-    state.averageKcal < state.target * 0.8 -> "平均摄入低于目标较多，注意补足正餐和蛋白质，避免长期摄入不足。"
-    else -> "优先保证规律记录；当某天偏高时，用接下来一餐做温和调整即可。"
+    !state.hasData -> "还没有饮食记录，添加记录后可查看摄入统计。"
+    state.loggedDays < state.rangeDays -> "本时段有 ${state.rangeDays - state.loggedDays} 天未记录；日均值仅计算有记录的日期，请确认是否有漏记。"
+    else -> "本时段每天都有记录。未超目标仅比较已记录热量与当前设置的目标，不代表每天都已完整记录。"
 }
 
 @Composable

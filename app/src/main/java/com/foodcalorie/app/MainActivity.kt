@@ -74,6 +74,7 @@ import com.foodcalorie.app.ui.screens.TodayScreen
 import com.foodcalorie.app.ui.theme.FoodTheme
 import com.foodcalorie.app.viewmodel.AddFoodViewModel
 import com.foodcalorie.app.viewmodel.AddStep
+import com.foodcalorie.app.viewmodel.BackupViewModel
 import com.foodcalorie.app.viewmodel.SettingsViewModel
 import com.foodcalorie.app.viewmodel.StatsViewModel
 import com.foodcalorie.app.viewmodel.TodayViewModel
@@ -159,20 +160,28 @@ fun FoodAppRoot() {
     val statsVm: StatsViewModel = viewModel()
     val addVm: AddFoodViewModel = viewModel()
     val settingsVm: SettingsViewModel = viewModel()
+    val backupVm: BackupViewModel = viewModel()
 
     FoodTheme {
         val context = LocalContext.current
+        val addState by addVm.uiState.collectAsState()
+        val selectedDate by todayVm.date.collectAsState()
+        val appSettings by settingsVm.settings.collectAsState()
+        val settingsError by settingsVm.error.collectAsState()
+        val settingsReadError by settingsVm.readError.collectAsState()
+        // 渐变模糊默认关闭；底栏液体玻璃始终保留
+        val progressiveBlurEnabled = isRuntimeShaderSupported() && appSettings.glassEffectsEnabled
         val glassSupported = isRuntimeShaderSupported()
         CompositionLocalProvider(LocalGlassSupported provides glassSupported, LocalOverScrollState provides remember { OverScrollState() }) {
             var selectedTab by rememberSaveable { mutableIntStateOf(0) }
-            var showAdd by remember { mutableStateOf(false) }
+            var showAdd by rememberSaveable { mutableStateOf(false) }
             var showDatePicker by remember { mutableStateOf(false) }
             var todayManagement by rememberSaveable { mutableStateOf(false) }
             val mineBackStack = rememberNavBackStack<MineRoute>(MineRoute.Hub)
             val mineTop = (mineBackStack.lastOrNull() as? MineRoute) ?: MineRoute.Hub
-            val addState by addVm.uiState.collectAsState()
-            val selectedDate by todayVm.date.collectAsState()
-            val appSettings by settingsVm.settings.collectAsState()
+            LaunchedEffect(settingsError, settingsReadError) {
+                (settingsError ?: settingsReadError)?.let { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
+            }
             val backdrop = rememberLayerBackdrop()
             val surfaceColor = MiuixTheme.colorScheme.surface
             val miuixBackdrop = rememberMiuixLayerBackdrop {
@@ -373,6 +382,7 @@ fun FoodAppRoot() {
                                             scrollBehavior = scrollBehavior,
                                             listState = mineList,
                                             viewModel = settingsVm,
+                                            backupViewModel = backupVm,
                                             onApi = { mineBackStack.add(MineRoute.Api) },
                                             onTarget = { mineBackStack.add(MineRoute.Target) },
                                             onProfile = { mineBackStack.add(MineRoute.Profile) },
@@ -432,7 +442,7 @@ fun FoodAppRoot() {
                             }
                         }
 
-                        if (glassSupported && appSettings.topGradientBlurEnabled) {
+                        if (progressiveBlurEnabled && appSettings.topGradientBlurEnabled) {
                             val statusBarHeight = androidx.compose.foundation.layout.WindowInsets.statusBars
                                 .asPaddingValues()
                                 .calculateTopPadding()
@@ -465,12 +475,13 @@ fun FoodAppRoot() {
                         liquidGlassBackdrop = if (glassSupported) backdrop else null,
                         dimBackground = true,
                         sheetOffsetDp = statusBarsPadding + 5.dp,
-                        onDismissRequest = { showAdd = false },
+                        onDismissRequest = { if (!addState.saving) showAdd = false },
                         onSheetContentBackdropCreated = { sheetContentBackdrop = it },
                         startAction = {
                             val material = LocalSheetTopBarMaterial.current
                             LiquidTopBarButton(
                                 onClick = {
+                                    if (addState.saving) return@LiquidTopBarButton
                                     if (addState.step is AddStep.PickSource) {
                                         showAdd = false
                                     } else {

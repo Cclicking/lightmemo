@@ -10,6 +10,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import java.util.zip.GZIPInputStream
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -19,14 +20,19 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 
 /** Offline nutrition lookup: USDA first, China Food Composition fallback, optional USDA API last. */
-class FoodDataCentralClient(
-    private val context: Context,
+class FoodDataCentralClient internal constructor(
+    private val openAsset: (String) -> java.io.InputStream,
+    private val listAssets: () -> Array<out String>,
     private val httpClient: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(20, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .build(),
     private val json: Json = Json { ignoreUnknownKeys = true },
 ) {
+    constructor(context: Context) : this(
+        openAsset = { context.assets.open(it) },
+        listAssets = { context.assets.list("").orEmpty() },
+    )
     private val memoryCache = ConcurrentHashMap<String, NutritionReference>()
     private val usdaFoods: List<LocalFood> by lazy { loadUsdaFoods() }
     private val chinaFoods: List<ChinaFood> by lazy { loadChinaFoods() }
@@ -51,7 +57,7 @@ class FoodDataCentralClient(
     }
 
     private fun assetsExist(vararg names: String): Boolean {
-        val listed = runCatching { context.assets.list("").orEmpty().toSet() }.getOrDefault(emptySet())
+        val listed = runCatching { listAssets().toSet() }.getOrDefault(emptySet())
         return names.any { it in listed }
     }
 
@@ -127,7 +133,7 @@ class FoodDataCentralClient(
         }
     }
 
-    private fun resolve(component: FoodComponent, apiKey: String): NutritionReference? {
+    private suspend fun resolve(component: FoodComponent, apiKey: String): NutritionReference? {
         val key = "component:${component.databaseQuery.lowercase()}|${component.chinaDatabaseQuery}"
         val resolved = memoryCache[key]
             ?: findUsdaLocal(component.databaseQuery)
@@ -253,9 +259,9 @@ class FoodDataCentralClient(
 
     private fun loadUsdaFoods(): List<LocalFood> = try {
         // Android's asset packager expands .gz assets and exposes them without the .gz suffix.
-        val input = runCatching { context.assets.open("fdc_sr_legacy_macros.tsv") }
+        val input = runCatching { openAsset("fdc_sr_legacy_macros.tsv") }
             .getOrElse {
-                GZIPInputStream(context.assets.open("fdc_sr_legacy_macros.tsv.gz"))
+                GZIPInputStream(openAsset("fdc_sr_legacy_macros.tsv.gz"))
             }
         input.bufferedReader().useLines { lines ->
             lines.drop(1).mapNotNull { line ->
@@ -307,12 +313,26 @@ class FoodDataCentralClient(
     }
 
     private fun openExpandedOrGzipAsset(baseName: String) = runCatching {
-        context.assets.open(baseName)
+        openAsset(baseName)
     }.getOrElse {
-        GZIPInputStream(context.assets.open("$baseName.gz"))
+        GZIPInputStream(openAsset("$baseName.gz"))
     }
 
-    private fun searchOnline(query: String, apiKey: String, limit: Int): List<NutritionReference> {
+    private suspend fun searchOnline(query: String, apiKey: String, limit: Int): List<NutritionReference> {
+        return try {
+            requestOnline(query, apiKey, limit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: java.io.IOException) {
+            emptyList()
+        } catch (_: RecognitionException) {
+            emptyList()
+        } catch (_: kotlinx.serialization.SerializationException) {
+            emptyList()
+        }
+    }
+
+    private suspend fun requestOnline(query: String, apiKey: String, limit: Int): List<NutritionReference> {
         val body = json.encodeToString(
             SearchRequest.serializer(),
             SearchRequest(query = query, pageSize = limit.coerceIn(1, 50)),
@@ -321,7 +341,7 @@ class FoodDataCentralClient(
             .url("https://api.nal.usda.gov/fdc/v1/foods/search?api_key=$apiKey")
             .post(body.toRequestBody("application/json".toMediaType()))
             .build()
-        httpClient.newCall(request).execute().use { response ->
+        httpClient.newCall(request).awaitResponse().use { response ->
             if (!response.isSuccessful) {
                 throw RecognitionException("营养数据库查询失败 HTTP ${response.code}")
             }

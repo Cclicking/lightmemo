@@ -1,4 +1,4 @@
-﻿package com.foodcalorie.app.ui.components
+package com.foodcalorie.app.ui.components
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
@@ -31,16 +32,15 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 /**
  * Floating liquid-glass bottom navigation with optional add button.
- * Phone layout matches the reference ScheduleBottomBar.
+ * Always uses the liquid glass tabs — no non-glass fallback.
  */
 @Composable
 internal fun ScheduleBottomBar(
     selectedTab: Int,
     onTabSelected: (Int) -> Unit,
-    liquidGlassBackdrop: Backdrop? = null,
-    addButton: @Composable () -> Unit = {}
+    liquidGlassBackdrop: Backdrop,
+    addButton: @Composable () -> Unit = {},
 ) {
-    if (liquidGlassBackdrop == null) return
     val hapticFeedback = LocalHapticFeedback.current
     val onSelect: (Int) -> Unit = { idx ->
         if (idx != selectedTab) {
@@ -56,12 +56,13 @@ internal fun ScheduleBottomBar(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(bottom = 28.dp),
-        contentAlignment = Alignment.Center
+            .navigationBarsPadding()
+            .padding(bottom = 12.dp),
+        contentAlignment = Alignment.Center,
     ) {
         Row(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             LiquidBottomTabs(
                 selectedTabIndex = { liquidSelectedTab },
@@ -70,14 +71,14 @@ internal fun ScheduleBottomBar(
                 tabsCount = 3,
                 modifier = Modifier
                     .fillMaxWidth(0.63f)
-                    .height(56.dp)
+                    .height(56.dp),
             ) {
                 LiquidBottomTab({ onSelect(0) }) {
                     Image(
                         modifier = Modifier.size(24.dp),
                         imageVector = MiuixIcons.Album,
                         contentDescription = null,
-                        colorFilter = ColorFilter.tint(iconTint)
+                        colorFilter = ColorFilter.tint(iconTint),
                     )
                     Text("今日", fontSize = 11.sp, color = iconTint)
                 }
@@ -86,7 +87,7 @@ internal fun ScheduleBottomBar(
                         modifier = Modifier.size(24.dp),
                         imageVector = MiuixIcons.Years,
                         contentDescription = null,
-                        colorFilter = ColorFilter.tint(iconTint)
+                        colorFilter = ColorFilter.tint(iconTint),
                     )
                     Text("统计", fontSize = 11.sp, color = iconTint)
                 }
@@ -95,7 +96,7 @@ internal fun ScheduleBottomBar(
                         modifier = Modifier.size(24.dp),
                         imageVector = MiuixIcons.ContactsCircle,
                         contentDescription = null,
-                        colorFilter = ColorFilter.tint(iconTint)
+                        colorFilter = ColorFilter.tint(iconTint),
                     )
                     Text("我的", fontSize = 11.sp, color = iconTint)
                 }

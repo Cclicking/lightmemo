@@ -946,7 +946,7 @@ fun AppearanceSettingsScreen(
 
                 Spacer(Modifier.height(FieldToTitleSpacing))
                 SmallTitle(
-                    text = "顶部效果",
+                    text = "视觉效果",
                     modifier = Modifier.offset(x = (-16).dp),
                 )
                 Spacer(Modifier.height(TitleToFieldSpacing))
@@ -956,10 +956,17 @@ fun AppearanceSettingsScreen(
                     insideMargin = PaddingValues(0.dp),
                 ) {
                     SwitchPreference(
-                        checked = settings.topGradientBlurEnabled,
+                        checked = settings.glassEffectsEnabled,
+                        onCheckedChange = { viewModel.setGlassEffectsEnabled(it) },
+                        title = "玻璃特效",
+                        summary = "控制顶部渐变模糊等高开销特效。底栏液体玻璃始终保留",
+                    )
+                    SwitchPreference(
+                        checked = settings.topGradientBlurEnabled && settings.glassEffectsEnabled,
                         onCheckedChange = { viewModel.setTopGradientBlurEnabled(it) },
                         title = "顶部渐变模糊",
-                        summary = "顶栏下方的 miuix 渐进模糊（progressive blur）",
+                        summary = "顶栏下方的 miuix 渐进模糊（progressive blur），需先开启玻璃特效",
+                        enabled = settings.glassEffectsEnabled,
                     )
                     InputDialogPreferenceRow(
                         title = "渐变模糊范围",

@@ -228,7 +228,10 @@ class FoodRecognitionClient(
                 ),
             )
             parseVisualJson(extractJson(reviewed))
-        }.getOrDefault(initial)
+        }.getOrElse { error ->
+            if (error is kotlinx.coroutines.CancellationException) throw error
+            initial.copy(imageQualityIssues = initial.imageQualityIssues + "二次审核未完成，请仔细确认食物和重量")
+        }
     }
 
     internal fun parseChatCompletion(raw: String): MealRecognition = try {
@@ -245,7 +248,7 @@ class FoodRecognitionClient(
         throw RecognitionException("视觉模型返回的结构不完整", e)
     }
 
-    private fun complete(
+    private suspend fun complete(
         baseUrl: String,
         apiKey: String,
         model: String,
@@ -261,7 +264,7 @@ class FoodRecognitionClient(
             .addHeader("Content-Type", "application/json")
             .post(body.toRequestBody("application/json".toMediaType()))
             .build()
-        httpClient.newCall(request).execute().use { response ->
+        httpClient.newCall(request).awaitResponse().use { response ->
             val raw = response.body?.string().orEmpty()
             if (!response.isSuccessful) {
                 throw RecognitionException("识别失败 HTTP ${response.code}: ${raw.take(200)}")

@@ -9,6 +9,9 @@ import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import java.util.UUID
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.retryWhen
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.Serializable
@@ -57,7 +60,9 @@ data class AppSettings(
     val proteinRingColor: Long = 0xFFF3A17C,
     val carbsRingColor: Long = 0xFF2F7D2B,
     val fatRingColor: Long = 0xFFFFB300,
-    val topGradientBlurEnabled: Boolean = true,
+    /** 总开关：默认关闭玻璃特效，避免弱 GPU/模拟器冷启动首帧 ANR */
+    val glassEffectsEnabled: Boolean = false,
+    val topGradientBlurEnabled: Boolean = false,
     /** 顶部渐变模糊覆盖范围，单位 dp。 */
     val topGradientBlurRangeDp: Int = 72,
 ) {
@@ -131,7 +136,35 @@ data class AppSettings(
         get() = if (carbsTargetG > 0f) carbsTargetG else (recommendedNutrients?.carbsG ?: 0f)
 }
 
-class SettingsRepository(private val context: Context) {
+class SettingsRepository(private val store: androidx.datastore.core.DataStore<androidx.datastore.preferences.core.Preferences>) {
+    constructor(context: Context) : this(context.settingsStore)
+    val readError = MutableStateFlow<String?>(null)
+    private val foodPresetsKey = stringPreferencesKey("food_presets")
+    val foodPresets: Flow<List<PresetFood>> = store.data.map { prefs ->
+        prefs[foodPresetsKey]?.let { settingsJson.decodeFromString<List<PresetFood>>(it) }
+            ?: DefaultPresetFoods
+    }.retryWhen { error, _ ->
+        readError.value = "预设读取失败，正在重试：${error.message.orEmpty()}"
+        delay(5_000)
+        true
+    }
+
+    suspend fun updateFoodPreset(updated: PresetFood) {
+        require(updated.name.isNotBlank() && updated.defaultGrams.isFinite() && updated.defaultGrams > 0.0) {
+            "请填写食物名称和有效重量"
+        }
+        require(updated.nutrition?.isValid() != false) { "营养素必须是非负有效数字" }
+        store.edit { prefs ->
+            val current = prefs[foodPresetsKey]?.let { settingsJson.decodeFromString<List<PresetFood>>(it) }
+                ?: DefaultPresetFoods
+            prefs[foodPresetsKey] = settingsJson.encodeToString(current.map { if (it.id == updated.id) updated else it })
+        }
+    }
+
+    suspend fun resetFoodPresets() {
+        store.edit { it.remove(foodPresetsKey) }
+    }
+
     private object Keys {
         val BASE_URL = stringPreferencesKey("base_url")
         val API_KEY = stringPreferencesKey("api_key")
@@ -152,11 +185,12 @@ class SettingsRepository(private val context: Context) {
         val PROTEIN_RING = longPreferencesKey("protein_ring_color")
         val CARBS_RING = longPreferencesKey("carbs_ring_color")
         val FAT_RING = longPreferencesKey("fat_ring_color")
+        val GLASS_EFFECTS = booleanPreferencesKey("glass_effects_enabled")
         val TOP_GRADIENT_BLUR = booleanPreferencesKey("top_gradient_blur_enabled")
         val TOP_GRADIENT_BLUR_RANGE = intPreferencesKey("top_gradient_blur_range_dp")
     }
 
-    val settings: Flow<AppSettings> = context.settingsStore.data.map { prefs ->
+    val settings: Flow<AppSettings> = store.data.map { prefs ->
         val presets = parsePresets(
             raw = prefs[Keys.PRESETS],
             legacyBaseUrl = prefs[Keys.BASE_URL],
@@ -187,9 +221,14 @@ class SettingsRepository(private val context: Context) {
             proteinRingColor = prefs[Keys.PROTEIN_RING] ?: 0xFFF3A17C,
             carbsRingColor = prefs[Keys.CARBS_RING] ?: 0xFF2F7D2B,
             fatRingColor = prefs[Keys.FAT_RING] ?: 0xFFFFB300,
-            topGradientBlurEnabled = prefs[Keys.TOP_GRADIENT_BLUR] ?: true,
+            glassEffectsEnabled = prefs[Keys.GLASS_EFFECTS] ?: false,
+            topGradientBlurEnabled = prefs[Keys.TOP_GRADIENT_BLUR] ?: false,
             topGradientBlurRangeDp = (prefs[Keys.TOP_GRADIENT_BLUR_RANGE] ?: 72).coerceIn(0, 240),
         )
+    }.retryWhen { error, _ ->
+        readError.value = "设置读取失败，正在重试：${error.message.orEmpty()}"
+        delay(5_000)
+        true
     }
 
     private fun parsePresets(
@@ -205,6 +244,7 @@ class SettingsRepository(private val context: Context) {
 
         return listOf(
             ApiPreset(
+                id = "default",
                 name = "默认配置",
                 baseUrl = legacyBaseUrl ?: "https://api.openai.com/v1",
                 apiKey = legacyApiKey.orEmpty(),
@@ -215,7 +255,7 @@ class SettingsRepository(private val context: Context) {
 
     private suspend fun writePresets(presets: List<ApiPreset>, activeId: String) {
         val active = presets.firstOrNull { it.id == activeId } ?: presets.firstOrNull()
-        context.settingsStore.edit { prefs ->
+        store.edit { prefs ->
             prefs[Keys.PRESETS] = settingsJson.encodeToString(presets)
             prefs[Keys.ACTIVE_PRESET] = activeId
             if (active != null) {
@@ -227,14 +267,14 @@ class SettingsRepository(private val context: Context) {
     }
 
     suspend fun selectPreset(presetId: String) {
-        context.settingsStore.edit { prefs ->
+        store.edit { prefs ->
             prefs[Keys.ACTIVE_PRESET] = presetId
         }
     }
 
     suspend fun addPreset(name: String) {
         val preset = ApiPreset(name = name.ifBlank { "新配置" })
-        context.settingsStore.edit { prefs ->
+        store.edit { prefs ->
             val current = parsePresets(prefs[Keys.PRESETS], prefs[Keys.BASE_URL], prefs[Keys.API_KEY], prefs[Keys.MODEL])
             val next = current + preset
             prefs[Keys.PRESETS] = settingsJson.encodeToString(next)
@@ -246,7 +286,7 @@ class SettingsRepository(private val context: Context) {
     }
 
     suspend fun deletePreset(presetId: String) {
-        context.settingsStore.edit { prefs ->
+        store.edit { prefs ->
             val current = parsePresets(prefs[Keys.PRESETS], prefs[Keys.BASE_URL], prefs[Keys.API_KEY], prefs[Keys.MODEL])
             if (current.size <= 1) return@edit
             val next = current.filterNot { it.id == presetId }
@@ -267,7 +307,7 @@ class SettingsRepository(private val context: Context) {
     suspend fun renamePreset(presetId: String, name: String) {
         val trimmed = name.trim()
         if (trimmed.isEmpty()) return
-        context.settingsStore.edit { prefs ->
+        store.edit { prefs ->
             val current = parsePresets(prefs[Keys.PRESETS], prefs[Keys.BASE_URL], prefs[Keys.API_KEY], prefs[Keys.MODEL])
             val next = current.map { if (it.id == presetId) it.copy(name = trimmed) else it }
             prefs[Keys.PRESETS] = settingsJson.encodeToString(next)
@@ -287,7 +327,7 @@ class SettingsRepository(private val context: Context) {
     }
 
     private suspend fun updateActivePreset(transform: (ApiPreset) -> ApiPreset) {
-        context.settingsStore.edit { prefs ->
+        store.edit { prefs ->
             val current = parsePresets(prefs[Keys.PRESETS], prefs[Keys.BASE_URL], prefs[Keys.API_KEY], prefs[Keys.MODEL])
             val activeId = prefs[Keys.ACTIVE_PRESET]
                 ?.takeIf { id -> current.any { it.id == id } }
@@ -304,66 +344,76 @@ class SettingsRepository(private val context: Context) {
     }
 
     suspend fun updateSystemBackground(value: String) {
-        context.settingsStore.edit { it[Keys.SYSTEM_BG] = value }
+        store.edit { it[Keys.SYSTEM_BG] = value }
     }
 
     suspend fun updateFoodDataCentralApiKey(value: String) {
-        context.settingsStore.edit { it[Keys.FDC_API_KEY] = value.trim() }
+        store.edit { it[Keys.FDC_API_KEY] = value.trim() }
     }
 
     suspend fun updateDailyTarget(value: Float) {
-        context.settingsStore.edit { it[Keys.TARGET] = value.coerceIn(500f, 10000f) }
+        require(value.isFinite()) { "请输入有效数字" }
+        store.edit { it[Keys.TARGET] = value.coerceIn(500f, 10000f) }
     }
 
     suspend fun updateProteinTarget(value: Float) {
-        context.settingsStore.edit { it[Keys.PROTEIN] = value.coerceIn(0f, 500f) }
+        require(value.isFinite()) { "请输入有效数字" }
+        store.edit { it[Keys.PROTEIN] = value.coerceIn(0f, 500f) }
     }
 
     suspend fun updateFatTarget(value: Float) {
-        context.settingsStore.edit { it[Keys.FAT] = value.coerceIn(0f, 300f) }
+        require(value.isFinite()) { "请输入有效数字" }
+        store.edit { it[Keys.FAT] = value.coerceIn(0f, 300f) }
     }
 
     suspend fun updateCarbsTarget(value: Float) {
-        context.settingsStore.edit { it[Keys.CARBS] = value.coerceIn(0f, 800f) }
+        require(value.isFinite()) { "请输入有效数字" }
+        store.edit { it[Keys.CARBS] = value.coerceIn(0f, 800f) }
     }
 
     suspend fun updateHeight(value: Float) {
-        context.settingsStore.edit { it[Keys.HEIGHT] = value.coerceIn(50f, 250f) }
+        require(value.isFinite()) { "请输入有效数字" }
+        store.edit { it[Keys.HEIGHT] = value.coerceIn(50f, 250f) }
     }
 
     suspend fun updateWeight(value: Float) {
-        context.settingsStore.edit { it[Keys.WEIGHT] = value.coerceIn(20f, 300f) }
+        require(value.isFinite()) { "请输入有效数字" }
+        store.edit { it[Keys.WEIGHT] = value.coerceIn(20f, 300f) }
     }
 
     suspend fun updateAge(value: Int) {
-        context.settingsStore.edit { it[Keys.AGE] = value.coerceIn(10, 100) }
+        store.edit { it[Keys.AGE] = value.coerceIn(10, 100) }
     }
 
     suspend fun updateGender(value: Gender) {
-        context.settingsStore.edit { it[Keys.GENDER] = value.name }
+        store.edit { it[Keys.GENDER] = value.name }
     }
 
     suspend fun updateActivityLevel(value: ActivityLevel) {
-        context.settingsStore.edit { it[Keys.ACTIVITY] = value.name }
+        store.edit { it[Keys.ACTIVITY] = value.name }
     }
 
     suspend fun updateProteinRingColor(value: Long) {
-        context.settingsStore.edit { it[Keys.PROTEIN_RING] = value }
+        store.edit { it[Keys.PROTEIN_RING] = value }
     }
 
     suspend fun updateCarbsRingColor(value: Long) {
-        context.settingsStore.edit { it[Keys.CARBS_RING] = value }
+        store.edit { it[Keys.CARBS_RING] = value }
     }
 
     suspend fun updateFatRingColor(value: Long) {
-        context.settingsStore.edit { it[Keys.FAT_RING] = value }
+        store.edit { it[Keys.FAT_RING] = value }
+    }
+
+    suspend fun updateGlassEffectsEnabled(value: Boolean) {
+        store.edit { it[Keys.GLASS_EFFECTS] = value }
     }
 
     suspend fun updateTopGradientBlurEnabled(value: Boolean) {
-        context.settingsStore.edit { it[Keys.TOP_GRADIENT_BLUR] = value }
+        store.edit { it[Keys.TOP_GRADIENT_BLUR] = value }
     }
 
     suspend fun updateTopGradientBlurRangeDp(value: Int) {
-        context.settingsStore.edit { it[Keys.TOP_GRADIENT_BLUR_RANGE] = value.coerceIn(0, 240) }
+        store.edit { it[Keys.TOP_GRADIENT_BLUR_RANGE] = value.coerceIn(0, 240) }
     }
 }

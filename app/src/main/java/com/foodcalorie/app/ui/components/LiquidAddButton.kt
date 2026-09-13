@@ -1,5 +1,6 @@
 package com.foodcalorie.app.ui.components
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
@@ -31,19 +32,44 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 @Composable
 fun LiquidAddButton(
     onClick: () -> Unit,
-    backdrop: Backdrop,
-    modifier: Modifier = Modifier
+    backdrop: Backdrop?,
+    modifier: Modifier = Modifier,
 ) {
-    val animationScope = rememberCoroutineScope()
     val hapticFeedback = LocalHapticFeedback.current
     val isLightTheme = !isAppDarkTheme()
     val containerColor = if (isLightTheme) MiuixTheme.colorScheme.primary.copy(0.72f) else
         MiuixTheme.colorScheme.primary.copy(0.62f)
 
+    if (backdrop == null) {
+        Box(
+            modifier = modifier
+                .size(56.dp)
+                .background(MiuixTheme.colorScheme.primary, CircleShape)
+                .clickable(
+                    interactionSource = null,
+                    indication = null,
+                    role = Role.Button,
+                    onClick = {
+                        hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
+                        onClick()
+                    },
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = MiuixIcons.Demibold.Add,
+                contentDescription = "记录食物",
+                modifier = Modifier.size(24.dp),
+                tint = Color.White.copy(0.92f),
+            )
+        }
+        return
+    }
 
+    val animationScope = rememberCoroutineScope()
     val interactiveHighlight = remember(animationScope) {
         InteractiveHighlight(
-            animationScope = animationScope
+            animationScope = animationScope,
         )
     }
 
@@ -73,7 +99,7 @@ fun LiquidAddButton(
                     drawRect(overlayColor)
                     drawRect(containerColor)
                     drawRect(Color.Black.copy(alpha = 0.03f * interactiveHighlight.pressProgress))
-                }
+                },
             )
             .edgeLight(shape = CircleShape, edgeLight = rememberDefaultEdgeLight())
             .clickable(
@@ -83,17 +109,17 @@ fun LiquidAddButton(
                 onClick = {
                     hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
                     onClick()
-                }
+                },
             )
             .then(interactiveHighlight.modifier)
             .then(interactiveHighlight.gestureModifier),
-        contentAlignment = Alignment.Center
+        contentAlignment = Alignment.Center,
     ) {
         Icon(
             imageVector = MiuixIcons.Demibold.Add,
             contentDescription = "记录食物",
             modifier = Modifier.size(24.dp),
-            tint = Color.White.copy(0.92f)
+            tint = Color.White.copy(0.92f),
         )
     }
 }

@@ -104,6 +104,11 @@ fun TodayScreen(
 ) {
     val state by viewModel.uiState.collectAsState()
     val date by viewModel.date.collectAsState()
+    val deleted by viewModel.deletedEntries.collectAsState()
+    val busy by viewModel.busy.collectAsState()
+    val operationError by viewModel.operationError.collectAsState()
+    val readError by viewModel.readError.collectAsState()
+    var editingEntry by remember { mutableStateOf<FoodLog?>(null) }
     var selectedEntry by remember { mutableStateOf<FoodLog?>(null) }
     var deleteEntry by remember { mutableStateOf<FoodLog?>(null) }
     var showDetail by remember { mutableStateOf(false) }
@@ -124,7 +129,18 @@ fun TodayScreen(
             show = showDetail,
             onDismiss = { showDetail = false },
             onDismissFinished = { selectedEntry = null },
+            targets = state,
+            onEdit = {
+                showDetail = false
+                editingEntry = entry
+                viewModel.operationError.value = null
+            },
         )
+    }
+    editingEntry?.let { entry ->
+        EditFoodOverlay(entry, busy, operationError, onDismiss = { editingEntry = null }) { updated ->
+            viewModel.update(updated) { editingEntry = null }
+        }
     }
     deleteEntry?.let { entry ->
         DeleteFoodOverlay(
@@ -256,6 +272,15 @@ fun TodayScreen(
                 ),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
+            if (deleted.isNotEmpty()) {
+                item {
+                    Button(onClick = viewModel::undoDelete, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
+                        Text("已删除「${deleted.last().name}」 · 撤销")
+                    }
+                }
+            }
+            operationError?.let { message -> item { Text(message) } }
+            readError?.let { message -> item { Text(message) } }
             item {
                 Text(
                     text = displayedDate.format(dateFormatter),
@@ -272,6 +297,9 @@ fun TodayScreen(
                     NutritionSummaryCard(
                         total = state.total,
                         calorieTarget = state.target,
+                        proteinTarget = state.proteinTarget,
+                        carbsTarget = state.carbsTarget,
+                        fatTarget = state.fatTarget,
                         proteinColor = proteinRingColor,
                         carbsColor = carbsRingColor,
                         fatColor = fatRingColor,
@@ -433,6 +461,9 @@ private fun DaySwipePreview(
 private fun NutritionSummaryCard(
     total: Nutrition,
     calorieTarget: Float,
+    proteinTarget: Float,
+    carbsTarget: Float,
+    fatTarget: Float,
     proteinColor: Color = ProteinColorDefault,
     carbsColor: Color = CarbsColorDefault,
     fatColor: Color = FatColorDefault,
@@ -458,9 +489,9 @@ private fun NutritionSummaryCard(
         LinearProgressIndicator(progress = progress, modifier = Modifier.fillMaxWidth(), height = 10.dp)
         Spacer(Modifier.height(16.dp))
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            MacroRing("蛋白质", total.proteinG, ProteinTarget, proteinColor, Modifier.weight(1f))
-            MacroRing("碳水", total.carbsG, CarbsTarget, carbsColor, Modifier.weight(1f))
-            MacroRing("脂肪", total.fatG, FatTarget, fatColor, Modifier.weight(1f))
+            MacroRing("蛋白质", total.proteinG, proteinTarget, proteinColor, Modifier.weight(1f))
+            MacroRing("碳水", total.carbsG, carbsTarget, carbsColor, Modifier.weight(1f))
+            MacroRing("脂肪", total.fatG, fatTarget, fatColor, Modifier.weight(1f))
         }
     }
 }
@@ -594,12 +625,14 @@ private fun PendingFoodCard(name: String, grams: Double, nutrition: Nutrition, o
 @Composable
 private fun FoodDetailOverlay(
     entry: FoodLog,
+    targets: com.foodcalorie.app.viewmodel.TodayUiState,
     show: Boolean,
     onDismiss: () -> Unit,
     onDismissFinished: () -> Unit,
+    onEdit: () -> Unit,
 ) {
     val timeText = entry.mealMinuteOfDay?.let { minute ->
-        String.format("%02d:%02d", minute / 60, minute % 60)
+        String.format(Locale.ROOT, "%02d:%02d", minute / 60, minute % 60)
     }
     val summaryParts = buildList {
         add("${entry.grams.toInt()}g")
@@ -656,7 +689,7 @@ private fun FoodDetailOverlay(
                         )
                     }
                     LinearProgressIndicator(
-                        progress = (entry.nutrition.caloriesKcal / 1800.0).toFloat().coerceIn(0f, 1f),
+                        progress = (entry.nutrition.caloriesKcal / targets.target.coerceAtLeast(1f)).toFloat().coerceIn(0f, 1f),
                         modifier = Modifier.fillMaxWidth(),
                         height = 8.dp,
                     )
@@ -665,11 +698,12 @@ private fun FoodDetailOverlay(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceEvenly,
                 ) {
-                    CompactMacroRing("蛋白质", entry.nutrition.proteinG, ProteinTarget, ProteinColorDefault, Modifier.weight(1f))
-                    CompactMacroRing("碳水", entry.nutrition.carbsG, CarbsTarget, CarbsColorDefault, Modifier.weight(1f))
-                    CompactMacroRing("脂肪", entry.nutrition.fatG, FatTarget, FatColorDefault, Modifier.weight(1f))
+                    CompactMacroRing("蛋白质", entry.nutrition.proteinG, targets.proteinTarget, ProteinColorDefault, Modifier.weight(1f))
+                    CompactMacroRing("碳水", entry.nutrition.carbsG, targets.carbsTarget, CarbsColorDefault, Modifier.weight(1f))
+                    CompactMacroRing("脂肪", entry.nutrition.fatG, targets.fatTarget, FatColorDefault, Modifier.weight(1f))
                 }
             }
+            Button(onClick = onEdit, modifier = Modifier.fillMaxWidth()) { Text("编辑记录") }
             SmallTitle(
                 text = "组成部分",
                 insideMargin = PaddingValues(start = 0.dp, top = 8.dp, end = 0.dp, bottom = 0.dp),
