@@ -303,6 +303,7 @@ fun AddFoodRoute(
                     padding = contentPadding,
                     result = step.result,
                     recognizing = state.recognizing || state.saving,
+                    replacingDishId = state.replacingDishId,
                     mealType = state.mealType,
                     onMealType = viewModel::setMealType,
                     onWeightChange = viewModel::updateComponentWeight,
@@ -403,14 +404,14 @@ private fun PickSourceContent(
         )
 
         if (recognizing) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                CircularProgressIndicator(size = 18.dp, strokeWidth = 2.dp)
+            Card(cornerRadius = 20.dp, modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(16.dp)) {
+                Text("识别中", style = MiuixTheme.textStyles.body1)
+                Spacer(Modifier.height(12.dp))
+                LinearProgressIndicator(progress = null, modifier = Modifier.fillMaxWidth())
+                Spacer(Modifier.height(10.dp))
                 Text(
-                    "正在识别中…",
-                    style = MiuixTheme.textStyles.subtitle,
+                    "正在分析食物与营养组成…",
+                    style = MiuixTheme.textStyles.footnote2,
                     color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                 )
             }
@@ -1276,6 +1277,7 @@ private fun ReviewContent(
     padding: PaddingValues,
     result: MealRecognition,
     recognizing: Boolean,
+    replacingDishId: String?,
     mealType: MealType,
     onMealType: (MealType) -> Unit,
     onWeightChange: (String, Double) -> Unit,
@@ -1386,6 +1388,7 @@ private fun ReviewContent(
         items(result.dishes, key = { it.id }) { dish ->
             DishResultCard(
                 dish = dish,
+                replacing = dish.id == replacingDishId,
                 onWeightChange = onWeightChange,
                 onRemoveComponent = onRemoveComponent,
                 onRemoveDish = onRemoveDish,
@@ -1420,10 +1423,6 @@ private fun ReviewContent(
         }
 
         item {
-            if (recognizing) {
-                LinearProgressIndicator(progress = null, modifier = Modifier.fillMaxWidth())
-                Text("正在更换菜品…", style = MiuixTheme.textStyles.subtitle)
-            }
             error?.let { Text(it, color = MiuixTheme.colorScheme.error) }
             Button(
                 onClick = onSave,
@@ -1473,6 +1472,7 @@ private fun MacroRing(label: String, value: Double, target: Float, color: Color,
 @Composable
 private fun DishResultCard(
     dish: RecognizedDish,
+    replacing: Boolean,
     onWeightChange: (String, Double) -> Unit,
     onRemoveComponent: (String) -> Unit,
     onRemoveDish: (String) -> Unit,
@@ -1541,6 +1541,20 @@ private fun DishResultCard(
                                 .rotate(expandIconRotation),
                         )
                     }
+                }
+            }
+
+            if (replacing) {
+                Column(
+                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    LinearProgressIndicator(progress = null, modifier = Modifier.fillMaxWidth())
+                    Text(
+                        text = "正在更换菜品…",
+                        style = MiuixTheme.textStyles.subtitle,
+                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    )
                 }
             }
 

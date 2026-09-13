@@ -55,6 +55,7 @@ enum class QuantityMode(val label: String) {
 data class AddFoodUiState(
     val step: AddStep = AddStep.PickSource,
     val recognizing: Boolean = false,
+    val replacingDishId: String? = null,
     val saving: Boolean = false,
     val error: String? = null,
     val mealType: MealType = defaultMealType(),
@@ -579,7 +580,7 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
             notify("请先在设置中配置 API Key 与 Base URL")
             return
         }
-        _uiState.value = state.copy(recognizing = true, error = null)
+        _uiState.value = state.copy(recognizing = true, replacingDishId = dishId, error = null)
         recognitionJob = viewModelScope.launch {
             try {
                 val visual = client.recognizeFromText(
@@ -614,7 +615,7 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
                 _uiState.value = _uiState.value.copy(error = message)
                 notify(message)
             } finally {
-                _uiState.value = _uiState.value.copy(recognizing = false)
+                _uiState.value = _uiState.value.copy(recognizing = false, replacingDishId = null)
             }
         }
     }

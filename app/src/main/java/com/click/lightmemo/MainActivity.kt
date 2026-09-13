@@ -249,7 +249,9 @@ fun FoodAppRoot() {
                     scrollBehavior = scrollBehavior,
                     endAction = when (selectedTab) {
                         0 -> { { glassAlpha, shadowAlpha ->
-                            androidx.compose.foundation.layout.Row {
+                            androidx.compose.foundation.layout.Row(
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            ) {
                             LiquidTopBarButton(
                                 onClick = {
                                     context.startActivity(
