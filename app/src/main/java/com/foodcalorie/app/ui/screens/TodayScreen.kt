@@ -3,9 +3,8 @@ package com.foodcalorie.app.ui.screens
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
@@ -173,14 +172,14 @@ fun TodayScreen(
             targetState = date,
             transitionSpec = {
                 val direction = if (targetState > initialState) 1 else -1
-                (slideInHorizontally(
-                    animationSpec = tween(240),
-                    initialOffsetX = { width -> direction * width / 4 },
-                ) + fadeIn(animationSpec = tween(160))) togetherWith
-                    (slideOutHorizontally(
-                        animationSpec = tween(180),
-                        targetOffsetX = { width -> -direction * width / 8 },
-                    ) + fadeOut(animationSpec = tween(120)))
+                // ViewPager / Activity-style full-width horizontal page change.
+                slideInHorizontally(
+                    animationSpec = tween(300, easing = FastOutSlowInEasing),
+                    initialOffsetX = { width -> direction * width },
+                ) togetherWith slideOutHorizontally(
+                    animationSpec = tween(300, easing = FastOutSlowInEasing),
+                    targetOffsetX = { width -> -direction * width },
+                )
             },
             label = "selectedDate",
         ) { displayedDate ->

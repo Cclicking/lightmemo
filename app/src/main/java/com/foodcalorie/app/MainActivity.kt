@@ -91,10 +91,10 @@ import top.yukonga.miuix.kmp.icon.basic.Close
 import top.yukonga.miuix.kmp.icon.os4.ChevronBackward
 import top.yukonga.miuix.kmp.icon.os4.GridView
 import top.yukonga.miuix.kmp.nav.core.NavDisplay
-import top.yukonga.miuix.kmp.nav.core.NavDisplayEffects
 import top.yukonga.miuix.kmp.nav.core.rememberNavBackStack
 import top.yukonga.miuix.kmp.nav.transition.NavSwipeDirection
-import top.yukonga.miuix.kmp.nav.transition.NavTransitions
+import com.foodcalorie.app.ui.nav.androidActivityEffects
+import com.foodcalorie.app.ui.nav.AndroidActivityTransition
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import java.time.LocalDate
 
@@ -151,6 +151,19 @@ private enum class AppTab(val title: String) {
     TODAY("今日"),
     STATS("统计"),
     MINE("我的"),
+}
+
+
+/** Opaque Activity-window surface for a nav entry so slide transitions never show through. */
+@Composable
+private fun OpaquePage(content: @Composable () -> Unit) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MiuixTheme.colorScheme.surface),
+    ) {
+        content()
+    }
 }
 
 /** Nexio visual shell; food state stays owned by the existing ViewModels. */
@@ -371,12 +384,11 @@ fun FoodAppRoot() {
                                         .fillMaxSize()
                                         .background(MiuixTheme.colorScheme.surface),
                                     onBack = { mineBackStack.removeLastOrNull() },
-                                    // Use the library's native Miuix transition explicitly so the
-                                    // route host does not fall back to an implicit/transparent one.
-                                    transition = NavTransitions.MiuixDefault,
-                                    effects = NavDisplayEffects.Default,
+                                    transition = AndroidActivityTransition,
+                                    effects = androidActivityEffects(MiuixTheme.colorScheme.surface),
                                 ) {
                                     entry<MineRoute.Hub> {
+                                        OpaquePage {
                                         MineHubScreen(
                                             contentPadding = padding,
                                             scrollBehavior = scrollBehavior,
@@ -390,53 +402,66 @@ fun FoodAppRoot() {
                                             onAppearance = { mineBackStack.add(MineRoute.Appearance) },
                                             onAbout = { mineBackStack.add(MineRoute.About) },
                                         )
+                                        }
                                     }
                                     entry<MineRoute.Profile>(swipeDismiss = NavSwipeDirection.LeftToRight) {
-                                        PersonalInfoScreen(
+                                        OpaquePage {
+                                            PersonalInfoScreen(
                                             viewModel = settingsVm,
                                             contentPadding = padding,
                                             scrollBehavior = scrollBehavior,
                                             listState = profileList,
                                         )
+                                        }
                                     }
                                     entry<MineRoute.Api>(swipeDismiss = NavSwipeDirection.LeftToRight) {
-                                        ApiSettingsScreen(
+                                        OpaquePage {
+                                            ApiSettingsScreen(
                                             viewModel = settingsVm,
                                             contentPadding = padding,
                                             scrollBehavior = scrollBehavior,
                                             listState = apiList,
                                         )
+                                        }
                                     }
                                     entry<MineRoute.Target>(swipeDismiss = NavSwipeDirection.LeftToRight) {
-                                        CalorieTargetScreen(
+                                        OpaquePage {
+                                            CalorieTargetScreen(
                                             viewModel = settingsVm,
                                             contentPadding = padding,
                                             scrollBehavior = scrollBehavior,
                                             listState = targetList,
                                         )
+                                        }
                                     }
                                     entry<MineRoute.Database>(swipeDismiss = NavSwipeDirection.LeftToRight) {
-                                        FoodDatabaseScreen(
+                                        OpaquePage {
+                                            FoodDatabaseScreen(
                                             viewModel = settingsVm,
                                             contentPadding = padding,
                                             scrollBehavior = scrollBehavior,
                                             listState = databaseList,
                                         )
+                                        }
                                     }
                                     entry<MineRoute.Appearance>(swipeDismiss = NavSwipeDirection.LeftToRight) {
-                                        AppearanceSettingsScreen(
+                                        OpaquePage {
+                                            AppearanceSettingsScreen(
                                             viewModel = settingsVm,
                                             contentPadding = padding,
                                             scrollBehavior = scrollBehavior,
                                             listState = appearanceList,
                                         )
+                                        }
                                     }
                                     entry<MineRoute.About>(swipeDismiss = NavSwipeDirection.LeftToRight) {
-                                        AboutScreen(
+                                        OpaquePage {
+                                            AboutScreen(
                                             contentPadding = padding,
                                             scrollBehavior = scrollBehavior,
                                             listState = aboutList,
                                         )
+                                        }
                                     }
                                 }
                             }
