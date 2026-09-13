@@ -28,6 +28,8 @@
         </activity>
         <activity android:name=".ui.secondary.PersonalInfoActivity" android:exported="false" />
         <activity android:name=".ui.secondary.ApiSettingsActivity" android:exported="false" />
+        <activity android:name=".ui.secondary.ApiConfigurationActivity" android:exported="false" android:windowSoftInputMode="adjustResize" />
+        <activity android:name=".ui.secondary.PromptSettingsActivity" android:exported="false" android:windowSoftInputMode="adjustResize" />
         <activity android:name=".ui.secondary.CalorieTargetActivity" android:exported="false" />
         <activity android:name=".ui.secondary.DataManagementActivity" android:exported="false" />
         <activity android:name=".ui.secondary.FoodDatabaseActivity" android:exported="false" />

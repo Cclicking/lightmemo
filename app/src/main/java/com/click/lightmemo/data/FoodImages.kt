@@ -5,7 +5,10 @@ import android.graphics.Bitmap
 import android.graphics.ImageDecoder
 import android.net.Uri
 import android.util.Base64
+import androidx.core.content.FileProvider
 import java.io.ByteArrayOutputStream
+import java.io.File
+import java.security.MessageDigest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -28,4 +31,32 @@ internal object FoodImages {
             bitmap.recycle()
         }
     }
+
+    /**
+     * Store the normalized JPEG in app-private storage and return a stable provider URI.
+     * Existing app-private image URIs are returned as-is so saving a recognized meal does
+     * not encode and write the same image twice.
+     */
+    suspend fun persist(context: Context, uri: Uri): Uri {
+        if (isStored(context, uri)) return uri
+        return persistEncoded(context, encode(context, uri))
+    }
+
+    suspend fun persistEncoded(context: Context, encoded: String): Uri = withContext(Dispatchers.IO) {
+        val bytes = Base64.decode(encoded, Base64.NO_WRAP)
+        val digest = MessageDigest.getInstance("SHA-256").digest(bytes)
+            .joinToString("") { "%02x".format(it) }
+        val directory = File(context.filesDir, INTERNAL_DIRECTORY).apply { mkdirs() }
+        val file = File(directory, "$digest.jpg")
+        if (!file.exists()) file.writeBytes(bytes)
+        FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+    }
+
+    private fun isStored(context: Context, uri: Uri): Boolean =
+        uri.scheme == "content" &&
+            uri.authority == "${context.packageName}.fileprovider" &&
+            uri.pathSegments.firstOrNull() == INTERNAL_PATH_NAME
+
+    private const val INTERNAL_DIRECTORY = "images"
+    private const val INTERNAL_PATH_NAME = "internal_images"
 }

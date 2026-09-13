@@ -82,7 +82,7 @@ fun MineHubScreen(
                 Column(modifier = Modifier.fillMaxWidth()) {
                     ArrowPreference(
                         title = "个人信息",
-                        summary = "身高体重、性别与运动强度",
+                        summary = "身高、体重、性别和运动水平",
                         endActions = {
                             Text(
                                 text = if (settings.hasPersonalProfile) "已填写" else "未填写",
@@ -94,7 +94,7 @@ fun MineHubScreen(
                     )
                     ArrowPreference(
                         title = "每日目标",
-                        summary = "热量目标 (kcal)",
+                        summary = "每日热量与三大营养素目标",
                         endActions = {
                             Text(
                                 text = "${settings.dailyCalorieTarget.toInt()}",
@@ -122,7 +122,7 @@ fun MineHubScreen(
                 Column(modifier = Modifier.fillMaxWidth()) {
                     ArrowPreference(
                         title = "AI设置",
-                        summary = "Base URL、API Key 与模型",
+                        summary = "照片识别服务与模型配置",
                         endActions = {
                             Text(
                                 text = if (settings.isRecognitionConfigured) {
@@ -138,7 +138,7 @@ fun MineHubScreen(
                     )
                     ArrowPreference(
                         title = "数据管理",
-                        summary = "数据库 API、导入导出与预设恢复",
+                        summary = "备份恢复与食物数据管理",
                         endActions = {
                             Text(
                                 text = if (settings.foodDataCentralApiKey.isNotBlank()) "在线已配置" else "离线优先",
@@ -150,7 +150,7 @@ fun MineHubScreen(
                     )
                     ArrowPreference(
                         title = "数据库浏览",
-                        summary = "浏览离线食物，点击查看营养素",
+                        summary = "搜索离线食物并查看营养数据",
                         onClick = { open(FoodDatabaseActivity::class.java) },
                     )
                 }
@@ -171,12 +171,12 @@ fun MineHubScreen(
                 Column(modifier = Modifier.fillMaxWidth()) {
                     ArrowPreference(
                         title = "个性化设置",
-                        summary = "今日页圆环颜色与顶部渐变",
+                        summary = "颜色主题、自动配色与顶部模糊效果",
                         onClick = { open(AppearanceSettingsActivity::class.java) },
                     )
                     ArrowPreference(
                         title = "关于",
-                        summary = "版本与应用信息",
+                        summary = "版本、开源项目与数据来源",
                         onClick = { open(AboutActivity::class.java) },
                     )
                 }

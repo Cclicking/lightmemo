@@ -17,6 +17,7 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -26,12 +27,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.widget.Toast
 import com.click.lightmemo.FoodApp
 import com.click.lightmemo.ui.basic.SharedScrollBehavior as ScrollBehavior
 import com.click.lightmemo.ui.components.AnimatedOverlayDialog
 import com.click.lightmemo.ui.utils.overScrollVertical
 import com.click.lightmemo.viewmodel.BackupViewModel
 import com.click.lightmemo.viewmodel.SettingsViewModel
+import top.yukonga.miuix.kmp.basic.BasicComponent
 import top.yukonga.miuix.kmp.basic.Button
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
@@ -55,9 +58,11 @@ fun DataManagementScreen(
     val backupBusy by backupViewModel.busy.collectAsState()
     val backupMessage by backupViewModel.message.collectAsState()
     var showReset by remember { mutableStateOf(false) }
+    var showFdcApiDialog by remember { mutableStateOf(false) }
     var fdcApiKey by remember(settings.foodDataCentralApiKey) {
         mutableStateOf(settings.foodDataCentralApiKey)
     }
+    var fdcApiDraft by remember { mutableStateOf("") }
     val offlineStatus = remember {
         runCatching {
             (context.applicationContext as FoodApp).nutritionDatabase.offlineStatus()
@@ -70,6 +75,54 @@ fun DataManagementScreen(
     val importLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument(),
     ) { uri -> uri?.let(backupViewModel::import) }
+
+    LaunchedEffect(backupMessage) {
+        backupMessage?.let { message ->
+            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    AnimatedOverlayDialog(
+        show = showFdcApiDialog,
+        title = "USDA FoodData Central API",
+        summary = "可留空；仅在本地库未命中时调用在线检索。",
+        onDismissRequest = { showFdcApiDialog = false },
+    ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            TextField(
+                value = fdcApiDraft,
+                onValueChange = { fdcApiDraft = it },
+                label = "API Key",
+                singleLine = true,
+                visualTransformation = PasswordVisualTransformation(),
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.height(16.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Button(
+                    onClick = { showFdcApiDialog = false },
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColors(),
+                ) {
+                    Text("取消")
+                }
+                Button(
+                    onClick = {
+                        fdcApiKey = fdcApiDraft
+                        viewModel.setFoodDataCentralApiKey(fdcApiDraft)
+                        showFdcApiDialog = false
+                    },
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColorsPrimary(),
+                ) {
+                    Text("保存")
+                }
+            }
+        }
+    }
 
     AnimatedOverlayDialog(
         show = showReset,
@@ -176,33 +229,30 @@ fun DataManagementScreen(
             Card(
                 cornerRadius = 20.dp,
                 modifier = Modifier.fillMaxWidth(),
-                insideMargin = PaddingValues(16.dp),
+                insideMargin = PaddingValues(0.dp),
             ) {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextField(
-                        value = fdcApiKey,
-                        onValueChange = {
-                            fdcApiKey = it
-                            viewModel.setFoodDataCentralApiKey(it)
-                        },
-                        label = "USDA FoodData Central API Key",
-                        singleLine = true,
-                        visualTransformation = PasswordVisualTransformation(),
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    Text(
-                        text = "可留空。填写后仅在本地库未命中时调用在线检索。",
-                        style = MiuixTheme.textStyles.footnote2,
-                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                    )
-                }
+                ArrowPreference(
+                    title = "USDA FoodData Central API",
+                    summary = if (fdcApiKey.isBlank()) "未配置，点击输入 API Key" else "已配置，点击修改 API Key",
+                    onClick = {
+                        fdcApiDraft = fdcApiKey
+                        showFdcApiDialog = true
+                    },
+                )
             }
+            Spacer(Modifier.height(12.dp))
+            Text(
+                text = "可留空。填写后仅在本地库未命中时调用在线检索。",
+                style = MiuixTheme.textStyles.footnote2,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                modifier = Modifier.padding(horizontal = 16.dp),
+            )
         }
 
         item {
             Spacer(Modifier.height(4.dp))
             SmallTitle(
-                text = "记录备份",
+                text = "数据备份",
                 modifier = Modifier.offset(x = (-16).dp),
             )
             Card(
@@ -212,14 +262,14 @@ fun DataManagementScreen(
             ) {
                 Column(modifier = Modifier.fillMaxWidth()) {
                     ArrowPreference(
-                        title = "导出饮食记录",
-                        summary = "保存为备份文件，不含照片和 API 密钥",
+                        title = "导出全部数据",
+                        summary = "记录、预设、个人信息、目标、模型/数据库配置和主题色",
                         enabled = !backupBusy,
-                        onClick = { exportLauncher.launch("轻食记-${LocalDate.now()}.json") },
+                        onClick = { exportLauncher.launch("轻食记-完整备份-${LocalDate.now()}.json") },
                     )
                     ArrowPreference(
-                        title = "导入饮食记录",
-                        summary = "合并备份并跳过重复记录，保留现有数据",
+                        title = "导入数据备份",
+                        summary = "恢复设置与预设食物，并合并饮食记录",
                         enabled = !backupBusy,
                         onClick = {
                             importLauncher.launch(
@@ -229,6 +279,13 @@ fun DataManagementScreen(
                     )
                 }
             }
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = "备份会包含模型和数据库 API Key，请妥善保存；照片不会写入备份文件。",
+                style = MiuixTheme.textStyles.footnote2,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                modifier = Modifier.padding(horizontal = 16.dp),
+            )
         }
 
         item {
@@ -252,7 +309,6 @@ fun DataManagementScreen(
             if (backupBusy) {
                 Text("正在处理，请稍候…")
             }
-            backupMessage?.let { Text(it) }
         }
     }
 }
@@ -263,7 +319,7 @@ private fun StatusRow(
     summary: String,
     status: String,
 ) {
-    ArrowPreference(
+    BasicComponent(
         title = title,
         summary = summary,
         endActions = {
@@ -271,6 +327,7 @@ private fun StatusRow(
                 text = status,
                 fontSize = 14.5.sp,
                 color = MiuixTheme.colorScheme.onSurfaceVariantActions,
+                modifier = Modifier.padding(end = 8.dp),
             )
         },
     )

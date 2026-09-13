@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigationevent.OnBackInvokedDefaultInput
@@ -20,6 +22,7 @@ import com.click.lightmemo.LocalGlassSupported
 import com.click.lightmemo.ui.nav.SecondaryPageShell
 import com.click.lightmemo.ui.screens.TodayScreen
 import com.click.lightmemo.ui.theme.FoodTheme
+import com.click.lightmemo.ui.theme.toComposeColors
 import com.click.lightmemo.ui.utils.LocalOverScrollState
 import com.click.lightmemo.ui.utils.OverScrollState
 import com.click.lightmemo.viewmodel.AddFoodUiState
@@ -65,8 +68,11 @@ class ManageFoodCardsActivity : ComponentActivity() {
                 LocalGlassSupported provides isRuntimeShaderSupported(),
                 LocalOverScrollState provides remember { OverScrollState() },
             ) {
+                val settingsVm: com.click.lightmemo.viewmodel.SettingsViewModel = viewModel()
+                val settings by settingsVm.settings.collectAsState()
                 FoodTheme {
                     val todayVm: TodayViewModel = viewModel()
+                    val palette = settings.colorPalette.toComposeColors()
                     SecondaryPageShell(title = "管理食物卡片", onBack = { finish() }) { padding, scroll ->
                         TodayScreen(
                             viewModel = todayVm,
@@ -79,6 +85,7 @@ class ManageFoodCardsActivity : ComponentActivity() {
                             onShowDatePicker = {},
                             onDismissDatePicker = {},
                             onAddClick = {},
+                            palette = palette,
                         )
                     }
                 }

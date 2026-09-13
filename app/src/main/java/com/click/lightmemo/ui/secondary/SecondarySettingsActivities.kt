@@ -12,16 +12,22 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigationevent.OnBackInvokedDefaultInput
 import androidx.navigationevent.compose.LocalNavigationEventDispatcherOwner
 import androidx.navigationevent.compose.rememberNavigationEventDispatcherOwner
 import com.click.lightmemo.LocalGlassSupported
+import com.click.lightmemo.ui.basic.LiquidTopBarButton
 import com.click.lightmemo.ui.basic.SharedScrollBehavior
 import com.click.lightmemo.ui.nav.SecondaryPageShell
 import com.click.lightmemo.ui.screens.AboutScreen
 import com.click.lightmemo.ui.screens.ApiSettingsScreen
+import com.click.lightmemo.ui.screens.ApiConfigurationScreen
+import com.click.lightmemo.ui.screens.PromptSettingsScreen
 import com.click.lightmemo.ui.screens.AppearanceSettingsScreen
 import com.click.lightmemo.ui.screens.CalorieTargetScreen
 import com.click.lightmemo.ui.screens.DataManagementScreen
@@ -32,7 +38,11 @@ import com.click.lightmemo.ui.utils.LocalOverScrollState
 import com.click.lightmemo.ui.utils.OverScrollState
 import com.click.lightmemo.viewmodel.BackupViewModel
 import com.click.lightmemo.viewmodel.SettingsViewModel
+import com.kyant.backdrop.Backdrop
 import top.yukonga.miuix.kmp.blur.isRuntimeShaderSupported
+import top.yukonga.miuix.kmp.icon.MiuixIcons
+import top.yukonga.miuix.kmp.icon.basic.Close
+import top.yukonga.miuix.kmp.icon.basic.Search
 
 /**
  * Real Activity host for a settings page. The system window transition applies
@@ -40,6 +50,14 @@ import top.yukonga.miuix.kmp.blur.isRuntimeShaderSupported
  */
 abstract class SecondarySettingsActivity : ComponentActivity() {
     protected abstract val pageTitle: String
+    protected open val hasPageEndAction: Boolean = false
+
+    @Composable
+    protected open fun PageEndAction(
+        backdrop: Backdrop,
+        backdropAlpha: Float,
+        shadowAlpha: Float,
+    ) = Unit
 
     @Composable
     protected abstract fun PageContent(
@@ -89,7 +107,17 @@ abstract class SecondarySettingsActivity : ComponentActivity() {
                 FoodTheme {
                     val settingsVm: SettingsViewModel = viewModel()
                     val backupVm: BackupViewModel = viewModel()
-                    SecondaryPageShell(title = pageTitle, onBack = { finish() }) { padding, scroll ->
+                    SecondaryPageShell(
+                        title = pageTitle,
+                        onBack = { finish() },
+                        endAction = if (hasPageEndAction) {
+                            { backdrop, backdropAlpha, shadowAlpha ->
+                                PageEndAction(backdrop, backdropAlpha, shadowAlpha)
+                            }
+                        } else {
+                            null
+                        },
+                    ) { padding, scroll ->
                         PageContent(settingsVm, backupVm, padding, scroll)
                     }
                 }
@@ -136,6 +164,24 @@ class ApiSettingsActivity : SecondarySettingsActivity() {
     }
 }
 
+class ApiConfigurationActivity : SecondarySettingsActivity() {
+    override val pageTitle = "配置设置"
+
+    @Composable
+    override fun PageContent(settingsVm: SettingsViewModel, backupVm: BackupViewModel, contentPadding: PaddingValues, scrollBehavior: SharedScrollBehavior) {
+        ApiConfigurationScreen(settingsVm, contentPadding, scrollBehavior, rememberLazyListState(), onDeleted = { finish() })
+    }
+}
+
+class PromptSettingsActivity : SecondarySettingsActivity() {
+    override val pageTitle = "Prompt 修改"
+
+    @Composable
+    override fun PageContent(settingsVm: SettingsViewModel, backupVm: BackupViewModel, contentPadding: PaddingValues, scrollBehavior: SharedScrollBehavior) {
+        PromptSettingsScreen(settingsVm, contentPadding, scrollBehavior, rememberLazyListState())
+    }
+}
+
 class CalorieTargetActivity : SecondarySettingsActivity() {
     override val pageTitle = "每日目标"
 
@@ -177,6 +223,24 @@ class DataManagementActivity : SecondarySettingsActivity() {
 
 class FoodDatabaseActivity : SecondarySettingsActivity() {
     override val pageTitle = "数据库浏览"
+    override val hasPageEndAction = true
+    private var searchVisible by mutableStateOf(false)
+
+    @Composable
+    override fun PageEndAction(
+        backdrop: Backdrop,
+        backdropAlpha: Float,
+        shadowAlpha: Float,
+    ) {
+        LiquidTopBarButton(
+            onClick = { searchVisible = !searchVisible },
+            backdrop = backdrop,
+            icon = if (searchVisible) MiuixIcons.Basic.Close else MiuixIcons.Basic.Search,
+            contentDescription = if (searchVisible) "关闭搜索" else "搜索",
+            backdropAlpha = backdropAlpha,
+            shadowAlpha = shadowAlpha,
+        )
+    }
 
     @Composable
     override fun PageContent(
@@ -189,6 +253,8 @@ class FoodDatabaseActivity : SecondarySettingsActivity() {
             contentPadding = contentPadding,
             scrollBehavior = scrollBehavior,
             listState = rememberLazyListState(),
+            searchVisible = searchVisible,
+            onSearchVisibleChange = { searchVisible = it },
         )
     }
 }

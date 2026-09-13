@@ -1,7 +1,5 @@
 package com.click.lightmemo.ui.screens
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -9,11 +7,11 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -24,12 +22,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.click.lightmemo.FoodApp
 import com.click.lightmemo.domain.NutritionReference
 import com.click.lightmemo.network.FoodDataCentralClient
@@ -39,9 +35,12 @@ import com.click.lightmemo.ui.utils.overScrollVertical
 import kotlinx.coroutines.delay
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CircularProgressIndicator
+import top.yukonga.miuix.kmp.basic.InputField
+import top.yukonga.miuix.kmp.basic.SearchBar
+import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import top.yukonga.miuix.kmp.preference.ArrowPreference
 
 private val databaseSources = listOf("全部离线食物", "中国食物成分表", "USDA SR Legacy")
 
@@ -50,6 +49,8 @@ fun FoodDatabaseScreen(
     contentPadding: PaddingValues,
     scrollBehavior: ScrollBehavior?,
     listState: LazyListState,
+    searchVisible: Boolean = false,
+    onSearchVisibleChange: (Boolean) -> Unit = {},
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val database = remember {
@@ -84,7 +85,13 @@ fun FoodDatabaseScreen(
         modifier = Modifier
             .fillMaxSize()
             .overScrollVertical()
-            .then(if (scrollBehavior != null) Modifier.nestedScroll(scrollBehavior.nestedScrollConnection) else Modifier),
+            .then(
+                if (scrollBehavior != null) {
+                    Modifier.nestedScroll(scrollBehavior.nestedScrollConnection)
+                } else {
+                    Modifier
+                },
+            ),
         state = listState,
         contentPadding = PaddingValues(
             start = 16.dp,
@@ -94,60 +101,88 @@ fun FoodDatabaseScreen(
         ),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        if (searchVisible) {
+            item {
+                Spacer(Modifier.height(8.dp))
+            }
+            item {
+                SearchBar(
+                    modifier = Modifier.fillMaxWidth(),
+                    inputField = {
+                        InputField(
+                            query = query,
+                            onQueryChange = { query = it },
+                            onSearch = {},
+                            expanded = searchVisible,
+                            onExpandedChange = onSearchVisibleChange,
+                            label = "搜索食物",
+                        )
+                    },
+                    expanded = searchVisible,
+                    onExpandedChange = onSearchVisibleChange,
+                    content = {},
+                )
+            }
+        }
+
         item {
+            SmallTitle(
+                text = "筛选数据库",
+                modifier = Modifier.offset(x = (-16).dp),
+            )
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 cornerRadius = 20.dp,
-                insideMargin = PaddingValues(16.dp),
+                insideMargin = PaddingValues(0.dp),
             ) {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("离线营养数据库", style = MiuixTheme.textStyles.title4, fontWeight = FontWeight.SemiBold)
-                    Text(
-                        "默认显示食物名称与热量，点击条目展开每 100g 的蛋白质、碳水和脂肪。",
-                        style = MiuixTheme.textStyles.subtitle,
-                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                    )
-                    TextField(
-                        value = query,
-                        onValueChange = { query = it },
-                        label = "搜索食物",
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    DropdownPref(
-                        title = "数据源",
-                        summary = "筛选本地数据库",
-                        items = databaseSources,
-                        selectedIndex = sourceIndex,
-                        onSelectedIndexChange = { index -> sourceIndex = index },
-                    )
-                }
+                DropdownPref(
+                    title = "数据源",
+                    summary = "选择要浏览的本地数据库",
+                    items = databaseSources,
+                    selectedIndex = sourceIndex,
+                    onSelectedIndexChange = { sourceIndex = it },
+                )
             }
         }
+
         item {
             Text(
-                text = if (loading) "正在读取…" else "显示 ${foods.size} 条 · 点击查看营养素",
+                text = if (loading) "正在读取…" else "显示 ${foods.size} 条 · 点击条目查看营养素",
                 style = MiuixTheme.textStyles.footnote2,
                 color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                modifier = Modifier.padding(horizontal = 4.dp),
+                modifier = Modifier.padding(start = 12.dp),
             )
         }
+
         if (loading && foods.isEmpty()) {
             item {
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 24.dp),
                     horizontalArrangement = Arrangement.Center,
                 ) {
                     CircularProgressIndicator(size = 24.dp, strokeWidth = 2.dp)
                 }
             }
         }
+
         error?.let { message ->
             item {
-                Text(message, color = MiuixTheme.colorScheme.error, style = MiuixTheme.textStyles.subtitle)
+                Text(
+                    text = message,
+                    color = MiuixTheme.colorScheme.error,
+                    style = MiuixTheme.textStyles.subtitle,
+                    modifier = Modifier.padding(horizontal = 4.dp),
+                )
             }
         }
+
         item {
+            SmallTitle(
+                text = "食物列表",
+                modifier = Modifier.offset(x = (-16).dp),
+            )
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 cornerRadius = 20.dp,
@@ -159,7 +194,7 @@ fun FoodDatabaseScreen(
                     }
                     if (!loading && foods.isEmpty() && error == null) {
                         Text(
-                            "没有相近的食物，试试更短或更具体的名称。",
+                            text = "没有相近的食物，试试更短或更具体的名称。",
                             style = MiuixTheme.textStyles.subtitle,
                             color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                             modifier = Modifier.padding(16.dp),
@@ -174,52 +209,33 @@ fun FoodDatabaseScreen(
 @Composable
 private fun DatabaseFoodRow(reference: NutritionReference) {
     var expanded by remember(reference.sourceId) { mutableStateOf(false) }
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { expanded = !expanded }
-            .padding(horizontal = 16.dp, vertical = 13.dp),
-        verticalArrangement = Arrangement.spacedBy(7.dp),
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                reference.description,
-                style = MiuixTheme.textStyles.body1,
-                modifier = Modifier.weight(1f),
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Spacer(Modifier.width(6.dp))
-            Text(
-                "${reference.per100g.caloriesKcal.toInt()} kcal",
-                style = MiuixTheme.textStyles.title4,
-                fontWeight = FontWeight.SemiBold,
-            )
-        }
+    Column(modifier = Modifier.fillMaxWidth()) {
+        ArrowPreference(
+            title = reference.description,
+            summary = "${reference.per100g.caloriesKcal.toInt()} kcal / 100g",
+            onClick = { expanded = !expanded },
+        )
         if (expanded) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(MiuixTheme.colorScheme.primary.copy(alpha = 0.08f))
-                    .padding(10.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
+            Column(
+                modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                NutrientValue("蛋白质", reference.per100g.proteinG)
-                NutrientValue("碳水", reference.per100g.carbsG)
-                NutrientValue("脂肪", reference.per100g.fatG)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    NutrientValue("蛋白质", reference.per100g.proteinG)
+                    NutrientValue("碳水", reference.per100g.carbsG)
+                    NutrientValue("脂肪", reference.per100g.fatG)
+                }
+                Text(
+                    text = "每 100g · ${reference.dataType} · ID ${reference.sourceId}",
+                    style = MiuixTheme.textStyles.footnote2,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
-            Text(
-                "每 100g · ${reference.dataType} · ID ${reference.sourceId}",
-                style = MiuixTheme.textStyles.footnote2,
-                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
         }
     }
 }
@@ -227,7 +243,16 @@ private fun DatabaseFoodRow(reference: NutritionReference) {
 @Composable
 private fun NutrientValue(label: String, value: Double) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(label, style = MiuixTheme.textStyles.footnote2, color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
-        Text("${value.toInt()}g", fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+        Text(
+            text = label,
+            style = MiuixTheme.textStyles.footnote2,
+            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+        )
+        Spacer(Modifier.height(2.dp))
+        Text(
+            text = "${value.toInt()}g",
+            style = MiuixTheme.textStyles.body2,
+            fontWeight = FontWeight.SemiBold,
+        )
     }
 }

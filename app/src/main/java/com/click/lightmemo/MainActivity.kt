@@ -58,7 +58,6 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -77,6 +76,7 @@ import com.click.lightmemo.ui.screens.PersonalInfoScreen
 import com.click.lightmemo.ui.screens.StatsScreen
 import com.click.lightmemo.ui.screens.TodayScreen
 import com.click.lightmemo.ui.theme.FoodTheme
+import com.click.lightmemo.ui.theme.toComposeColors
 import com.click.lightmemo.viewmodel.AddFoodViewModel
 import com.click.lightmemo.viewmodel.AddStep
 import com.click.lightmemo.viewmodel.BackupViewModel
@@ -169,6 +169,7 @@ fun FoodAppRoot() {
         val addState by addVm.uiState.collectAsState()
         val selectedDate by todayVm.date.collectAsState()
         val appSettings by settingsVm.settings.collectAsState()
+        val palette = remember(appSettings.colorPalette) { appSettings.colorPalette.toComposeColors() }
         val settingsError by settingsVm.error.collectAsState()
         val settingsReadError by settingsVm.readError.collectAsState()
         // 渐变模糊默认关闭；底栏液体玻璃始终保留
@@ -372,9 +373,7 @@ fun FoodAppRoot() {
                                         managementMode = false,
                                         calendarExpanded = todayCalendarExpanded,
                                         showDatePicker = showDatePicker,
-                                        proteinRingColor = Color(appSettings.proteinRingColor),
-                                        carbsRingColor = Color(appSettings.carbsRingColor),
-                                        fatRingColor = Color(appSettings.fatRingColor),
+                                        palette = palette,
                                         onShowDatePicker = { showDatePicker = true },
                                         onDismissDatePicker = { showDatePicker = false },
                                         onAddClick = {
@@ -388,9 +387,7 @@ fun FoodAppRoot() {
                                         scrollBehavior = scrollBehavior,
                                         listState = statsList,
                                         calendarExpanded = statsCalendarExpanded,
-                                        proteinRingColor = Color(appSettings.proteinRingColor),
-                                        carbsRingColor = Color(appSettings.carbsRingColor),
-                                        fatRingColor = Color(appSettings.fatRingColor),
+                                        palette = palette,
                                     )
                                     else -> MineHubScreen(
                                         contentPadding = padding,
@@ -447,6 +444,7 @@ fun FoodAppRoot() {
                             scrollBehavior = null,
                             listState = addList,
                             onDone = { showAdd = false },
+                            palette = palette,
                         )
                     }
                             TopProgressiveBlur()

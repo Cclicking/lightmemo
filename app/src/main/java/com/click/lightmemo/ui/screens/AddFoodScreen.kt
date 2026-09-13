@@ -74,6 +74,7 @@ import com.click.lightmemo.ui.basic.SharedScrollBehavior as ScrollBehavior
 import com.click.lightmemo.ui.components.AnimatedOverlayDialog
 import com.click.lightmemo.ui.components.DropdownPref
 import com.click.lightmemo.ui.overlay.BlurBottomSheet
+import com.click.lightmemo.ui.theme.FoodPaletteColors
 import com.click.lightmemo.ui.utils.overScrollVertical
 import com.click.lightmemo.viewmodel.AddFoodViewModel
 import com.click.lightmemo.viewmodel.AddStep
@@ -121,9 +122,6 @@ private fun stepOrder(step: AddStep): Int = when (step) {
     is AddStep.Review -> 2
 }
 
-private val ProteinColor = Color(0xFFF3A17C)
-private val CarbsColor = Color(0xFF2F7D2B)
-private val FatColor = Color(0xFFFFB300)
 private val ProteinTarget = 120f
 private val CarbsTarget = 250f
 private val FatTarget = 60f
@@ -135,6 +133,7 @@ fun AddFoodRoute(
     scrollBehavior: ScrollBehavior?,
     listState: LazyListState,
     onDone: () -> Unit,
+    palette: FoodPaletteColors = FoodPaletteColors.Default,
 ) {
     val state by viewModel.uiState.collectAsState()
     val settings by viewModel.settings.collectAsState()
@@ -316,6 +315,7 @@ fun AddFoodRoute(
                         viewModel.saveRecognized(step.result, step.imageUri, onDone)
                     },
                     listState = listState,
+                    palette = palette,
                 )
             }
         }
@@ -1286,8 +1286,10 @@ private fun ReviewContent(
     error: String?,
     onSave: () -> Unit,
     listState: LazyListState,
+    palette: FoodPaletteColors,
 ) {
     val total = result.nutrition
+    val calorieColor = if (total.caloriesKcal > 1800.0) palette.overTarget else palette.calorie
     var replacingDish by remember { mutableStateOf<RecognizedDish?>(null) }
     var replacementName by remember { mutableStateOf("") }
     AnimatedOverlayDialog(
@@ -1355,15 +1357,16 @@ private fun ReviewContent(
                             progress = (total.caloriesKcal / 1800.0).toFloat().coerceIn(0f, 1f),
                             modifier = Modifier.fillMaxWidth(),
                             height = 8.dp,
+                            colors = ProgressIndicatorDefaults.progressIndicatorColors(foregroundColor = calorieColor),
                         )
                     }
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceEvenly,
                     ) {
-                        MacroRing("蛋白质", total.proteinG, ProteinTarget, ProteinColor, Modifier.weight(1f))
-                        MacroRing("碳水", total.carbsG, CarbsTarget, CarbsColor, Modifier.weight(1f))
-                        MacroRing("脂肪", total.fatG, FatTarget, FatColor, Modifier.weight(1f))
+                        MacroRing("蛋白质", total.proteinG, ProteinTarget, palette.protein, Modifier.weight(1f))
+                        MacroRing("碳水", total.carbsG, CarbsTarget, palette.carbs, Modifier.weight(1f))
+                        MacroRing("脂肪", total.fatG, FatTarget, palette.fat, Modifier.weight(1f))
                     }
                 }
             }

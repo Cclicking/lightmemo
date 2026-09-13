@@ -84,6 +84,7 @@ class FoodRecognitionClient(
         .readTimeout(90, TimeUnit.SECONDS)
         .build(),
     private val json: Json = Json { ignoreUnknownKeys = true; isLenient = true },
+    private val promptOverrides: suspend () -> Map<String, String> = { emptyMap() },
 ) {
     suspend fun normalizeFoodQuery(
         baseUrl: String,
@@ -96,10 +97,7 @@ class FoodRecognitionClient(
             apiKey,
             model,
             listOf(
-                textMessage(
-                    "system",
-                    "将食物名称转换成适合 USDA FoodData Central 检索的简洁英文词组，包含生熟和烹饪方式。只输出 {\"database_query\":\"...\"}。不要输出营养值。",
-                ),
+                promptMessage(RecognitionPrompt.NORMALIZE),
                 textMessage("user", foodName),
             ),
         )
@@ -123,13 +121,7 @@ class FoodRecognitionClient(
             apiKey,
             model,
             listOf(
-                textMessage(
-                    "system",
-                    """
-                    你是食物估重助手。根据份数估计可食用重量（克），合理考虑常见盛装量。
-                    只输出合法 JSON：{"estimated_weight_g": 数字}
-                    """.trimIndent(),
-                ),
+                promptMessage(RecognitionPrompt.PORTION),
                 textMessage(
                     "user",
                     "食物：$foodName\n份数：$portions 份\n补充说明：${portionHint.ifBlank { "无" }}",
@@ -159,7 +151,7 @@ class FoodRecognitionClient(
             apiKey,
             model,
             listOf(
-                textMessage("system", TEXT_SYSTEM_PROMPT),
+                promptMessage(RecognitionPrompt.TEXT),
                 textMessage(
                     "user",
                     """
@@ -179,6 +171,92 @@ class FoodRecognitionClient(
         if (baseUrl.isBlank() || apiKey.isBlank()) throw RecognitionException("请先配置识别 API")
     }
 
+    /** Tests the draft directly, bypassing saved overrides and production's tolerant parser. */
+    suspend fun testPrompt(
+        baseUrl: String,
+        apiKey: String,
+        model: String,
+        kind: RecognitionPrompt,
+        draft: String,
+        imageBase64: String? = null,
+    ) = withContext(Dispatchers.IO) {
+        validateConfig(baseUrl, apiKey)
+        require(draft.isNotBlank()) { "Prompt 不能为空" }
+        require(!kind.requiresImage || !imageBase64.isNullOrBlank()) { "图片测试需要食物照片" }
+        val image = imageBase64?.let { ContentPart("image_url", image_url = ImageUrl("data:image/jpeg;base64,$it")) }
+        val input = when (kind) {
+            RecognitionPrompt.TEXT -> "200克熟白米饭，不加油，不含其他食物。"
+            RecognitionPrompt.NORMALIZE -> "熟白米饭"
+            RecognitionPrompt.PORTION -> "食物：熟白米饭\n份数：2份\n补充说明：每份可食用重量150克"
+            RecognitionPrompt.IMAGE -> runtimePrompt("", "", "")
+            RecognitionPrompt.REVIEW -> {
+                val baseline = complete(baseUrl, apiKey, model, listOf(
+                    textMessage("system", RecognitionPrompt.IMAGE.defaultText),
+                    ChatMessage("user", listOfNotNull(ContentPart("text", text = runtimePrompt("", "", "")), image)),
+                ))
+                validatePromptResponse(RecognitionPrompt.IMAGE, baseline)
+                "待审核结果：$baseline"
+            }
+        }
+        val response = complete(baseUrl, apiKey, model, listOf(
+            textMessage("system", draft),
+            ChatMessage("user", listOfNotNull(ContentPart("text", text = input), image.takeIf { kind.requiresImage })),
+        ))
+        validatePromptResponse(kind, response)
+        response
+    }
+
+    internal fun validatePromptResponse(kind: RecognitionPrompt, response: String) {
+        val strict = Json { ignoreUnknownKeys = false }
+        val root = strict.parseToJsonElement(response).jsonObject
+        when (kind) {
+            RecognitionPrompt.NORMALIZE -> {
+                val query = root["database_query"]?.jsonPrimitive
+                require(root.keys == setOf("database_query") && query?.isString == true &&
+                    query.content.contains("rice", ignoreCase = true) && query.content.contains("cooked", ignoreCase = true)) {
+                    "名称标准化结果缺少有效的熟米饭英文检索词"
+                }
+            }
+            RecognitionPrompt.PORTION -> {
+                val value = root["estimated_weight_g"]?.jsonPrimitive
+                val grams = value?.content?.toDoubleOrNull()
+                require(root.keys == setOf("estimated_weight_g") && value?.isString == false &&
+                    grams != null && grams.isFinite() && kotlin.math.abs(grams - 300.0) < 0.01) {
+                    "估重测试应返回数字300克（2份 × 150克）"
+                }
+            }
+            else -> {
+                require(root.keys.containsAll(listOf("is_food_image", "dishes", "overall_confidence"))) { "缺少餐食必要字段" }
+                val meal = strict.decodeFromString<VisualMealDto>(response)
+                require(meal.isFoodImage && meal.dishes.isNotEmpty()) { "未识别到测试食物，请检查 Prompt 或照片" }
+                require(meal.overallConfidence.isFinite() && meal.overallConfidence in 0.0..1.0) { "餐食置信度无效" }
+                require(meal.confirmationQuestions.size <= 3) { "确认问题不能超过3个" }
+                fun validateDish(dish: VisualDishDto): List<VisualComponentDto> {
+                    require(dish.dishName.isNotBlank() && DishType.entries.any { it.name.equals(dish.dishType, true) }) { "菜品名称或类型无效" }
+                    require(dish.dishConfidence.isFinite() && dish.dishConfidence in 0.0..1.0) { "菜品置信度无效" }
+                    require(dish.children.isEmpty() || dish.components.isEmpty()) { "父菜品与子菜品重复计重" }
+                    val components = dish.components + dish.children.flatMap { validateDish(it) }
+                    require(components.isNotEmpty()) { "菜品缺少组成" }
+                    components.forEach { c ->
+                        require(c.name.isNotBlank() && c.databaseQuery.isNotBlank() && !c.chinaDatabaseQuery.isNullOrBlank()) { "组成缺少名称或中英文检索词" }
+                        require(ComponentSource.entries.any { it.name.equals(c.source, true) }) { "组成来源无效" }
+                        require(kind != RecognitionPrompt.TEXT || c.source != "visible") { "文字识别不能使用 visible 来源" }
+                        require(c.confidence.isFinite() && c.confidence in 0.0..1.0) { "组成置信度无效" }
+                        require(c.estimatedWeightG.isFinite() && c.weightMinG.isFinite() && c.weightMaxG.isFinite() &&
+                            c.weightMinG > 0 && c.weightMinG <= c.estimatedWeightG && c.estimatedWeightG <= c.weightMaxG) { "组成重量或上下界无效" }
+                    }
+                    return components
+                }
+                val components = meal.dishes.flatMap { validateDish(it) }
+                if (kind == RecognitionPrompt.TEXT) {
+                    require(meal.dishes.size == 1 && components.size == 1 &&
+                        components.single().databaseQuery.contains("rice", true) &&
+                        kotlin.math.abs(components.sumOf { it.estimatedWeightG } - 200.0) < 0.01) { "文字测试必须保持200克米饭，不能新增配料或重复计重" }
+                }
+            }
+        }
+    }
+
     suspend fun recognize(
         baseUrl: String,
         apiKey: String,
@@ -196,7 +274,7 @@ class FoodRecognitionClient(
             apiKey,
             model,
             listOf(
-                textMessage("system", SYSTEM_PROMPT),
+                promptMessage(RecognitionPrompt.IMAGE),
                 ChatMessage(
                     "user",
                     listOf(
@@ -217,11 +295,14 @@ class FoodRecognitionClient(
                 apiKey,
                 model,
                 listOf(
-                    textMessage("system", REVIEW_PROMPT),
+                    promptMessage(RecognitionPrompt.REVIEW),
                     ChatMessage(
                         "user",
                         listOf(
-                            ContentPart(type = "text", text = "待审核结果：$initialJson"),
+                            ContentPart(
+                                type = "text",
+                                text = runtimePrompt(plateSize, userDescription, mealType) + "\n待审核结果：$initialJson",
+                            ),
                             ContentPart(type = "image_url", image_url = ImageUrl(dataUrl)),
                         ),
                     ),
@@ -285,6 +366,9 @@ class FoodRecognitionClient(
         if (imageBase64.isBlank()) throw RecognitionException("图片数据为空")
     }
 
+    private suspend fun promptMessage(kind: RecognitionPrompt) =
+        textMessage("system", kind.resolve(promptOverrides()))
+
     private fun textMessage(role: String, text: String) =
         ChatMessage(role, listOf(ContentPart(type = "text", text = text)))
 
@@ -303,56 +387,7 @@ class FoodRecognitionClient(
         空缺信息仅根据图片判断，不要擅自当作已知事实。严格返回系统规定的 JSON。
     """.trimIndent()
 
-    private companion object {
-        val SYSTEM_PROMPT = """
-            你是专业的食物视觉识别系统。你只负责看图、分层和估重；营养数据库负责计算。
-            严格执行：图片质量检查 → 完整菜品识别 → 组成拆解 → 重量范围估计。
-            一级必须是用户认知中的完整菜品。画面中若有多个独立菜品/盘子，必须分别作为独立 dish 列出，禁止合并成一道。
-            套餐放在一级，子餐品放 children，不得把全部原料平铺。
-            只拆对营养有明显影响的组成。油、酱汁、糖、奶油、芝士、汤底等可合理推测，但 source 必须为 inferred。
-            每个组成提供适合 USDA FoodData Central 检索的简洁英文 database_query，需包含生熟状态和烹饪方式。
-            禁止输出或猜测任何热量、蛋白质、碳水、脂肪数值。重量使用合理整值并给上下界。
-            低置信度时使用更宽泛名称。最多提出 3 个真正影响热量的确认问题。
-            只输出合法 JSON，不要 Markdown：
-            {"is_food_image":true,"meal_name":"午餐","overall_confidence":0.82,
-             "image_quality_issues":[],"confirmation_questions":[],"dishes":[{
-             "dish_name":"牛肉盖饭","dish_type":"staple_with_toppings","dish_confidence":0.9,
-             "needs_confirmation":true,"uncertainty_reason":"油量不可见","children":[],"components":[{
-             "name":"熟白米饭","database_query":"rice white cooked","china_database_query":"米饭（蒸）","source":"visible",
-             "estimated_weight_g":200,"weight_min_g":160,"weight_max_g":240,
-             "confidence":0.9,"needs_confirmation":false}]}]}
-            dish_type 只能为 single_food、mixed_dish、staple_with_toppings、soup_or_noodle、salad、
-            sandwich_or_burger、combo_meal、beverage、dessert、other。
-            source 只能为 visible、inferred、user_provided。
-            china_database_query 应是适合《中国食物成分表》检索的简洁中文标准食物名，保留关键烹饪状态。
-        """.trimIndent()
 
-        val REVIEW_PROMPT = """
-            你是食物视觉识别质量审核模块。对照原图审核给定结果，只在有充分视觉依据时修正。
-            检查漏菜、层级、重复、不可食部分、烹饪方式、相对重量、餐具体积、隐藏油酱和过度具体判断。
-            若画面中有多道独立菜品，必须分别作为独立 dish 列出，禁止合并成一道。
-            输出与输入完全相同的合法 JSON 结构；不要输出审核说明、营养值或 Markdown。
-        """.trimIndent()
-
-        val TEXT_SYSTEM_PROMPT = """
-            你是专业的食物识别系统。根据文字描述拆出完整菜品与组成，并估计可食用重量。
-            一级必须是用户认知中的完整菜品。多道菜分别作为独立 dish，禁止合并。
-            只拆对营养有明显影响的组成。油、酱汁、糖等可合理推测，source 为 inferred。
-            database_query 使用适合 USDA 检索的简洁英文（含生熟与烹饪方式）。
-            禁止输出或猜测热量、蛋白质、碳水、脂肪。重量给合理整值并带上下界。
-            只输出合法 JSON，不要 Markdown：
-            {"is_food_image":true,"meal_name":"文字识别","overall_confidence":0.8,
-             "image_quality_issues":[],"confirmation_questions":[],"dishes":[{
-             "dish_name":"红烧豆腐","dish_type":"mixed_dish","dish_confidence":0.85,
-             "needs_confirmation":false,"uncertainty_reason":null,"children":[],"components":[{
-             "name":"北豆腐","database_query":"tofu firm","china_database_query":"北豆腐",
-             "source":"visible","estimated_weight_g":120,"weight_min_g":90,"weight_max_g":150,
-             "confidence":0.8,"needs_confirmation":false}]}]}
-            dish_type 只能为 single_food、mixed_dish、staple_with_toppings、soup_or_noodle、salad、
-            sandwich_or_burger、combo_meal、beverage、dessert、other。
-            source 只能为 visible、inferred、user_provided。
-        """.trimIndent()
-    }
 }
 
 private fun VisualMealDto.toDomain() = MealRecognition(

@@ -10,18 +10,30 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
 
 class BackupViewModel(app: Application) : AndroidViewModel(app) {
-    private val repo = (app as FoodApp).foodLogRepository
+    private val foodApp = app as FoodApp
+    private val foodLogRepository = foodApp.foodLogRepository
+    private val settingsRepository = foodApp.settingsRepository
     val busy = MutableStateFlow(false)
     val message = MutableStateFlow<String?>(null)
 
     fun export(uri: Uri) = perform {
-        val text = repo.exportJson()
+        val logs = JSONObject(foodLogRepository.exportJson())
+        val settings = settingsRepository.exportBackupJson()
+        val text = JSONObject().apply {
+            put("format", "food-calorie-backup")
+            put("version", 1)
+            put("exportedAtMillis", System.currentTimeMillis())
+            put("logs", logs.getJSONArray("logs"))
+            put("foodPresets", settings.getJSONArray("foodPresets"))
+            put("settings", settings.getJSONObject("settings"))
+        }.toString(2)
         getApplication<Application>().contentResolver.openOutputStream(uri, "wt")?.bufferedWriter(Charsets.UTF_8)?.use {
             it.write(text)
         } ?: error("无法写入所选文件")
-        "记录已导出（不含照片和 API 密钥）"
+        "全部数据已导出（包含 API 密钥，不含照片）"
     }
 
     fun import(uri: Uri) = perform {
@@ -29,12 +41,32 @@ class BackupViewModel(app: Application) : AndroidViewModel(app) {
         val bytes = getApplication<Application>().contentResolver.openInputStream(uri)?.use { it.readNBytes(limit + 1) }
             ?: error("无法读取备份")
         require(bytes.size <= limit) { "备份超过 20 MB，请拆分后导入" }
-        val count = repo.importJson(bytes.toString(Charsets.UTF_8))
-        "已导入 $count 条记录，重复记录已跳过"
+        val raw = bytes.toString(Charsets.UTF_8)
+        val root = JSONObject(raw)
+        when (root.optString("format")) {
+            "food-calorie-logs" -> {
+                val count = foodLogRepository.importJson(raw)
+                "已导入 $count 条记录，重复记录已跳过"
+            }
+            "food-calorie-backup" -> {
+                require(root.getInt("version") == 1) { "不支持的备份版本" }
+                val logs = JSONObject()
+                    .put("format", "food-calorie-logs")
+                    .put("version", 1)
+                    .put("logs", root.getJSONArray("logs"))
+                val count = foodLogRepository.importJson(logs.toString())
+                settingsRepository.importBackupJson(
+                    settingsJsonObject = root.getJSONObject("settings"),
+                    foodPresetsJson = root.getJSONArray("foodPresets"),
+                )
+                "已导入完整备份：新增 $count 条记录，设置与预设食物已恢复"
+            }
+            else -> error("不支持的备份格式")
+        }
     }
 
     fun resetPresets() = perform {
-        (getApplication<Application>() as FoodApp).settingsRepository.resetFoodPresets()
+        settingsRepository.resetFoodPresets()
         "食物预设已恢复默认"
     }
 

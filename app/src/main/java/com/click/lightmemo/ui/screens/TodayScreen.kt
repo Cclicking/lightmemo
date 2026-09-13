@@ -41,6 +41,7 @@ import com.click.lightmemo.domain.MealType
 import com.click.lightmemo.domain.Nutrition
 import com.click.lightmemo.ui.basic.SharedScrollBehavior as ScrollBehavior
 import com.click.lightmemo.ui.components.AnimatedOverlayDialog
+import com.click.lightmemo.ui.theme.FoodPaletteColors
 import com.click.lightmemo.ui.utils.overScrollVertical
 import com.click.lightmemo.viewmodel.AddFoodUiState
 import com.click.lightmemo.viewmodel.AddStep
@@ -67,9 +68,6 @@ private val dateFormatter = DateTimeFormatter.ofPattern("M月d日 EEEE", Locale.
 private const val ProteinTarget = 120f
 private const val CarbsTarget = 250f
 private const val FatTarget = 60f
-private val ProteinColorDefault = Color(0xFFF3A17C)
-private val CarbsColorDefault = Color(0xFF2F7D2B)
-private val FatColorDefault = Color(0xFFFFB300)
 
 @Composable
 fun TodayScreen(
@@ -81,9 +79,7 @@ fun TodayScreen(
     managementMode: Boolean,
     showDatePicker: Boolean,
     calendarExpanded: Boolean = false,
-    proteinRingColor: Color = ProteinColorDefault,
-    carbsRingColor: Color = CarbsColorDefault,
-    fatRingColor: Color = FatColorDefault,
+    palette: FoodPaletteColors = FoodPaletteColors.Default,
     onShowDatePicker: () -> Unit,
     onDismissDatePicker: () -> Unit,
     onAddClick: () -> Unit,
@@ -116,6 +112,7 @@ fun TodayScreen(
             onDismiss = { showDetail = false },
             onDismissFinished = { selectedEntry = null },
             targets = state,
+            palette = palette,
             onEdit = {
                 showDetail = false
                 editingEntry = entry
@@ -243,9 +240,7 @@ fun TodayScreen(
                             proteinTarget = state.proteinTarget,
                             carbsTarget = state.carbsTarget,
                             fatTarget = state.fatTarget,
-                            proteinColor = proteinRingColor,
-                            carbsColor = carbsRingColor,
-                            fatColor = fatRingColor,
+                            palette = palette,
                         )
                         Button(onClick = onAddClick, modifier = Modifier.fillMaxWidth()) { Text("记录食物") }
                     } else {
@@ -331,10 +326,9 @@ private fun NutritionSummaryCard(
     proteinTarget: Float,
     carbsTarget: Float,
     fatTarget: Float,
-    proteinColor: Color = ProteinColorDefault,
-    carbsColor: Color = CarbsColorDefault,
-    fatColor: Color = FatColorDefault,
+    palette: FoodPaletteColors = FoodPaletteColors.Default,
 ) {
+    val calorieColor = if (total.caloriesKcal > calorieTarget) palette.overTarget else palette.calorie
     val progress by animateFloatAsState(
         targetValue = if (calorieTarget <= 0f) 0f else (total.caloriesKcal / calorieTarget).toFloat().coerceIn(0f, 1f),
         animationSpec = folmeSpring(damping = 1f, response = 0.6f),
@@ -353,12 +347,17 @@ private fun NutritionSummaryCard(
             )
         }
         Spacer(Modifier.height(10.dp))
-        LinearProgressIndicator(progress = progress, modifier = Modifier.fillMaxWidth(), height = 10.dp)
+        LinearProgressIndicator(
+            progress = progress,
+            modifier = Modifier.fillMaxWidth(),
+            height = 10.dp,
+            colors = ProgressIndicatorDefaults.progressIndicatorColors(foregroundColor = calorieColor),
+        )
         Spacer(Modifier.height(16.dp))
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            MacroRing("蛋白质", total.proteinG, proteinTarget, proteinColor, Modifier.weight(1f))
-            MacroRing("碳水", total.carbsG, carbsTarget, carbsColor, Modifier.weight(1f))
-            MacroRing("脂肪", total.fatG, fatTarget, fatColor, Modifier.weight(1f))
+            MacroRing("蛋白质", total.proteinG, proteinTarget, palette.protein, Modifier.weight(1f))
+            MacroRing("碳水", total.carbsG, carbsTarget, palette.carbs, Modifier.weight(1f))
+            MacroRing("脂肪", total.fatG, fatTarget, palette.fat, Modifier.weight(1f))
         }
     }
 }
@@ -493,11 +492,13 @@ private fun PendingFoodCard(name: String, grams: Double, nutrition: Nutrition, o
 private fun FoodDetailOverlay(
     entry: FoodLog,
     targets: com.click.lightmemo.viewmodel.TodayUiState,
+    palette: FoodPaletteColors,
     show: Boolean,
     onDismiss: () -> Unit,
     onDismissFinished: () -> Unit,
     onEdit: () -> Unit,
 ) {
+    val calorieColor = if (entry.nutrition.caloriesKcal > targets.target) palette.overTarget else palette.calorie
     val timeText = entry.mealMinuteOfDay?.let { minute ->
         String.format(Locale.ROOT, "%02d:%02d", minute / 60, minute % 60)
     }
@@ -559,15 +560,16 @@ private fun FoodDetailOverlay(
                         progress = (entry.nutrition.caloriesKcal / targets.target.coerceAtLeast(1f)).toFloat().coerceIn(0f, 1f),
                         modifier = Modifier.fillMaxWidth(),
                         height = 8.dp,
+                        colors = ProgressIndicatorDefaults.progressIndicatorColors(foregroundColor = calorieColor),
                     )
                 }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceEvenly,
                 ) {
-                    CompactMacroRing("蛋白质", entry.nutrition.proteinG, targets.proteinTarget, ProteinColorDefault, Modifier.weight(1f))
-                    CompactMacroRing("碳水", entry.nutrition.carbsG, targets.carbsTarget, CarbsColorDefault, Modifier.weight(1f))
-                    CompactMacroRing("脂肪", entry.nutrition.fatG, targets.fatTarget, FatColorDefault, Modifier.weight(1f))
+                    CompactMacroRing("蛋白质", entry.nutrition.proteinG, targets.proteinTarget, palette.protein, Modifier.weight(1f))
+                    CompactMacroRing("碳水", entry.nutrition.carbsG, targets.carbsTarget, palette.carbs, Modifier.weight(1f))
+                    CompactMacroRing("脂肪", entry.nutrition.fatG, targets.fatTarget, palette.fat, Modifier.weight(1f))
                 }
             }
             Button(onClick = onEdit, modifier = Modifier.fillMaxWidth()) { Text("编辑记录") }

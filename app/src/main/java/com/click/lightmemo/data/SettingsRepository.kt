@@ -14,10 +14,13 @@ import kotlinx.coroutines.flow.retryWhen
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import org.json.JSONArray
+import org.json.JSONObject
 
 private val Context.settingsStore by preferencesDataStore(name = "food_settings")
 private val settingsJson = Json { ignoreUnknownKeys = true }
@@ -46,6 +49,7 @@ data class AppSettings(
     val apiPresets: List<ApiPreset> = listOf(ApiPreset()),
     val activePresetId: String = apiPresets.firstOrNull()?.id.orEmpty(),
     val systemBackground: String = "",
+    val promptOverrides: Map<String, String> = emptyMap(),
     val foodDataCentralApiKey: String = "",
     val dailyCalorieTarget: Float = 1800f,
     /** 营养素目标；<=0 表示跟随推荐值 */
@@ -58,9 +62,18 @@ data class AppSettings(
     val gender: Gender = Gender.MALE,
     val activityLevel: ActivityLevel = ActivityLevel.MEDIUM,
     /** ARGB；默认与 TodayScreen 宏量环一致 */
-    val proteinRingColor: Long = 0xFFF3A17C,
-    val carbsRingColor: Long = 0xFF2F7D2B,
-    val fatRingColor: Long = 0xFFFFB300,
+    val proteinRingColor: Long = FoodColorPalette.Multicolor.protein,
+    val carbsRingColor: Long = FoodColorPalette.Multicolor.carbs,
+    val fatRingColor: Long = FoodColorPalette.Multicolor.fat,
+    /** Product-owned colors used by calorie, nutrient, and meal-structure visualizations. */
+    val calorieProgressColor: Long = FoodColorPalette.Multicolor.calorie,
+    val overTargetColor: Long = FoodColorPalette.Multicolor.overTarget,
+    val breakfastColor: Long = FoodColorPalette.Multicolor.breakfast,
+    val lunchColor: Long = FoodColorPalette.Multicolor.lunch,
+    val dinnerColor: Long = FoodColorPalette.Multicolor.dinner,
+    val snackColor: Long = FoodColorPalette.Multicolor.snack,
+    val colorTheme: ColorThemePreset = ColorThemePreset.MULTICOLOR,
+    val colorSeed: Long = ColorThemePreset.MULTICOLOR.seedColor,
     /** 总开关：默认关闭玻璃特效，避免弱 GPU/模拟器冷启动首帧 ANR */
     val glassEffectsEnabled: Boolean = false,
     val topGradientBlurEnabled: Boolean = false,
@@ -75,6 +88,19 @@ data class AppSettings(
     val baseUrl: String get() = activePreset.baseUrl
     val apiKey: String get() = activePreset.apiKey
     val model: String get() = activePreset.model
+
+    val colorPalette: FoodColorPalette
+        get() = FoodColorPalette(
+            calorie = calorieProgressColor,
+            overTarget = overTargetColor,
+            protein = proteinRingColor,
+            carbs = carbsRingColor,
+            fat = fatRingColor,
+            breakfast = breakfastColor,
+            lunch = lunchColor,
+            dinner = dinnerColor,
+            snack = snackColor,
+        )
 
     val isRecognitionConfigured: Boolean
         get() = baseUrl.isNotBlank() && apiKey.isNotBlank()
@@ -178,6 +204,141 @@ class SettingsRepository(private val store: androidx.datastore.core.DataStore<an
         store.edit { it.remove(foodPresetsKey) }
     }
 
+    /**
+     * Exports the user-owned settings and food presets as structured JSON.
+     *
+     * The API keys are intentionally included: this is a complete user backup rather than a
+     * shareable diagnostics file. The UI must warn the user before saving or sharing it.
+     */
+    suspend fun exportBackupJson(): JSONObject {
+        val current = settings.first()
+        val presets = foodPresets.first()
+        return JSONObject().apply {
+            put("settings", JSONObject().apply {
+                put("apiPresets", JSONArray(settingsJson.encodeToString(current.apiPresets)))
+                put("activePresetId", current.activePresetId)
+                put("systemBackground", current.systemBackground)
+                put("promptOverrides", JSONObject(settingsJson.encodeToString(current.promptOverrides)))
+                put("foodDataCentralApiKey", current.foodDataCentralApiKey)
+                put("dailyCalorieTarget", current.dailyCalorieTarget.toDouble())
+                put("proteinTargetG", current.proteinTargetG.toDouble())
+                put("fatTargetG", current.fatTargetG.toDouble())
+                put("carbsTargetG", current.carbsTargetG.toDouble())
+                put("heightCm", current.heightCm.toDouble())
+                put("weightKg", current.weightKg.toDouble())
+                put("ageYears", current.ageYears)
+                put("gender", current.gender.name)
+                put("activityLevel", current.activityLevel.name)
+                put("proteinRingColor", current.proteinRingColor)
+                put("carbsRingColor", current.carbsRingColor)
+                put("fatRingColor", current.fatRingColor)
+                put("calorieProgressColor", current.calorieProgressColor)
+                put("overTargetColor", current.overTargetColor)
+                put("breakfastColor", current.breakfastColor)
+                put("lunchColor", current.lunchColor)
+                put("dinnerColor", current.dinnerColor)
+                put("snackColor", current.snackColor)
+                put("colorTheme", current.colorTheme.name)
+                put("colorSeed", current.colorSeed)
+                put("glassEffectsEnabled", current.glassEffectsEnabled)
+                put("topGradientBlurEnabled", current.topGradientBlurEnabled)
+                put("topGradientBlurRangeDp", current.topGradientBlurRangeDp)
+            })
+            put("foodPresets", JSONArray(settingsJson.encodeToString(presets)))
+        }
+    }
+
+    /** Restores the settings portion of a complete app backup. */
+    suspend fun importBackupJson(settingsJsonObject: JSONObject, foodPresetsJson: JSONArray) {
+        val importedPresets = runCatching {
+            settingsJson.decodeFromString<List<ApiPreset>>(
+                settingsJsonObject.getJSONArray("apiPresets").toString(),
+            )
+        }.getOrElse { error -> throw IllegalArgumentException("模型配置无效", error) }
+        require(importedPresets.isNotEmpty()) { "至少需要一个模型配置" }
+        importedPresets.forEach { preset ->
+            require(preset.name.isNotBlank() && preset.baseUrl.isNotBlank() && preset.model.isNotBlank()) {
+                "模型配置不完整"
+            }
+        }
+        val activePresetId = settingsJsonObject.optString("activePresetId")
+            .takeIf { id -> importedPresets.any { it.id == id } }
+            ?: importedPresets.first().id
+
+        val importedFoodPresets = runCatching {
+            settingsJson.decodeFromString<List<PresetFood>>(foodPresetsJson.toString())
+        }.getOrElse { error -> throw IllegalArgumentException("预设食物无效", error) }
+        importedFoodPresets.forEach { preset ->
+            require(preset.name.isNotBlank() && preset.defaultGrams.isFinite() && preset.defaultGrams > 0.0) {
+                "预设食物包含无效重量"
+            }
+            require(preset.nutrition?.isValid() != false) { "预设食物包含无效营养数据" }
+        }
+
+        fun floatValue(name: String, default: Float): Float = settingsJsonObject
+            .optDouble(name, default.toDouble())
+            .toFloat()
+            .also { require(it.isFinite()) { "$name 不是有效数字" } }
+
+        val defaults = AppSettings()
+        val gender = settingsJsonObject.optString("gender")
+            .let { value -> Gender.entries.firstOrNull { it.name == value } }
+            ?: defaults.gender
+        val activity = settingsJsonObject.optString("activityLevel")
+            .let { value -> ActivityLevel.entries.firstOrNull { it.name == value } }
+            ?: defaults.activityLevel
+        val colorTheme = settingsJsonObject.optString("colorTheme")
+            .let { value -> ColorThemePreset.entries.firstOrNull { it.name == value } }
+            ?: defaults.colorTheme
+
+        store.edit { prefs ->
+            val active = importedPresets.first { it.id == activePresetId }
+            prefs[foodPresetsKey] = settingsJson.encodeToString(importedFoodPresets)
+            prefs[Keys.PRESETS] = settingsJson.encodeToString(importedPresets)
+            prefs[Keys.ACTIVE_PRESET] = activePresetId
+            prefs[Keys.BASE_URL] = active.baseUrl
+            prefs[Keys.API_KEY] = active.apiKey
+            prefs[Keys.MODEL] = active.model
+            prefs[Keys.SYSTEM_BG] = settingsJsonObject.optString("systemBackground")
+            prefs[Keys.PROMPT_OVERRIDES] = settingsJson.encodeToString(
+                runCatching {
+                    settingsJson.decodeFromString<Map<String, String>>(
+                        settingsJsonObject.optJSONObject("promptOverrides")?.toString().orEmpty(),
+                    )
+                }.getOrDefault(emptyMap()),
+            )
+            prefs[Keys.FDC_API_KEY] = settingsJsonObject.optString("foodDataCentralApiKey")
+            prefs[Keys.TARGET] = floatValue("dailyCalorieTarget", defaults.dailyCalorieTarget)
+            prefs[Keys.PROTEIN] = floatValue("proteinTargetG", defaults.proteinTargetG)
+            prefs[Keys.FAT] = floatValue("fatTargetG", defaults.fatTargetG)
+            prefs[Keys.CARBS] = floatValue("carbsTargetG", defaults.carbsTargetG)
+            prefs[Keys.HEIGHT] = floatValue("heightCm", defaults.heightCm)
+            prefs[Keys.WEIGHT] = floatValue("weightKg", defaults.weightKg)
+            prefs[Keys.AGE] = settingsJsonObject.optInt("ageYears", defaults.ageYears)
+            prefs[Keys.GENDER] = gender.name
+            prefs[Keys.ACTIVITY] = activity.name
+            prefs[Keys.PROTEIN_RING] = settingsJsonObject.optLong("proteinRingColor", defaults.proteinRingColor)
+            prefs[Keys.CARBS_RING] = settingsJsonObject.optLong("carbsRingColor", defaults.carbsRingColor)
+            prefs[Keys.FAT_RING] = settingsJsonObject.optLong("fatRingColor", defaults.fatRingColor)
+            prefs[Keys.CALORIE_PROGRESS] = settingsJsonObject.optLong("calorieProgressColor", defaults.calorieProgressColor)
+            prefs[Keys.OVER_TARGET] = settingsJsonObject.optLong("overTargetColor", defaults.overTargetColor)
+            prefs[Keys.BREAKFAST] = settingsJsonObject.optLong("breakfastColor", defaults.breakfastColor)
+            prefs[Keys.LUNCH] = settingsJsonObject.optLong("lunchColor", defaults.lunchColor)
+            prefs[Keys.DINNER] = settingsJsonObject.optLong("dinnerColor", defaults.dinnerColor)
+            prefs[Keys.SNACK] = settingsJsonObject.optLong("snackColor", defaults.snackColor)
+            prefs[Keys.COLOR_THEME] = colorTheme.name
+            prefs[Keys.COLOR_SEED] = settingsJsonObject.optLong("colorSeed", defaults.colorSeed)
+            prefs[Keys.GLASS_EFFECTS] = settingsJsonObject.optBoolean("glassEffectsEnabled", defaults.glassEffectsEnabled)
+            prefs[Keys.TOP_GRADIENT_BLUR] = settingsJsonObject.optBoolean(
+                "topGradientBlurEnabled",
+                defaults.topGradientBlurEnabled,
+            )
+            prefs[Keys.TOP_GRADIENT_BLUR_RANGE] = settingsJsonObject
+                .optInt("topGradientBlurRangeDp", defaults.topGradientBlurRangeDp)
+                .coerceIn(0, 240)
+        }
+    }
+
     private object Keys {
         val BASE_URL = stringPreferencesKey("base_url")
         val API_KEY = stringPreferencesKey("api_key")
@@ -191,6 +352,7 @@ class SettingsRepository(private val store: androidx.datastore.core.DataStore<an
         val PRESETS = stringPreferencesKey("api_presets")
         val ACTIVE_PRESET = stringPreferencesKey("active_preset_id")
         val SYSTEM_BG = stringPreferencesKey("system_background")
+        val PROMPT_OVERRIDES = stringPreferencesKey("prompt_overrides")
         val FDC_API_KEY = stringPreferencesKey("food_data_central_api_key")
         val PROTEIN = floatPreferencesKey("protein_target_g")
         val FAT = floatPreferencesKey("fat_target_g")
@@ -198,6 +360,14 @@ class SettingsRepository(private val store: androidx.datastore.core.DataStore<an
         val PROTEIN_RING = longPreferencesKey("protein_ring_color")
         val CARBS_RING = longPreferencesKey("carbs_ring_color")
         val FAT_RING = longPreferencesKey("fat_ring_color")
+        val CALORIE_PROGRESS = longPreferencesKey("calorie_progress_color")
+        val OVER_TARGET = longPreferencesKey("over_target_color")
+        val BREAKFAST = longPreferencesKey("breakfast_color")
+        val LUNCH = longPreferencesKey("lunch_color")
+        val DINNER = longPreferencesKey("dinner_color")
+        val SNACK = longPreferencesKey("snack_color")
+        val COLOR_THEME = stringPreferencesKey("color_theme")
+        val COLOR_SEED = longPreferencesKey("color_seed")
         val GLASS_EFFECTS = booleanPreferencesKey("glass_effects_enabled")
         val TOP_GRADIENT_BLUR = booleanPreferencesKey("top_gradient_blur_enabled")
         val TOP_GRADIENT_BLUR_RANGE = intPreferencesKey("top_gradient_blur_range_dp")
@@ -214,10 +384,38 @@ class SettingsRepository(private val store: androidx.datastore.core.DataStore<an
             ?.takeIf { id -> presets.any { it.id == id } }
             ?: presets.firstOrNull()?.id.orEmpty()
 
+        val storedTheme = prefs[Keys.COLOR_THEME]?.let { name ->
+            ColorThemePreset.entries.firstOrNull { it.name == name }
+        }
+        val storedSeed = prefs[Keys.COLOR_SEED] ?: storedTheme?.seedColor ?: ColorThemePreset.MULTICOLOR.seedColor
+        val hasNewPalette = prefs.contains(Keys.COLOR_THEME) || prefs.contains(Keys.CALORIE_PROGRESS)
+        val legacyPalette = FoodColorPalette.Multicolor.copy(
+            protein = prefs[Keys.PROTEIN_RING] ?: FoodColorPalette.Multicolor.protein,
+            carbs = prefs[Keys.CARBS_RING] ?: FoodColorPalette.Multicolor.carbs,
+            fat = prefs[Keys.FAT_RING] ?: FoodColorPalette.Multicolor.fat,
+        )
+        val storedPalette = when {
+            !hasNewPalette && (prefs.contains(Keys.PROTEIN_RING) || prefs.contains(Keys.CARBS_RING) || prefs.contains(Keys.FAT_RING)) -> legacyPalette
+            storedTheme == ColorThemePreset.CUSTOM -> FoodColorPalette.forPreset(ColorThemePreset.CUSTOM, storedSeed)
+            hasNewPalette -> FoodColorPalette.Multicolor.copy(
+                calorie = prefs[Keys.CALORIE_PROGRESS] ?: FoodColorPalette.Multicolor.calorie,
+                overTarget = prefs[Keys.OVER_TARGET] ?: FoodColorPalette.Multicolor.overTarget,
+                protein = prefs[Keys.PROTEIN_RING] ?: FoodColorPalette.Multicolor.protein,
+                carbs = prefs[Keys.CARBS_RING] ?: FoodColorPalette.Multicolor.carbs,
+                fat = prefs[Keys.FAT_RING] ?: FoodColorPalette.Multicolor.fat,
+                breakfast = prefs[Keys.BREAKFAST] ?: FoodColorPalette.Multicolor.breakfast,
+                lunch = prefs[Keys.LUNCH] ?: FoodColorPalette.Multicolor.lunch,
+                dinner = prefs[Keys.DINNER] ?: FoodColorPalette.Multicolor.dinner,
+                snack = prefs[Keys.SNACK] ?: FoodColorPalette.Multicolor.snack,
+            )
+            else -> FoodColorPalette.forPreset(ColorThemePreset.MULTICOLOR)
+        }
+
         AppSettings(
             apiPresets = presets,
             activePresetId = activeId,
             systemBackground = prefs[Keys.SYSTEM_BG] ?: "",
+            promptOverrides = decodePromptOverrides(prefs[Keys.PROMPT_OVERRIDES]),
             foodDataCentralApiKey = prefs[Keys.FDC_API_KEY] ?: "",
             dailyCalorieTarget = prefs[Keys.TARGET] ?: 1800f,
             proteinTargetG = prefs[Keys.PROTEIN] ?: 0f,
@@ -231,9 +429,21 @@ class SettingsRepository(private val store: androidx.datastore.core.DataStore<an
             activityLevel = prefs[Keys.ACTIVITY]?.let { name ->
                 ActivityLevel.entries.firstOrNull { it.name == name }
             } ?: ActivityLevel.MEDIUM,
-            proteinRingColor = prefs[Keys.PROTEIN_RING] ?: 0xFFF3A17C,
-            carbsRingColor = prefs[Keys.CARBS_RING] ?: 0xFF2F7D2B,
-            fatRingColor = prefs[Keys.FAT_RING] ?: 0xFFFFB300,
+            proteinRingColor = storedPalette.protein,
+            carbsRingColor = storedPalette.carbs,
+            fatRingColor = storedPalette.fat,
+            calorieProgressColor = storedPalette.calorie,
+            overTargetColor = storedPalette.overTarget,
+            breakfastColor = storedPalette.breakfast,
+            lunchColor = storedPalette.lunch,
+            dinnerColor = storedPalette.dinner,
+            snackColor = storedPalette.snack,
+            colorTheme = storedTheme ?: if (!hasNewPalette && legacyPalette != FoodColorPalette.Multicolor) {
+                ColorThemePreset.CUSTOM
+            } else {
+                ColorThemePreset.MULTICOLOR
+            },
+            colorSeed = storedSeed,
             glassEffectsEnabled = prefs[Keys.GLASS_EFFECTS] ?: false,
             topGradientBlurEnabled = prefs[Keys.TOP_GRADIENT_BLUR] ?: false,
             topGradientBlurRangeDp = (prefs[Keys.TOP_GRADIENT_BLUR_RANGE] ?: 72).coerceIn(0, 240),
@@ -327,6 +537,35 @@ class SettingsRepository(private val store: androidx.datastore.core.DataStore<an
         }
     }
 
+    /** Persist one edited model configuration atomically after the user taps Save. */
+    suspend fun updatePreset(
+        presetId: String,
+        name: String,
+        baseUrl: String,
+        apiKey: String,
+        model: String,
+    ) {
+        val updated = ApiPreset(
+            id = presetId,
+            name = name.trim(),
+            baseUrl = baseUrl.trim().trimEnd('/'),
+            apiKey = apiKey.trim(),
+            model = model.trim(),
+        )
+        require(updated.name.isNotBlank()) { "配置名称不能为空" }
+        store.edit { prefs ->
+            val current = parsePresets(prefs[Keys.PRESETS], prefs[Keys.BASE_URL], prefs[Keys.API_KEY], prefs[Keys.MODEL])
+            require(current.any { it.id == presetId }) { "配置不存在，请返回后重试" }
+            val next = current.map { if (it.id == presetId) updated else it }
+            prefs[Keys.PRESETS] = settingsJson.encodeToString(next)
+            if (prefs[Keys.ACTIVE_PRESET] == presetId) {
+                prefs[Keys.BASE_URL] = updated.baseUrl
+                prefs[Keys.API_KEY] = updated.apiKey
+                prefs[Keys.MODEL] = updated.model
+            }
+        }
+    }
+
     suspend fun updateActiveBaseUrl(value: String) {
         updateActivePreset { it.copy(baseUrl = value.trim().trimEnd('/')) }
     }
@@ -358,6 +597,19 @@ class SettingsRepository(private val store: androidx.datastore.core.DataStore<an
 
     suspend fun updateSystemBackground(value: String) {
         store.edit { it[Keys.SYSTEM_BG] = value }
+    }
+
+    private fun decodePromptOverrides(raw: String?): Map<String, String> =
+        raw?.let { runCatching { settingsJson.decodeFromString<Map<String, String>>(it) }.getOrNull() }
+            ?: emptyMap()
+
+    /** Only called after a successful prompt test, or to restore a built-in default. */
+    suspend fun updatePromptOverride(key: String, value: String?) {
+        store.edit { prefs ->
+            val next = decodePromptOverrides(prefs[Keys.PROMPT_OVERRIDES]).toMutableMap()
+            if (value.isNullOrBlank()) next.remove(key) else next[key] = value
+            prefs[Keys.PROMPT_OVERRIDES] = settingsJson.encodeToString(next)
+        }
     }
 
     suspend fun updateFoodDataCentralApiKey(value: String) {
@@ -416,6 +668,39 @@ class SettingsRepository(private val store: androidx.datastore.core.DataStore<an
 
     suspend fun updateFatRingColor(value: Long) {
         store.edit { it[Keys.FAT_RING] = value }
+    }
+
+    suspend fun updateColorTheme(theme: ColorThemePreset) {
+        val palette = FoodColorPalette.forPreset(theme, theme.seedColor)
+        updateColorPalette(theme, theme.seedColor, palette)
+    }
+
+    suspend fun updateCustomColorTheme(seedColor: Long) {
+        updateColorPalette(
+            theme = ColorThemePreset.CUSTOM,
+            seedColor = seedColor,
+            palette = FoodColorPalette.forPreset(ColorThemePreset.CUSTOM, seedColor),
+        )
+    }
+
+    private suspend fun updateColorPalette(
+        theme: ColorThemePreset,
+        seedColor: Long,
+        palette: FoodColorPalette,
+    ) {
+        store.edit { prefs ->
+            prefs[Keys.COLOR_THEME] = theme.name
+            prefs[Keys.COLOR_SEED] = seedColor
+            prefs[Keys.CALORIE_PROGRESS] = palette.calorie
+            prefs[Keys.OVER_TARGET] = palette.overTarget
+            prefs[Keys.PROTEIN_RING] = palette.protein
+            prefs[Keys.CARBS_RING] = palette.carbs
+            prefs[Keys.FAT_RING] = palette.fat
+            prefs[Keys.BREAKFAST] = palette.breakfast
+            prefs[Keys.LUNCH] = palette.lunch
+            prefs[Keys.DINNER] = palette.dinner
+            prefs[Keys.SNACK] = palette.snack
+        }
     }
 
     suspend fun updateGlassEffectsEnabled(value: Boolean) {

@@ -17,6 +17,7 @@ import com.click.lightmemo.ui.basic.LiquidTopBarButton
 import com.click.lightmemo.ui.basic.ProgressiveBlurTopBar
 import com.click.lightmemo.ui.basic.SharedScrollBehavior
 import com.click.lightmemo.ui.basic.rememberSharedScrollBehavior
+import com.kyant.backdrop.Backdrop
 import com.kyant.backdrop.backdrops.layerBackdrop as liquidGlassLayerBackdrop
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.blur.layerBackdrop
@@ -33,6 +34,7 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 fun SecondaryPageShell(
     title: String,
     onBack: () -> Unit,
+    endAction: @Composable ((backdrop: Backdrop, backdropAlpha: Float, shadowAlpha: Float) -> Unit)? = null,
     content: @Composable (padding: PaddingValues, scrollBehavior: SharedScrollBehavior) -> Unit,
 ) {
     val glassSupported = LocalGlassSupported.current
@@ -57,6 +59,11 @@ fun SecondaryPageShell(
                     largeTitle = title,
                     showGradientOverlay = true,
                     scrollBehavior = scrollBehavior,
+                    endAction = endAction?.let { slot ->
+                        { backdropAlpha, shadowAlpha ->
+                            slot(liquidGlassBackdrop, backdropAlpha, shadowAlpha)
+                        }
+                    },
                     onAlphaChanged = { bd, _ -> topBarBlurAlpha = bd },
                     startAction = { backdropAlpha, shadowAlpha ->
                         LiquidTopBarButton(

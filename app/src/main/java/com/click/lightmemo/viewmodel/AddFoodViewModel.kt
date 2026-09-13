@@ -2,9 +2,9 @@ package com.click.lightmemo.viewmodel
 
 import com.click.lightmemo.data.PresetFood
 import com.click.lightmemo.data.DefaultPresetFoods
+import com.click.lightmemo.data.FoodImages
 import android.app.Application
 import android.net.Uri
-import android.util.Base64
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.click.lightmemo.FoodApp
@@ -492,11 +492,12 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
                     throw RecognitionException("图片中没有识别到可记录的食物")
                 }
                 val result = nutritionDatabase.enrich(visualResult, current.foodDataCentralApiKey).splitDishes()
+                val savedImageUri = FoodImages.persistEncoded(foodApp, base64)
                 _uiState.value = _uiState.value.copy(
                     recognizing = false,
-                    step = AddStep.Review(imageUri = uri.toString(), result = result),
+                    step = AddStep.Review(imageUri = savedImageUri.toString(), result = result),
                 )
-                notify("食物识别完成，请确认结果")
+                notify("食物识别完成，照片已保存，请确认结果")
             } catch (e: RecognitionException) {
                 notify(e.message ?: "识别失败")
                 _uiState.value = _uiState.value.copy(recognizing = false, error = e.message)
@@ -630,15 +631,7 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
             val tags = _uiState.value.selectedTags.toList()
             val minuteOfDay = _uiState.value.mealMinuteOfDay
             val savedImageUri = imageUri?.let { source ->
-                withContext(Dispatchers.IO) {
-                    val bytes = Base64.decode(encodeImage(Uri.parse(source)), Base64.NO_WRAP)
-                    val digest = java.security.MessageDigest.getInstance("SHA-256").digest(bytes)
-                        .joinToString("") { "%02x".format(it) }
-                    val directory = java.io.File(foodApp.filesDir, "images").apply { mkdirs() }
-                    val file = java.io.File(directory, "$digest.jpg")
-                    if (!file.exists()) file.writeBytes(bytes)
-                    androidx.core.content.FileProvider.getUriForFile(foodApp, "${foodApp.packageName}.fileprovider", file).toString()
-                }
+                FoodImages.persist(foodApp, Uri.parse(source)).toString()
             }
             repo.insertAll(result.dishes.map { dish ->
                     FoodLog(
@@ -684,7 +677,7 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private suspend fun encodeImage(uri: Uri): String = com.click.lightmemo.data.FoodImages.encode(foodApp, uri)
+    private suspend fun encodeImage(uri: Uri): String = FoodImages.encode(foodApp, uri)
 
 }
 

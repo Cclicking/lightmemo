@@ -7,16 +7,30 @@ import com.click.lightmemo.FoodApp
 import com.click.lightmemo.data.ActivityLevel
 import com.click.lightmemo.data.AppSettings
 import com.click.lightmemo.data.Gender
+import com.click.lightmemo.data.ColorThemePreset
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.MutableStateFlow
+import com.click.lightmemo.network.RecognitionPrompt
+import com.click.lightmemo.data.FoodImages
+import android.net.Uri
+import android.os.SystemClock
 
 class SettingsViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = (app as FoodApp).settingsRepository
 
     val error = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
     val readError = repo.readError
+    val settingsReady = MutableStateFlow(false)
+    val addingPreset = MutableStateFlow(false)
+    val savingPreset = MutableStateFlow(false)
+    val testingPrompt = MutableStateFlow(false)
+    val promptTestResult = MutableStateFlow<String?>(null)
+    val promptTestResponse = MutableStateFlow<String?>(null)
 
     private fun saveSetting(block: suspend () -> Unit) = viewModelScope.launch {
         try {
@@ -29,7 +43,7 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    val settings: StateFlow<AppSettings> = repo.settings.stateIn(
+    val settings: StateFlow<AppSettings> = repo.settings.onEach { settingsReady.value = true }.stateIn(
         viewModelScope,
         SharingStarted.WhileSubscribed(5_000),
         AppSettings(),
@@ -49,13 +63,73 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
 
     fun selectPreset(id: String) = saveSetting { repo.selectPreset(id) }
 
-    fun addPreset(name: String = "新配置") = saveSetting { repo.addPreset(name) }
+    fun addPreset(name: String = "新配置", onAdded: () -> Unit = {}) {
+        if (addingPreset.value) return
+        addingPreset.value = true
+        saveSetting {
+            try {
+                repo.addPreset(name)
+                onAdded()
+            } finally {
+                addingPreset.value = false
+            }
+        }
+    }
 
-    fun deleteActivePreset() = saveSetting {
+    fun deleteActivePreset(onDeleted: () -> Unit = {}) = saveSetting {
         repo.deletePreset(settings.value.activePreset.id)
+        onDeleted()
+    }
+
+    fun restorePrompt(kind: RecognitionPrompt) = saveSetting {
+        if (testingPrompt.value) return@saveSetting
+        repo.updatePromptOverride(kind.name, null)
+        promptTestResult.value = "已恢复${kind.label}的默认 Prompt"
+    }
+
+    fun testAndApplyPrompt(kind: RecognitionPrompt, draft: String, image: Uri?) {
+        if (testingPrompt.value) return
+        testingPrompt.value = true
+        promptTestResult.value = null
+        promptTestResponse.value = null
+        viewModelScope.launch {
+            val started = SystemClock.elapsedRealtime()
+            try {
+                require(draft.isNotBlank()) { "Prompt 不能为空" }
+                val current = repo.settings.first()
+                require(current.isRecognitionConfigured) { "请先配置 Base URL 与 API Key" }
+                require(!kind.requiresImage || image != null) { "请先选择一张清晰的食物照片" }
+                val encoded = image?.takeIf { kind.requiresImage }?.let { FoodImages.encode(getApplication(), it) }
+                val response = (getApplication<Application>() as FoodApp).recognitionClient.testPrompt(
+                    current.baseUrl, current.apiKey, current.model, kind, draft, encoded,
+                )
+                repo.updatePromptOverride(kind.name, draft)
+                promptTestResponse.value = response
+                val seconds = (SystemClock.elapsedRealtime() - started) / 1000.0
+                promptTestResult.value = "${kind.label}测试通过并已应用（%.1f 秒）。结构和基础约束有效，识别准确性仍需人工确认。".format(seconds)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                promptTestResult.value = "${kind.label}测试失败：${e.message ?: "请求失败"}。继续使用上次有效 Prompt（未设置时使用默认值），草稿已保留。"
+            } finally {
+                testingPrompt.value = false
+            }
+        }
     }
 
     fun renamePreset(id: String, name: String) = saveSetting { repo.renamePreset(id, name) }
+
+    fun savePreset(id: String, name: String, baseUrl: String, apiKey: String, model: String) {
+        if (savingPreset.value) return
+        savingPreset.value = true
+        saveSetting {
+            try {
+                repo.updatePreset(id, name, baseUrl, apiKey, model)
+            } finally {
+                savingPreset.value = false
+            }
+        }
+    }
 
     fun setTarget(value: Float) = saveSetting { repo.updateDailyTarget(value) }
 
@@ -80,6 +154,10 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
     fun setCarbsRingColor(value: Long) = saveSetting { repo.updateCarbsRingColor(value) }
 
     fun setFatRingColor(value: Long) = saveSetting { repo.updateFatRingColor(value) }
+
+    fun setColorTheme(theme: ColorThemePreset) = saveSetting { repo.updateColorTheme(theme) }
+
+    fun setCustomColorTheme(seedColor: Long) = saveSetting { repo.updateCustomColorTheme(seedColor) }
 
     fun setGlassEffectsEnabled(value: Boolean) = saveSetting {
         repo.updateGlassEffectsEnabled(value)

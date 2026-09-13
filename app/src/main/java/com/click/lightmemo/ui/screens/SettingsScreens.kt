@@ -1,5 +1,7 @@
 package com.click.lightmemo.ui.screens
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -7,9 +9,11 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.text.KeyboardOptions
@@ -20,25 +24,38 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.click.lightmemo.data.ActivityLevel
+import com.click.lightmemo.data.ColorThemePreset
+import com.click.lightmemo.data.FoodColorPalette
+import com.click.lightmemo.data.FoodPaletteGenerator
+import com.click.lightmemo.data.HsvColor
 import com.click.lightmemo.data.Gender
 import com.click.lightmemo.ui.basic.SharedScrollBehavior as ScrollBehavior
 import com.click.lightmemo.ui.components.AnimatedOverlayDialog
 import com.click.lightmemo.ui.components.DropdownPref
+import com.click.lightmemo.ui.theme.FoodPaletteColors
+import com.click.lightmemo.ui.theme.toComposeColors
 import com.click.lightmemo.ui.utils.overScrollVertical
 import com.click.lightmemo.viewmodel.SettingsViewModel
 import top.yukonga.miuix.kmp.basic.Button
@@ -70,89 +87,83 @@ fun ApiSettingsScreen(
     listState: LazyListState,
 ) {
     val settings by viewModel.settings.collectAsState()
-    val presets = settings.apiPresets
-    val activeIndex = presets.indexOfFirst { it.id == settings.activePresetId }.coerceAtLeast(0)
-
-    var presetName by remember(settings.activePresetId) { mutableStateOf(settings.activePreset.name) }
-    var baseUrl by remember(settings.activePresetId) { mutableStateOf(settings.baseUrl) }
-    var apiKey by remember(settings.activePresetId) { mutableStateOf(settings.apiKey) }
-    var model by remember(settings.activePresetId) { mutableStateOf(settings.model) }
-    var systemBackground by remember(settings.activePresetId) {
-        mutableStateOf(settings.systemBackground)
-    }
-    LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .overScrollVertical()
-            .then(
-                if (scrollBehavior != null) {
-                    Modifier.nestedScroll(scrollBehavior.nestedScrollConnection)
-                } else {
-                    Modifier
+    val ready by viewModel.settingsReady.collectAsState()
+    val error by viewModel.error.collectAsState()
+    val adding by viewModel.addingPreset.collectAsState()
+    val context = LocalContext.current
+    if (!ready) return
+    AiSettingsList(contentPadding, scrollBehavior, listState) {
+        item {
+            if (!settings.isRecognitionConfigured) {
+                Text(
+                    text = "尚未配置识别服务，点击新增配置，填写 Base URL 与 API Key 后即可识别",
+                    style = MiuixTheme.textStyles.subtitle,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 16.dp, bottom = 20.dp),
+                )
+            }
+            SmallTitle("模型配置", modifier = Modifier.offset(x = (-16).dp))
+            Card(modifier = Modifier.fillMaxWidth()) {
+                DropdownPref(
+                    title = "当前配置",
+                    summary = settings.model,
+                    items = settings.apiPresets.map { it.name },
+                    selectedIndex = settings.apiPresets.indexOfFirst { it.id == settings.activePresetId }.coerceAtLeast(0),
+                    onSelectedIndexChange = { index ->
+                        settings.apiPresets.getOrNull(index)?.let { viewModel.selectPreset(it.id) }
+                    },
+                )
+                ArrowPreference(
+                    title = "编辑当前配置",
+                    summary = settings.activePreset.name,
+                    onClick = { context.startActivity(android.content.Intent(context, com.click.lightmemo.ui.secondary.ApiConfigurationActivity::class.java)) },
+                )
+            }
+            Spacer(Modifier.height(14.dp))
+            Button(
+                onClick = {
+                    viewModel.addPreset("配置 ${settings.apiPresets.size + 1}") {
+                        context.startActivity(android.content.Intent(context, com.click.lightmemo.ui.secondary.ApiConfigurationActivity::class.java))
+                    }
                 },
-            ),
-        state = listState,
-        contentPadding = PaddingValues(
-            start = 16.dp,
-            end = 16.dp,
-            top = contentPadding.calculateTopPadding(),
-            bottom = contentPadding.calculateBottomPadding() + 12.dp,
-        ),
-    ) {
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColorsPrimary(),
+                enabled = !adding,
+            ) { Text("新增配置") }
+            error?.let { Text(it, modifier = Modifier.padding(12.dp)) }
+            Spacer(Modifier.height(FieldToTitleSpacing))
+            SmallTitle("识别提示词", modifier = Modifier.offset(x = (-16).dp))
+            Card(modifier = Modifier.fillMaxWidth()) {
+                ArrowPreference(
+                    title = "Prompt 修改",
+                    summary = "编辑、测试识别提示词与大模型背景信息",
+                    onClick = { context.startActivity(android.content.Intent(context, com.click.lightmemo.ui.secondary.PromptSettingsActivity::class.java)) },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun ApiConfigurationScreen(
+    viewModel: SettingsViewModel,
+    contentPadding: PaddingValues,
+    scrollBehavior: ScrollBehavior?,
+    listState: LazyListState,
+    onDeleted: () -> Unit,
+) {
+    val settings by viewModel.settings.collectAsState()
+    val ready by viewModel.settingsReady.collectAsState()
+    if (!ready) return
+    var presetName by androidx.compose.runtime.saveable.rememberSaveable(settings.activePreset.id) { mutableStateOf(settings.activePreset.name) }
+    var baseUrl by androidx.compose.runtime.saveable.rememberSaveable(settings.activePreset.id) { mutableStateOf(settings.baseUrl) }
+    var apiKey by androidx.compose.runtime.saveable.rememberSaveable(settings.activePreset.id) { mutableStateOf(settings.apiKey) }
+    var model by androidx.compose.runtime.saveable.rememberSaveable(settings.activePreset.id) { mutableStateOf(settings.model) }
+    val error by viewModel.error.collectAsState()
+    val saving by viewModel.savingPreset.collectAsState()
+    AiSettingsList(contentPadding, scrollBehavior, listState) {
         item {
             Column {
-                if (!settings.isRecognitionConfigured) {
-                    Text(
-                        text = "尚未配置识别服务，填写 Base URL 与 API Key 后才能拍照识别",
-                        style = MiuixTheme.textStyles.subtitle,
-                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                    )
-                    Spacer(Modifier.height(12.dp))
-                }
-
-                SmallTitle(
-                    text = "模型配置",
-                    modifier = Modifier.offset(x = (-16).dp),
-                )
-                Spacer(Modifier.height(TitleToFieldSpacing))
-                Card(
-                    cornerRadius = 20.dp,
-                    modifier = Modifier.fillMaxWidth(),
-                    insideMargin = PaddingValues(0.dp),
-                ) {
-                    DropdownPref(
-                        title = "当前配置",
-                        summary = "${settings.model.ifBlank { "未命名" }} · 可保存多套并切换",
-                        items = presets.map { it.name },
-                        selectedIndex = activeIndex,
-                        onSelectedIndexChange = { index ->
-                            presets.getOrNull(index)?.let { viewModel.selectPreset(it.id) }
-                        },
-                    )
-                }
-                Spacer(Modifier.height(14.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    Button(
-                        onClick = { viewModel.addPreset("配置 ${presets.size + 1}") },
-                        modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.buttonColorsPrimary(),
-                    ) {
-                        Text("新增配置")
-                    }
-                    Button(
-                        onClick = { viewModel.deleteActivePreset() },
-                        modifier = Modifier.weight(1f),
-                        enabled = presets.size > 1,
-                        colors = ButtonDefaults.buttonColors(),
-                    ) {
-                        Text("删除当前")
-                    }
-                }
-
-                Spacer(Modifier.height(FieldToTitleSpacing))
                 SmallTitle(
                     text = "配置名称",
                     modifier = Modifier.offset(x = (-16).dp),
@@ -162,7 +173,6 @@ fun ApiSettingsScreen(
                     value = presetName,
                     onValueChange = { value ->
                         presetName = value
-                        viewModel.renamePreset(settings.activePreset.id, value)
                     },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
@@ -178,7 +188,6 @@ fun ApiSettingsScreen(
                     value = baseUrl,
                     onValueChange = {
                         baseUrl = it
-                        viewModel.setBaseUrl(it)
                     },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
@@ -194,7 +203,6 @@ fun ApiSettingsScreen(
                     value = apiKey,
                     onValueChange = {
                         apiKey = it
-                        viewModel.setApiKey(it)
                     },
                     singleLine = true,
                     visualTransformation = PasswordVisualTransformation(),
@@ -211,45 +219,57 @@ fun ApiSettingsScreen(
                     value = model,
                     onValueChange = {
                         model = it
-                        viewModel.setModel(it)
                     },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
 
-                Spacer(Modifier.height(FieldToTitleSpacing))
-                SmallTitle(
-                    text = "大模型背景信息",
-                    modifier = Modifier.offset(x = (-16).dp),
-                )
-                Spacer(Modifier.height(TitleToFieldSpacing))
-                TextField(
-                    value = systemBackground,
-                    onValueChange = {
-                        systemBackground = it
-                        viewModel.setSystemBackground(it)
-                    },
-                    singleLine = false,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Spacer(Modifier.height(12.dp))
-                Text(
-                    text = "可填写年龄、饮食偏好、过敏原、目标（如减脂）等，识别时会作为参考上下文发给大模型",
-                    style = MiuixTheme.textStyles.footnote2,
-                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                    modifier = Modifier.padding(horizontal = FootnoteHorizontalPadding),
-                )
 
+                Spacer(Modifier.height(20.dp))
+                Button(
+                    onClick = {
+                        viewModel.savePreset(
+                            id = settings.activePreset.id,
+                            name = presetName,
+                            baseUrl = baseUrl,
+                            apiKey = apiKey,
+                            model = model,
+                        )
+                    },
+                    enabled = !saving && presetName.isNotBlank(),
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColorsPrimary(),
+                ) { Text(if (saving) "保存中…" else "保存配置") }
                 Spacer(Modifier.height(12.dp))
-                Text(
-                    text = "当前：${settings.baseUrl} · ${settings.model}",
-                    style = MiuixTheme.textStyles.footnote2,
-                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                    modifier = Modifier.padding(horizontal = FootnoteHorizontalPadding),
-                )
+                Button(
+                    onClick = { viewModel.deleteActivePreset(onDeleted) },
+                    enabled = settings.apiPresets.size > 1 && !saving,
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("删除当前配置") }
+                error?.let { Text(it, modifier = Modifier.padding(12.dp)) }
             }
         }
     }
+}
+
+@Composable
+internal fun AiSettingsList(
+    contentPadding: PaddingValues,
+    scrollBehavior: ScrollBehavior?,
+    listState: LazyListState,
+    content: androidx.compose.foundation.lazy.LazyListScope.() -> Unit,
+) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize().imePadding().overScrollVertical()
+            .then(scrollBehavior?.let { Modifier.nestedScroll(it.nestedScrollConnection) } ?: Modifier),
+        state = listState,
+        contentPadding = PaddingValues(
+            start = 16.dp, end = 16.dp,
+            top = contentPadding.calculateTopPadding(),
+            bottom = contentPadding.calculateBottomPadding() + 12.dp,
+        ),
+        content = content,
+    )
 }
 
 @Composable
@@ -777,17 +797,6 @@ private fun StatusRow(
     }
 }
 
-private val RingColorPalette = listOf(
-    0xFFF3A17C,
-    0xFF2F7D2B,
-    0xFFFFB300,
-    0xFF8EAEFF,
-    0xFFE85D75,
-    0xFF9B6DFF,
-    0xFF2BB3A3,
-    0xFF6B7280,
-)
-
 @Composable
 fun AppearanceSettingsScreen(
     viewModel: SettingsViewModel,
@@ -796,7 +805,7 @@ fun AppearanceSettingsScreen(
     listState: LazyListState,
 ) {
     val settings by viewModel.settings.collectAsState()
-    var editing by remember { mutableStateOf<RingSlot?>(null) }
+    var showColorPicker by remember { mutableStateOf(false) }
 
     LazyColumn(
         modifier = Modifier
@@ -820,7 +829,7 @@ fun AppearanceSettingsScreen(
         item {
             Column {
                 SmallTitle(
-                    text = "今日页圆环颜色",
+                    text = "颜色主题",
                     modifier = Modifier.offset(x = (-16).dp),
                 )
                 Spacer(Modifier.height(TitleToFieldSpacing))
@@ -830,23 +839,45 @@ fun AppearanceSettingsScreen(
                     insideMargin = PaddingValues(0.dp),
                 ) {
                     Column(modifier = Modifier.fillMaxWidth()) {
-                        RingColorRow(
-                            title = "蛋白质",
-                            color = Color(settings.proteinRingColor),
-                            onClick = { editing = RingSlot.PROTEIN },
-                        )
-                        RingColorRow(
-                            title = "碳水",
-                            color = Color(settings.carbsRingColor),
-                            onClick = { editing = RingSlot.CARBS },
-                        )
-                        RingColorRow(
-                            title = "脂肪",
-                            color = Color(settings.fatRingColor),
-                            onClick = { editing = RingSlot.FAT },
+                        ColorThemePreset.entries
+                            .filter { it != ColorThemePreset.CUSTOM }
+                            .forEach { preset ->
+                                val selected = settings.colorTheme == preset
+                                val palette = FoodColorPalette.forPreset(preset).toComposeColors()
+                                ArrowPreference(
+                                    title = preset.label,
+                                    summary = if (selected) "当前使用 · 热量、营养素和饮食结构图统一配色" else "应用这套配色",
+                                    endActions = {
+                                        PaletteStrip(colors = palette.previewColors, selected = selected)
+                                    },
+                                    onClick = { viewModel.setColorTheme(preset) },
+                                )
+                            }
+                        ArrowPreference(
+                            title = "自定义颜色",
+                            summary = if (settings.colorTheme == ColorThemePreset.CUSTOM) {
+                                "已根据主色自动生成整套配色"
+                            } else {
+                                "选择一个主色，自动生成协调的配色"
+                            },
+                            endActions = {
+                                PaletteStrip(
+                                    colors = settings.colorPalette.toComposeColors().previewColors,
+                                    selected = settings.colorTheme == ColorThemePreset.CUSTOM,
+                                )
+                            },
+                            onClick = { showColorPicker = true },
                         )
                     }
                 }
+
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = "配色会同步应用到今日页、统计页、识别结果和卡片详情中的热量/营养素进度，以及饮食结构图。",
+                    style = MiuixTheme.textStyles.footnote2,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    modifier = Modifier.padding(horizontal = FootnoteHorizontalPadding),
+                )
 
                 Spacer(Modifier.height(FieldToTitleSpacing))
                 SmallTitle(
@@ -886,108 +917,199 @@ fun AppearanceSettingsScreen(
         }
     }
 
-    val slot = editing
-    val current = when (slot) {
-            RingSlot.PROTEIN -> settings.proteinRingColor
-            RingSlot.CARBS -> settings.carbsRingColor
-            RingSlot.FAT -> settings.fatRingColor
-            null -> settings.proteinRingColor
-        }
     ColorPickerDialog(
-        show = slot != null,
-        title = when (slot) {
-            RingSlot.PROTEIN -> "蛋白质圆环颜色"
-            RingSlot.CARBS -> "碳水圆环颜色"
-            RingSlot.FAT -> "脂肪圆环颜色"
-            null -> "选择颜色"
-        },
-        selected = current,
-        onSelect = { color ->
-            when (slot) {
-                RingSlot.PROTEIN -> viewModel.setProteinRingColor(color)
-                RingSlot.CARBS -> viewModel.setCarbsRingColor(color)
-                RingSlot.FAT -> viewModel.setFatRingColor(color)
-                null -> Unit
-            }
-        },
-        onDismiss = { editing = null },
-    )
-}
-
-private enum class RingSlot { PROTEIN, CARBS, FAT }
-
-@Composable
-private fun RingColorRow(
-    title: String,
-    color: Color,
-    onClick: () -> Unit,
-) {
-    ArrowPreference(
-        title = title,
-        endActions = {
-            Box(
-                modifier = Modifier
-                    .size(28.dp)
-                    .clip(androidx.compose.foundation.shape.CircleShape)
-                    .background(color),
-            )
-        },
-        onClick = onClick,
+        show = showColorPicker,
+        selected = settings.colorSeed,
+        onSelect = viewModel::setCustomColorTheme,
+        onDismiss = { showColorPicker = false },
     )
 }
 
 @Composable
 private fun ColorPickerDialog(
     show: Boolean,
-    title: String,
     selected: Long,
     onSelect: (Long) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    var hsv by remember(show, selected) { mutableStateOf(FoodPaletteGenerator.argbToHsv(selected)) }
+    val selectedColor = FoodPaletteGenerator.hsvToArgb(hsv)
+    val generated = remember(selectedColor) { FoodPaletteGenerator.fromSeed(selectedColor).toComposeColors() }
     AnimatedOverlayDialog(
-        title = title,
+        title = "自定义配色",
+        summary = "选择主色后自动生成协调的热量、营养素和饮食结构颜色",
         show = show,
         onDismissRequest = onDismiss,
     ) {
-        Column(modifier = Modifier.fillMaxWidth()) {
-            RingColorPalette.chunked(4).forEachIndexed { rowIndex, chunk ->
-                if (rowIndex > 0) Spacer(Modifier.height(10.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    chunk.forEach { color ->
-                        val selectedHere = color == selected
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(36.dp)
-                                .clip(androidx.compose.foundation.shape.RoundedCornerShape(10.dp))
-                                .background(Color(color))
-                                .then(
-                                    if (selectedHere) {
-                                        Modifier.padding(2.dp)
-                                    } else {
-                                        Modifier
-                                    }
-                                )
-                                .clickable {
-                                    onSelect(color)
-                                    onDismiss()
-                                },
-                        )
-                    }
+        Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            SaturationValuePicker(
+                hsv = hsv,
+                onHsvChange = { hsv = it },
+            )
+            HuePicker(
+                hue = hsv.hue,
+                onHueChange = { hsv = hsv.copy(hue = it) },
+            )
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Box(
+                    Modifier
+                        .size(34.dp)
+                        .clip(androidx.compose.foundation.shape.CircleShape)
+                        .background(Color(selectedColor)),
+                )
+                Column {
+                    Text("主色  ${selectedColor.toHexString()}", style = MiuixTheme.textStyles.body2)
+                    Text(
+                        "已生成 ${generated.previewColors.size} 个应用颜色",
+                        style = MiuixTheme.textStyles.footnote2,
+                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    )
                 }
             }
-            Spacer(Modifier.height(8.dp))
+            Text("预览", style = MiuixTheme.textStyles.footnote2, color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
+            PaletteStrip(colors = generated.previewColors)
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Button(onClick = onDismiss, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors()) {
+                    Text("取消")
+                }
+                Button(
+                    onClick = {
+                        onSelect(selectedColor)
+                        onDismiss()
+                    },
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColorsPrimary(),
+                ) {
+                    Text("应用配色")
+                }
+            }
             Text(
-                text = "选择一种颜色后立即生效",
+                text = "拖动上方色板选择明度/饱和度，拖动色相条选择色相。",
                 style = MiuixTheme.textStyles.footnote2,
                 color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
             )
         }
     }
 }
+
+private val HueColors = listOf(
+    Color.Red,
+    Color.Yellow,
+    Color.Green,
+    Color.Cyan,
+    Color.Blue,
+    Color.Magenta,
+    Color.Red,
+)
+
+private val FoodPaletteColors.previewColors: List<Color>
+    get() = listOf(calorie, protein, carbs, fat) + structure
+
+@Composable
+private fun PaletteStrip(colors: List<Color>, selected: Boolean = false) {
+    Row(
+        modifier = Modifier.width(96.dp),
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
+    ) {
+        colors.take(8).forEach { color ->
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(24.dp)
+                    .clip(androidx.compose.foundation.shape.RoundedCornerShape(6.dp))
+                    .background(color),
+            )
+        }
+        if (selected) {
+            Box(
+                modifier = Modifier
+                    .size(8.dp)
+                    .clip(androidx.compose.foundation.shape.CircleShape)
+                    .background(MiuixTheme.colorScheme.primary)
+                    .align(Alignment.CenterVertically),
+            )
+        }
+    }
+}
+
+@Composable
+private fun SaturationValuePicker(
+    hsv: HsvColor,
+    onHsvChange: (HsvColor) -> Unit,
+) {
+    androidx.compose.foundation.layout.BoxWithConstraints {
+        val widthPx = with(androidx.compose.ui.platform.LocalDensity.current) { maxWidth.toPx() }
+        val heightPx = with(androidx.compose.ui.platform.LocalDensity.current) { 180.dp.toPx() }
+        fun update(offset: Offset) {
+            onHsvChange(
+                hsv.copy(
+                    saturation = (offset.x / widthPx).coerceIn(0f, 1f),
+                    value = (1f - offset.y / heightPx).coerceIn(0f, 1f),
+                ),
+            )
+        }
+        Canvas(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(180.dp)
+                .clip(androidx.compose.foundation.shape.RoundedCornerShape(14.dp))
+                .pointerInput(widthPx, heightPx, hsv.hue) {
+                    detectTapGestures(onTap = ::update)
+                }
+                .pointerInput(widthPx, heightPx, hsv.hue) {
+                    detectDragGestures(
+                        onDragStart = ::update,
+                        onDrag = { change, _ -> update(change.position) },
+                    )
+                },
+        ) {
+            val hueColor = Color(FoodPaletteGenerator.hsvToArgb(HsvColor(hsv.hue, 1f, 1f)))
+            drawRect(Brush.horizontalGradient(listOf(Color.White, hueColor)))
+            drawRect(Brush.verticalGradient(listOf(Color.Transparent, Color.Black)))
+            val x = hsv.saturation * size.width
+            val y = (1f - hsv.value) * size.height
+            drawCircle(Color.Black, radius = 9.dp.toPx(), center = Offset(x, y))
+            drawCircle(Color.White, radius = 6.dp.toPx(), center = Offset(x, y))
+        }
+    }
+}
+
+@Composable
+private fun HuePicker(
+    hue: Float,
+    onHueChange: (Float) -> Unit,
+) {
+    androidx.compose.foundation.layout.BoxWithConstraints {
+        val widthPx = with(androidx.compose.ui.platform.LocalDensity.current) { maxWidth.toPx() }
+        val heightPx = with(androidx.compose.ui.platform.LocalDensity.current) { 28.dp.toPx() }
+        fun update(offset: Offset) {
+            onHueChange((offset.x / widthPx * 360f).coerceIn(0f, 360f))
+        }
+        Canvas(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(28.dp)
+                .clip(androidx.compose.foundation.shape.RoundedCornerShape(14.dp))
+                .pointerInput(widthPx, heightPx) {
+                    detectTapGestures(onTap = ::update)
+                }
+                .pointerInput(widthPx, heightPx) {
+                    detectDragGestures(
+                        onDragStart = ::update,
+                        onDrag = { change, _ -> update(change.position) },
+                    )
+                },
+        ) {
+            drawRect(Brush.horizontalGradient(HueColors))
+            val x = hue / 360f * size.width
+            drawCircle(Color.White, radius = 10.dp.toPx(), center = Offset(x, size.height / 2f))
+            drawCircle(Color.Black, radius = 7.dp.toPx(), center = Offset(x, size.height / 2f))
+        }
+    }
+}
+
+private fun Long.toHexString(): String =
+    "#%06X".format(java.util.Locale.ROOT, this and 0xFFFFFF)
 
 @Composable
 fun AboutScreen(
@@ -1004,6 +1126,35 @@ fun AboutScreen(
     val versionName = packageInfo?.versionName ?: "—"
     val versionCode = packageInfo?.longVersionCode?.toString() ?: "—"
     val githubUrl = "https://github.com/Cclicking/lightmemo"
+    val acknowledgements = remember {
+        listOf(
+            Acknowledgement(
+                name = "miuix",
+                author = "compose-miuix-ui",
+                url = "https://github.com/compose-miuix-ui/miuix",
+            ),
+            Acknowledgement(
+                name = "miuix-glass",
+                author = "lingqiqi5211",
+                url = "https://github.com/compose-miuix-ui/miuix/pull/423",
+            ),
+            Acknowledgement(
+                name = "中国食物成分表",
+                author = "Sanotsu",
+                url = "https://github.com/Sanotsu/china-food-composition-data",
+            ),
+            Acknowledgement(
+                name = "USDA FoodData Central",
+                author = "USDA",
+                url = "https://fdc.nal.usda.gov/download-datasets/",
+            ),
+            Acknowledgement(
+                name = "AndroidLiquidGlass",
+                author = "Kyant0",
+                url = "https://github.com/Kyant0/AndroidLiquidGlass",
+            ),
+        )
+    }
 
     LazyColumn(
         modifier = Modifier
@@ -1094,31 +1245,67 @@ fun AboutScreen(
                 Card(
                     cornerRadius = 20.dp,
                     modifier = Modifier.fillMaxWidth(),
-                    insideMargin = PaddingValues(16.dp),
+                    insideMargin = PaddingValues(vertical = 8.dp),
                 ) {
-                    Column(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        Text(
-                            text = "miuix / miuix-glass — HyperOS 风格 Compose 组件与液态玻璃效果",
-                            style = MiuixTheme.textStyles.body2,
-                        )
-                        Text(
-                            text = "USDA FoodData Central — SR Legacy 离线营养数据",
-                            style = MiuixTheme.textStyles.body2,
-                        )
-                        Text(
-                            text = "中国食物成分表 — 离线营养回退数据",
-                            style = MiuixTheme.textStyles.body2,
-                        )
-                        Text(
-                            text = "OpenAI 兼容 Vision API — 菜品识别与拆解（由用户自备）",
-                            style = MiuixTheme.textStyles.body2,
-                        )
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        acknowledgements.forEachIndexed { index, acknowledgement ->
+                            if (index > 0) {
+                                Spacer(Modifier.height(1.dp))
+                            }
+                            AcknowledgementRow(
+                                acknowledgement = acknowledgement,
+                                onClick = {
+                                    runCatching {
+                                        context.startActivity(
+                                            Intent(
+                                                Intent.ACTION_VIEW,
+                                                Uri.parse(acknowledgement.url),
+                                            ),
+                                        )
+                                    }
+                                },
+                            )
+                        }
                     }
                 }
             }
         }
+    }
+}
+
+private data class Acknowledgement(
+    val name: String,
+    val author: String,
+    val url: String,
+)
+
+@Composable
+private fun AcknowledgementRow(
+    acknowledgement: Acknowledgement,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Text(
+            text = acknowledgement.name,
+            modifier = Modifier.weight(1f),
+            style = MiuixTheme.textStyles.body2,
+            color = MiuixTheme.colorScheme.primary,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            text = acknowledgement.author,
+            style = MiuixTheme.textStyles.footnote2,
+            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }

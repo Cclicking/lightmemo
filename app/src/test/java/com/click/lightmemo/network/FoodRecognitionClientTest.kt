@@ -10,6 +10,49 @@ class FoodRecognitionClientTest {
     private val client = FoodRecognitionClient()
 
     @Test
+    fun promptTestRejectsInvalidWeightsAndSourcesInsteadOfClamping() {
+        val valid = """{"is_food_image":true,"overall_confidence":0.9,"dishes":[{"dish_name":"米饭","dish_type":"single_food","components":[{"name":"熟米饭","database_query":"rice cooked","china_database_query":"米饭","source":"user_provided","estimated_weight_g":200,"weight_min_g":200,"weight_max_g":200}]}]}"""
+        client.validatePromptResponse(RecognitionPrompt.TEXT, valid)
+        listOf(
+            valid.replace("\"weight_min_g\":200", "\"weight_min_g\":300"),
+            valid.replace("user_provided", "visible"),
+            valid.replace("\"overall_confidence\":0.9", "\"overall_confidence\":2"),
+            valid.replace("\"estimated_weight_g\":200", "\"estimated_weight_g\":199"),
+            "```json\n$valid\n```",
+        ).forEach { invalid ->
+            assertTrue(runCatching { client.validatePromptResponse(RecognitionPrompt.TEXT, invalid) }.isFailure)
+        }
+    }
+
+    @Test
+    fun portionPromptTestChecksMultiplicationAndNumericType() {
+        client.validatePromptResponse(RecognitionPrompt.PORTION, """{"estimated_weight_g":300}""")
+        listOf("""{"estimated_weight_g":150}""", """{"estimated_weight_g":"300"}""", "{}").forEach {
+            assertTrue(runCatching { client.validatePromptResponse(RecognitionPrompt.PORTION, it) }.isFailure)
+        }
+    }
+
+    @Test
+    fun savedPromptIsUsedForRecognitionButDraftIsUsedForTest() = kotlinx.coroutines.runBlocking {
+        val prompts = mutableListOf<String>()
+        val http = okhttp3.OkHttpClient.Builder().addInterceptor { chain ->
+            val buffer = okio.Buffer()
+            chain.request().body!!.writeTo(buffer)
+            val request = kotlinx.serialization.json.Json.decodeFromString<ChatRequest>(buffer.readUtf8())
+            prompts += request.messages.first().content.first().text!!
+            okhttp3.Response.Builder().request(chain.request()).protocol(okhttp3.Protocol.HTTP_1_1)
+                .code(200).message("OK")
+                .body(okhttp3.ResponseBody.create(null, """{"choices":[{"message":{"content":"{\"estimated_weight_g\":300}"}}]}"""))
+                .build()
+        }.build()
+        val testClient = FoodRecognitionClient(httpClient = http, promptOverrides = { mapOf("PORTION" to "saved prompt") })
+        testClient.estimatePortionGrams("https://example.test/v1", "test", "test", "米饭", 2.0)
+        testClient.testPrompt("https://example.test/v1", "test", "test", RecognitionPrompt.PORTION, "draft prompt")
+        assertEquals(listOf("saved prompt", "draft prompt"), prompts)
+        assertEquals(RecognitionPrompt.TEXT.defaultText, RecognitionPrompt.TEXT.resolve(mapOf("TEXT" to " ")))
+    }
+
+    @Test
     fun parsesHierarchicalVisualResultWithoutModelNutrition() {
         val payload = """
             {"is_food_image":true,"meal_name":"午餐","overall_confidence":0.82,
