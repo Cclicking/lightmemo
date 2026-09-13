@@ -26,6 +26,13 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <activity android:name=".ui.secondary.PersonalInfoActivity" android:exported="false" />
+        <activity android:name=".ui.secondary.ApiSettingsActivity" android:exported="false" />
+        <activity android:name=".ui.secondary.CalorieTargetActivity" android:exported="false" />
+        <activity android:name=".ui.secondary.DataManagementActivity" android:exported="false" />
+        <activity android:name=".ui.secondary.FoodDatabaseActivity" android:exported="false" />
+        <activity android:name=".ui.secondary.AppearanceSettingsActivity" android:exported="false" />
+        <activity android:name=".ui.secondary.AboutActivity" android:exported="false" />
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

@@ -1,5 +1,6 @@
 package com.foodcalorie.app.ui.screens
 
+import android.content.Intent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -15,9 +16,17 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.foodcalorie.app.ui.basic.SharedScrollBehavior as ScrollBehavior
+import com.foodcalorie.app.ui.secondary.AboutActivity
+import com.foodcalorie.app.ui.secondary.ApiSettingsActivity
+import com.foodcalorie.app.ui.secondary.AppearanceSettingsActivity
+import com.foodcalorie.app.ui.secondary.CalorieTargetActivity
+import com.foodcalorie.app.ui.secondary.DataManagementActivity
+import com.foodcalorie.app.ui.secondary.FoodDatabaseActivity
+import com.foodcalorie.app.ui.secondary.PersonalInfoActivity
 import com.foodcalorie.app.ui.utils.overScrollVertical
 import com.foodcalorie.app.viewmodel.SettingsViewModel
 import top.yukonga.miuix.kmp.basic.Card
@@ -32,15 +41,13 @@ fun MineHubScreen(
     scrollBehavior: ScrollBehavior?,
     listState: LazyListState,
     viewModel: SettingsViewModel,
-    onApi: () -> Unit,
-    onTarget: () -> Unit,
-    onProfile: () -> Unit,
-    onDataManagement: () -> Unit,
-    onDatabase: () -> Unit,
-    onAppearance: () -> Unit,
-    onAbout: () -> Unit,
 ) {
     val settings by viewModel.settings.collectAsState()
+    val context = LocalContext.current
+
+    fun open(cls: Class<*>) {
+        context.startActivity(Intent(context, cls))
+    }
 
     LazyColumn(
         modifier = Modifier
@@ -83,7 +90,7 @@ fun MineHubScreen(
                                 color = MiuixTheme.colorScheme.onSurfaceVariantActions,
                             )
                         },
-                        onClick = onProfile,
+                        onClick = { open(PersonalInfoActivity::class.java) },
                     )
                     ArrowPreference(
                         title = "每日目标",
@@ -95,7 +102,7 @@ fun MineHubScreen(
                                 color = MiuixTheme.colorScheme.onSurfaceVariantActions,
                             )
                         },
-                        onClick = onTarget,
+                        onClick = { open(CalorieTargetActivity::class.java) },
                     )
                 }
             }
@@ -127,7 +134,7 @@ fun MineHubScreen(
                                 color = MiuixTheme.colorScheme.onSurfaceVariantActions,
                             )
                         },
-                        onClick = onApi,
+                        onClick = { open(ApiSettingsActivity::class.java) },
                     )
                     ArrowPreference(
                         title = "数据管理",
@@ -139,12 +146,12 @@ fun MineHubScreen(
                                 color = MiuixTheme.colorScheme.onSurfaceVariantActions,
                             )
                         },
-                        onClick = onDataManagement,
+                        onClick = { open(DataManagementActivity::class.java) },
                     )
                     ArrowPreference(
                         title = "数据库浏览",
                         summary = "浏览离线食物，点击查看营养素",
-                        onClick = onDatabase,
+                        onClick = { open(FoodDatabaseActivity::class.java) },
                     )
                 }
             }
@@ -165,12 +172,12 @@ fun MineHubScreen(
                     ArrowPreference(
                         title = "个性化设置",
                         summary = "今日页圆环颜色与顶部渐变",
-                        onClick = onAppearance,
+                        onClick = { open(AppearanceSettingsActivity::class.java) },
                     )
                     ArrowPreference(
                         title = "关于",
                         summary = "版本与应用信息",
-                        onClick = onAbout,
+                        onClick = { open(AboutActivity::class.java) },
                     )
                 }
             }

@@ -59,8 +59,6 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigationevent.OnBackInvokedDefaultInput
 import androidx.navigationevent.compose.LocalNavigationEventDispatcherOwner
 import androidx.navigationevent.compose.rememberNavigationEventDispatcherOwner
-import com.foodcalorie.app.ui.nav.MineRoute
-import com.foodcalorie.app.ui.nav.largeTitle
 import com.foodcalorie.app.ui.screens.AddFoodRoute
 import com.foodcalorie.app.ui.screens.ApiSettingsScreen
 import com.foodcalorie.app.ui.screens.AppearanceSettingsScreen
@@ -91,11 +89,6 @@ import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.basic.Close
 import top.yukonga.miuix.kmp.icon.os4.ChevronBackward
 import top.yukonga.miuix.kmp.icon.os4.GridView
-import top.yukonga.miuix.kmp.nav.core.NavDisplay
-import top.yukonga.miuix.kmp.nav.core.rememberNavBackStack
-import top.yukonga.miuix.kmp.nav.transition.NavSwipeDirection
-import com.foodcalorie.app.ui.nav.androidActivityEffects
-import com.foodcalorie.app.ui.nav.AndroidActivityTransition
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import java.time.LocalDate
 
@@ -155,18 +148,6 @@ private enum class AppTab(val title: String) {
 }
 
 
-/** Opaque Activity-window surface for a nav entry so slide transitions never show through. */
-@Composable
-private fun OpaquePage(content: @Composable () -> Unit) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MiuixTheme.colorScheme.surface),
-    ) {
-        content()
-    }
-}
-
 /** Nexio visual shell; food state stays owned by the existing ViewModels. */
 @Composable
 fun FoodAppRoot() {
@@ -191,8 +172,6 @@ fun FoodAppRoot() {
             var showAdd by rememberSaveable { mutableStateOf(false) }
             var showDatePicker by remember { mutableStateOf(false) }
             var todayManagement by rememberSaveable { mutableStateOf(false) }
-            val mineBackStack = rememberNavBackStack<MineRoute>(MineRoute.Hub)
-            val mineTop = (mineBackStack.lastOrNull() as? MineRoute) ?: MineRoute.Hub
             LaunchedEffect(settingsError, settingsReadError) {
                 (settingsError ?: settingsReadError)?.let { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
             }
@@ -208,33 +187,17 @@ fun FoodAppRoot() {
             val todayList = rememberLazyListState()
             val statsList = rememberLazyListState()
             val mineList = rememberLazyListState()
-            val apiList = rememberLazyListState()
-            val targetList = rememberLazyListState()
-            val profileList = rememberLazyListState()
-            val dataManagementList = rememberLazyListState()
-            val databaseList = rememberLazyListState()
-            val appearanceList = rememberLazyListState()
-            val aboutList = rememberLazyListState()
             val addList = rememberLazyListState()
 
-            val activeList = when {
-                selectedTab == 0 -> todayList
-                selectedTab == 1 -> statsList
-                else -> when (mineTop) {
-                    MineRoute.Hub -> mineList
-                    MineRoute.Api -> apiList
-                    MineRoute.Target -> targetList
-                    MineRoute.Profile -> profileList
-                    MineRoute.DataManagement -> dataManagementList
-                    MineRoute.Database -> databaseList
-                    MineRoute.Appearance -> appearanceList
-                    MineRoute.About -> aboutList
-                }
+            val activeList = when (selectedTab) {
+                0 -> todayList
+                1 -> statsList
+                else -> mineList
             }
 
             // Each destination keeps its own LazyListState. Restore the app-bar state from that
             // destination instead of always expanding it when the bottom tab changes.
-            LaunchedEffect(selectedTab, mineTop, todayManagement, activeList.canScrollBackward) {
+            LaunchedEffect(selectedTab, todayManagement, activeList.canScrollBackward) {
                 withFrameNanos { }
                 val scrolled = activeList.canScrollBackward
                 appBarState.heightOffset = if (scrolled) appBarState.heightOffsetLimit else 0f
@@ -252,15 +215,11 @@ fun FoodAppRoot() {
                     Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
                 }
             }
-
-            BackHandler(enabled = selectedTab == 2 && mineBackStack.size > 1) {
-                mineBackStack.removeLastOrNull()
-            }
             BackHandler(enabled = selectedTab == 0 && todayManagement) {
                 todayManagement = false
             }
 
-            val showBack = (selectedTab == 2 && mineBackStack.size > 1) || (selectedTab == 0 && todayManagement)
+            val showBack = selectedTab == 0 && todayManagement
             val largeTitle = when {
                 selectedTab == 0 && todayManagement -> "管理食物卡片"
                 selectedTab == 0 -> when (selectedDate) {
@@ -268,294 +227,211 @@ fun FoodAppRoot() {
                     LocalDate.now().minusDays(1) -> "昨日"
                     else -> "${selectedDate.monthValue}月${selectedDate.dayOfMonth}日"
                 }
-                selectedTab == 2 -> mineTop.largeTitle()
+                selectedTab == 2 -> "我的"
                 else -> AppTab.entries[selectedTab].title
             }
             val compactTitle = when {
                 selectedTab == 0 && todayManagement -> "管理食物卡片"
                 selectedTab == 0 -> "今日"
-                selectedTab == 2 -> mineTop.largeTitle()
+                selectedTab == 2 -> "我的"
                 else -> AppTab.entries[selectedTab].title
             }
 
-            Scaffold(
-                modifier = Modifier.fillMaxSize(),
-                topBar = {
-                    CollapsibleTopAppBar(
-                        title = compactTitle,
-                        largeTitle = largeTitle,
-                        showGradientOverlay = true,
-                        scrollBehavior = scrollBehavior,
-                        startAction = when {
-                            showBack -> { { glassAlpha: Float, shadowAlpha: Float ->
-                                LiquidTopBarButton(
-                                onClick = {
-                                    if (selectedTab == 0) {
-                                        todayManagement = false
-                                    } else if (mineBackStack.size > 1) {
-                                        mineBackStack.removeLastOrNull()
-                                    }
-                                },
+            @Composable
+            fun MainTopBar() {
+                CollapsibleTopAppBar(
+                    title = compactTitle,
+                    largeTitle = largeTitle,
+                    showGradientOverlay = true,
+                    scrollBehavior = scrollBehavior,
+                    startAction = when {
+                        showBack -> { { glassAlpha: Float, shadowAlpha: Float ->
+                            LiquidTopBarButton(
+                                onClick = { todayManagement = false },
                                 backdrop = backdrop,
                                 icon = MiuixIcons.Os4.ChevronBackward,
                                 contentDescription = "返回",
                                 backdropAlpha = glassAlpha,
                                 shadowAlpha = shadowAlpha,
-                                )
-                            } }
-                            else -> null
-                        },
-                        endAction = if (selectedTab == 0 && !todayManagement) { { glassAlpha, shadowAlpha ->
-                            LiquidTopBarButton(
-                                onClick = { todayManagement = true },
-                                backdrop = backdrop,
-                                icon = MiuixIcons.Os4.GridView,
-                                contentDescription = "管理食物卡片",
-                                backdropAlpha = glassAlpha,
-                                shadowAlpha = shadowAlpha,
                             )
-                        } } else null,
-                    )
-                },
-                bottomBar = {
-                    ScheduleBottomBar(
-                        selectedTab = selectedTab,
-                        onTabSelected = {
-                            selectedTab = it
-                            todayManagement = false
-                            showDatePicker = false
-                        },
-                        liquidGlassBackdrop = backdrop,
-                        addButton = {
-                            LiquidAddButton(
-                                onClick = {
-                                    addVm.setTargetDate(if (selectedTab == 0) selectedDate else LocalDate.now())
-                                    showAdd = true
-                                },
-                                backdrop = backdrop
-                            )
-                        }
-                    )
-                },
-                content = { padding ->
-                    @Suppress("UNUSED_VARIABLE")
-                    val contentScrolled = activeList.canScrollBackward
+                        } }
+                        else -> null
+                    },
+                    endAction = if (selectedTab == 0 && !todayManagement) { { glassAlpha, shadowAlpha ->
+                        LiquidTopBarButton(
+                            onClick = { todayManagement = true },
+                            backdrop = backdrop,
+                            icon = MiuixIcons.Os4.GridView,
+                            contentDescription = "管理食物卡片",
+                            backdropAlpha = glassAlpha,
+                            shadowAlpha = shadowAlpha,
+                        )
+                    } } else null,
+                )
+            }
 
-                    Box(modifier = Modifier.fillMaxSize()) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .then(
-                                    if (glassSupported) {
-                                        Modifier
-                                            .miuixLayerBackdrop(miuixBackdrop)
-                                            .layerBackdrop(backdrop)
-                                    } else {
-                                        Modifier
-                                    },
-                                )
-                                .background(MiuixTheme.colorScheme.surface),
-                        ) {
-                            when {
-                                selectedTab == 0 -> TodayScreen(
-                                    viewModel = todayVm,
-                                    contentPadding = padding,
-                                    scrollBehavior = scrollBehavior,
-                                    listState = todayList,
-                                    addState = addState,
-                                    managementMode = todayManagement,
-                                    showDatePicker = showDatePicker,
-                                    proteinRingColor = Color(appSettings.proteinRingColor),
-                                    carbsRingColor = Color(appSettings.carbsRingColor),
-                                    fatRingColor = Color(appSettings.fatRingColor),
-                                    onShowDatePicker = { showDatePicker = true },
-                                    onDismissDatePicker = { showDatePicker = false },
-                                    onAddClick = {
-                                        addVm.setTargetDate(selectedDate)
-                                        showAdd = true
-                                    },
-                                )
-                                selectedTab == 1 -> StatsScreen(
-                                    viewModel = statsVm,
-                                    contentPadding = padding,
-                                    scrollBehavior = scrollBehavior,
-                                    listState = statsList,
-                                )
-                                else -> NavDisplay(
-                                    backStack = mineBackStack,
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .background(MiuixTheme.colorScheme.surface),
-                                    onBack = { mineBackStack.removeLastOrNull() },
-                                    transition = AndroidActivityTransition,
-                                    effects = androidActivityEffects(MiuixTheme.colorScheme.surface),
-                                ) {
-                                    entry<MineRoute.Hub> {
-                                        OpaquePage {
-                                        MineHubScreen(
-                                            contentPadding = padding,
-                                            scrollBehavior = scrollBehavior,
-                                            listState = mineList,
-                                            viewModel = settingsVm,
-                                            onApi = { mineBackStack.add(MineRoute.Api) },
-                                            onTarget = { mineBackStack.add(MineRoute.Target) },
-                                            onProfile = { mineBackStack.add(MineRoute.Profile) },
-                                            onDataManagement = { mineBackStack.add(MineRoute.DataManagement) },
-                                            onDatabase = { mineBackStack.add(MineRoute.Database) },
-                                            onAppearance = { mineBackStack.add(MineRoute.Appearance) },
-                                            onAbout = { mineBackStack.add(MineRoute.About) },
-                                        )
-                                        }
-                                    }
-                                    entry<MineRoute.Profile>(swipeDismiss = NavSwipeDirection.LeftToRight) {
-                                        OpaquePage {
-                                            PersonalInfoScreen(
-                                            viewModel = settingsVm,
-                                            contentPadding = padding,
-                                            scrollBehavior = scrollBehavior,
-                                            listState = profileList,
-                                        )
-                                        }
-                                    }
-                                    entry<MineRoute.Api>(swipeDismiss = NavSwipeDirection.LeftToRight) {
-                                        OpaquePage {
-                                            ApiSettingsScreen(
-                                            viewModel = settingsVm,
-                                            contentPadding = padding,
-                                            scrollBehavior = scrollBehavior,
-                                            listState = apiList,
-                                        )
-                                        }
-                                    }
-                                    entry<MineRoute.Target>(swipeDismiss = NavSwipeDirection.LeftToRight) {
-                                        OpaquePage {
-                                            CalorieTargetScreen(
-                                            viewModel = settingsVm,
-                                            contentPadding = padding,
-                                            scrollBehavior = scrollBehavior,
-                                            listState = targetList,
-                                        )
-                                        }
-                                    }
-                                    entry<MineRoute.DataManagement>(swipeDismiss = NavSwipeDirection.LeftToRight) {
-                                        OpaquePage {
-                                            DataManagementScreen(
-                                            viewModel = settingsVm,
-                                            backupViewModel = backupVm,
-                                            contentPadding = padding,
-                                            scrollBehavior = scrollBehavior,
-                                            listState = dataManagementList,
-                                        )
-                                        }
-                                    }
-                                    entry<MineRoute.Database>(swipeDismiss = NavSwipeDirection.LeftToRight) {
-                                        OpaquePage {
-                                            FoodDatabaseScreen(
-                                            contentPadding = padding,
-                                            scrollBehavior = scrollBehavior,
-                                            listState = databaseList,
-                                        )
-                                        }
-                                    }
-                                    entry<MineRoute.Appearance>(swipeDismiss = NavSwipeDirection.LeftToRight) {
-                                        OpaquePage {
-                                            AppearanceSettingsScreen(
-                                            viewModel = settingsVm,
-                                            contentPadding = padding,
-                                            scrollBehavior = scrollBehavior,
-                                            listState = appearanceList,
-                                        )
-                                        }
-                                    }
-                                    entry<MineRoute.About>(swipeDismiss = NavSwipeDirection.LeftToRight) {
-                                        OpaquePage {
-                                            AboutScreen(
-                                            contentPadding = padding,
-                                            scrollBehavior = scrollBehavior,
-                                            listState = aboutList,
-                                        )
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        if (progressiveBlurEnabled && appSettings.topGradientBlurEnabled) {
-                            val statusBarHeight = androidx.compose.foundation.layout.WindowInsets.statusBars
-                                .asPaddingValues()
-                                .calculateTopPadding()
-                            val progressiveHeight =
-                                statusBarHeight + CollapsibleTopAppBarDefaults.CollapsedHeight +
-                                    appSettings.topGradientBlurRangeDp.dp
-                            Box(
-                                modifier = Modifier
-                                    .align(Alignment.TopCenter)
-                                    .fillMaxWidth()
-                                    .height(progressiveHeight)
-                                    .progressiveTextureBlur(
-                                        backdrop = miuixBackdrop,
-                                        shape = RectangleShape,
-                                        blurRadius = 24f,
-                                        gradient = ProgressiveBlur.Top,
-                                        enabled = true,
-                                    ),
-                            )
-                        }
-                    }
-
-                    var sheetContentBackdrop by remember { mutableStateOf<com.kyant.backdrop.Backdrop?>(null) }
-                    val statusBarsPadding = androidx.compose.foundation.layout.WindowInsets.statusBars
-                        .asPaddingValues()
-                        .calculateTopPadding()
-                    BlurBottomSheet(
-                        show = showAdd,
-                        title = if (addState.step is AddStep.PickSource) "添加食物" else "记录食物",
-                        liquidGlassBackdrop = if (glassSupported) backdrop else null,
-                        dimBackground = true,
-                        sheetOffsetDp = statusBarsPadding + 5.dp,
-                        onDismissRequest = { if (!addState.saving) showAdd = false },
-                        onSheetContentBackdropCreated = { sheetContentBackdrop = it },
-                        startAction = {
-                            val material = LocalSheetTopBarMaterial.current
-                            LiquidTopBarButton(
-                                onClick = {
-                                    if (addState.saving) return@LiquidTopBarButton
-                                    if (addState.step is AddStep.PickSource) {
-                                        showAdd = false
-                                    } else {
-                                        addVm.backToPick()
-                                    }
-                                },
-                                backdrop = sheetContentBackdrop ?: backdrop,
-                                icon = if (addState.step is AddStep.PickSource) {
-                                    MiuixIcons.Basic.Close
-                                } else {
-                                    MiuixIcons.Os4.ChevronBackward
-                                },
-                                contentDescription = if (addState.step is AddStep.PickSource) {
-                                    "关闭"
-                                } else {
-                                    "返回添加食物"
-                                },
-                                modifier = Modifier.padding(start = 18.dp),
-                                iconSize = 24.dp,
-                                // Glass circle only appears after scroll; icon-only at rest.
-                                backdropAlpha = material.backdropAlpha,
-                                shadowAlpha = material.shadowAlpha,
-                            )
-                        },
-                    ) {
-                        // Leave a compact gap under the sheet title.
-                        AddFoodRoute(
-                            viewModel = addVm,
-                            contentPadding = PaddingValues(top = 61.dp, bottom = 24.dp),
-                            scrollBehavior = null,
-                            listState = addList,
-                            onDone = { showAdd = false },
+            @Composable
+            fun MainBottomBar() {
+                ScheduleBottomBar(
+                    selectedTab = selectedTab,
+                    onTabSelected = {
+                        selectedTab = it
+                        todayManagement = false
+                        showDatePicker = false
+                    },
+                    liquidGlassBackdrop = backdrop,
+                    addButton = {
+                        LiquidAddButton(
+                            onClick = {
+                                addVm.setTargetDate(if (selectedTab == 0) selectedDate else LocalDate.now())
+                                showAdd = true
+                            },
+                            backdrop = backdrop
                         )
                     }
-                },
-            )
+                )
+            }
+
+            @Composable
+            fun GlassContentBox(content: @Composable () -> Unit) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .then(
+                            if (glassSupported) {
+                                Modifier
+                                    .miuixLayerBackdrop(miuixBackdrop)
+                                    .layerBackdrop(backdrop)
+                            } else {
+                                Modifier
+                            },
+                        )
+                        .background(MiuixTheme.colorScheme.surface),
+                ) {
+                    content()
+                }
+            }
+
+            @Composable
+            fun TopProgressiveBlur() {
+                if (progressiveBlurEnabled && appSettings.topGradientBlurEnabled) {
+                    val statusBarHeight = androidx.compose.foundation.layout.WindowInsets.statusBars
+                        .asPaddingValues()
+                        .calculateTopPadding()
+                    val progressiveHeight =
+                        statusBarHeight + CollapsibleTopAppBarDefaults.CollapsedHeight +
+                            appSettings.topGradientBlurRangeDp.dp
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(progressiveHeight)
+                            .progressiveTextureBlur(
+                                backdrop = miuixBackdrop,
+                                shape = RectangleShape,
+                                blurRadius = 24f,
+                                gradient = ProgressiveBlur.Top,
+                                enabled = true,
+                            ),
+                    )
+                }
+            }
+
+            Box(modifier = Modifier.fillMaxSize()) {
+                Scaffold(
+                    modifier = Modifier.fillMaxSize(),
+                    topBar = { MainTopBar() },
+                    bottomBar = { MainBottomBar() },
+                    content = { padding ->
+                        Box(modifier = Modifier.fillMaxSize()) {
+                            GlassContentBox {
+                                when (selectedTab) {
+                                    0 -> TodayScreen(
+                                        viewModel = todayVm,
+                                        contentPadding = padding,
+                                        scrollBehavior = scrollBehavior,
+                                        listState = todayList,
+                                        addState = addState,
+                                        managementMode = todayManagement,
+                                        showDatePicker = showDatePicker,
+                                        proteinRingColor = Color(appSettings.proteinRingColor),
+                                        carbsRingColor = Color(appSettings.carbsRingColor),
+                                        fatRingColor = Color(appSettings.fatRingColor),
+                                        onShowDatePicker = { showDatePicker = true },
+                                        onDismissDatePicker = { showDatePicker = false },
+                                        onAddClick = {
+                                            addVm.setTargetDate(selectedDate)
+                                            showAdd = true
+                                        },
+                                    )
+                                    1 -> StatsScreen(
+                                        viewModel = statsVm,
+                                        contentPadding = padding,
+                                        scrollBehavior = scrollBehavior,
+                                        listState = statsList,
+                                    )
+                                    else -> MineHubScreen(
+                                        contentPadding = padding,
+                                        scrollBehavior = scrollBehavior,
+                                        listState = mineList,
+                                        viewModel = settingsVm,
+                                    )
+                                }
+                            }
+                            TopProgressiveBlur()
+                        }
+                    },
+                )
+
+                var sheetContentBackdrop by remember { mutableStateOf<com.kyant.backdrop.Backdrop?>(null) }
+                val statusBarsPadding = androidx.compose.foundation.layout.WindowInsets.statusBars
+                    .asPaddingValues()
+                    .calculateTopPadding()
+                BlurBottomSheet(
+                    show = showAdd,
+                    title = if (addState.step is AddStep.PickSource) "添加食物" else "记录食物",
+                    liquidGlassBackdrop = if (glassSupported) backdrop else null,
+                    dimBackground = true,
+                    sheetOffsetDp = statusBarsPadding + 5.dp,
+                    onDismissRequest = { if (!addState.saving) showAdd = false },
+                    onSheetContentBackdropCreated = { sheetContentBackdrop = it },
+                    startAction = {
+                        val material = LocalSheetTopBarMaterial.current
+                        LiquidTopBarButton(
+                            onClick = {
+                                if (addState.saving) return@LiquidTopBarButton
+                                if (addState.step is AddStep.PickSource) {
+                                    showAdd = false
+                                } else {
+                                    addVm.backToPick()
+                                }
+                            },
+                            backdrop = sheetContentBackdrop ?: backdrop,
+                            icon = if (addState.step is AddStep.PickSource) {
+                                MiuixIcons.Basic.Close
+                            } else {
+                                MiuixIcons.Os4.ChevronBackward
+                            },
+                            contentDescription = if (addState.step is AddStep.PickSource) {
+                                "关闭"
+                            } else {
+                                "返回添加食物"
+                            },
+                            modifier = Modifier.padding(start = 18.dp),
+                            iconSize = 24.dp,
+                            backdropAlpha = material.backdropAlpha,
+                            shadowAlpha = material.shadowAlpha,
+                        )
+                    },
+                ) {
+                    AddFoodRoute(
+                        viewModel = addVm,
+                        contentPadding = PaddingValues(top = 61.dp, bottom = 24.dp),
+                        scrollBehavior = null,
+                        listState = addList,
+                        onDone = { showAdd = false },
+                    )
+                }
+            }
         }
     }
 }
