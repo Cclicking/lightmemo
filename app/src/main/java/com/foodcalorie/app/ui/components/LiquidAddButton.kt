@@ -2,6 +2,7 @@ package com.foodcalorie.app.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -13,9 +14,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import com.foodcalorie.app.ui.effects.edgelight.edgeLight
 import com.foodcalorie.app.ui.effects.edgelight.rememberDefaultEdgeLight
 import com.foodcalorie.app.ui.effects.liquidglass.InteractiveHighlight
@@ -40,6 +46,11 @@ fun LiquidAddButton(
     val containerColor = if (isLightTheme) MiuixTheme.colorScheme.primary.copy(0.72f) else
         MiuixTheme.colorScheme.primary.copy(0.62f)
 
+    val click = {
+        hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
+        onClick()
+    }
+
     if (backdrop == null) {
         Box(
             modifier = modifier
@@ -49,10 +60,7 @@ fun LiquidAddButton(
                     interactionSource = null,
                     indication = null,
                     role = Role.Button,
-                    onClick = {
-                        hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
-                        onClick()
-                    },
+                    onClick = click,
                 ),
             contentAlignment = Alignment.Center,
         ) {
@@ -76,6 +84,15 @@ fun LiquidAddButton(
     Box(
         modifier = modifier
             .size(56.dp)
+            .zIndex(1f)
+            // Tap handling first so drawBackdrop / highlight never steal the click.
+            .pointerInput(click) {
+                detectTapGestures(onTap = { click() })
+            }
+            .semantics {
+                role = Role.Button
+                contentDescription = "记录食物"
+            }
             .drawBackdrop(
                 backdrop = backdrop,
                 shape = { CircleShape },
@@ -102,17 +119,8 @@ fun LiquidAddButton(
                 },
             )
             .edgeLight(shape = CircleShape, edgeLight = rememberDefaultEdgeLight())
-            .clickable(
-                interactionSource = null,
-                indication = null,
-                role = Role.Button,
-                onClick = {
-                    hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
-                    onClick()
-                },
-            )
             .then(interactiveHighlight.modifier)
-            .then(interactiveHighlight.gestureModifier),
+            .then(interactiveHighlight.pressOnlyModifier),
         contentAlignment = Alignment.Center,
     ) {
         Icon(

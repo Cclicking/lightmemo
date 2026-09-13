@@ -33,6 +33,7 @@
         <activity android:name=".ui.secondary.FoodDatabaseActivity" android:exported="false" />
         <activity android:name=".ui.secondary.AppearanceSettingsActivity" android:exported="false" />
         <activity android:name=".ui.secondary.AboutActivity" android:exported="false" />
+        <activity android:name=".ui.secondary.ManageFoodCardsActivity" android:exported="false" />
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

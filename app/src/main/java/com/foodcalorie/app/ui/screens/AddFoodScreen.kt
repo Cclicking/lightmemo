@@ -7,6 +7,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -114,6 +115,12 @@ private val AddFoodSheetHeight = 780.dp
 private val timeFormatter = DateTimeFormatter.ofPattern("yyyy/MM/dd")
 private val clockFormatter = DateTimeFormatter.ofPattern("HH:mm")
 
+private fun stepOrder(step: AddStep): Int = when (step) {
+    AddStep.PickSource -> 0
+    is AddStep.Manual -> 1
+    is AddStep.Review -> 2
+}
+
 private val ProteinColor = Color(0xFFF3A17C)
 private val CarbsColor = Color(0xFF2F7D2B)
 private val FatColor = Color(0xFFFFB300)
@@ -212,7 +219,29 @@ fun AddFoodRoute(
     Box(modifier = Modifier.fillMaxWidth()) {
         AnimatedContent(
             targetState = state.step,
-            transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(120)) },
+            transitionSpec = {
+                val from = stepOrder(initialState)
+                val to = stepOrder(targetState)
+                val forward = to >= from
+                // Bottom-sheet style: next step rises from the bottom, previous drops away.
+                if (forward) {
+                    slideInVertically(
+                        animationSpec = tween(320, easing = FastOutSlowInEasing),
+                        initialOffsetY = { it },
+                    ) togetherWith slideOutVertically(
+                        animationSpec = tween(280, easing = FastOutSlowInEasing),
+                        targetOffsetY = { -it / 8 },
+                    ) + fadeOut(tween(200))
+                } else {
+                    slideInVertically(
+                        animationSpec = tween(280, easing = FastOutSlowInEasing),
+                        initialOffsetY = { -it / 8 },
+                    ) + fadeIn(tween(220)) togetherWith slideOutVertically(
+                        animationSpec = tween(320, easing = FastOutSlowInEasing),
+                        targetOffsetY = { it },
+                    )
+                }
+            },
             label = "addFoodStep",
         ) { step ->
             when (step) {

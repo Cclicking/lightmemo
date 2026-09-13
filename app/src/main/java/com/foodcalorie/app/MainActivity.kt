@@ -24,6 +24,12 @@ import androidx.activity.SystemBarStyle
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
@@ -171,7 +177,6 @@ fun FoodAppRoot() {
             var selectedTab by rememberSaveable { mutableIntStateOf(0) }
             var showAdd by rememberSaveable { mutableStateOf(false) }
             var showDatePicker by remember { mutableStateOf(false) }
-            var todayManagement by rememberSaveable { mutableStateOf(false) }
             LaunchedEffect(settingsError, settingsReadError) {
                 (settingsError ?: settingsReadError)?.let { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
             }
@@ -197,7 +202,7 @@ fun FoodAppRoot() {
 
             // Each destination keeps its own LazyListState. Restore the app-bar state from that
             // destination instead of always expanding it when the bottom tab changes.
-            LaunchedEffect(selectedTab, todayManagement, activeList.canScrollBackward) {
+            LaunchedEffect(selectedTab, activeList.canScrollBackward) {
                 withFrameNanos { }
                 val scrolled = activeList.canScrollBackward
                 appBarState.heightOffset = if (scrolled) appBarState.heightOffsetLimit else 0f
@@ -215,25 +220,19 @@ fun FoodAppRoot() {
                     Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
                 }
             }
-            BackHandler(enabled = selectedTab == 0 && todayManagement) {
-                todayManagement = false
-            }
 
-            val showBack = selectedTab == 0 && todayManagement
-            val largeTitle = when {
-                selectedTab == 0 && todayManagement -> "管理食物卡片"
-                selectedTab == 0 -> when (selectedDate) {
+            val largeTitle = when (selectedTab) {
+                0 -> when (selectedDate) {
                     LocalDate.now() -> "今日"
                     LocalDate.now().minusDays(1) -> "昨日"
                     else -> "${selectedDate.monthValue}月${selectedDate.dayOfMonth}日"
                 }
-                selectedTab == 2 -> "我的"
+                2 -> "我的"
                 else -> AppTab.entries[selectedTab].title
             }
-            val compactTitle = when {
-                selectedTab == 0 && todayManagement -> "管理食物卡片"
-                selectedTab == 0 -> "今日"
-                selectedTab == 2 -> "我的"
+            val compactTitle = when (selectedTab) {
+                0 -> "今日"
+                2 -> "我的"
                 else -> AppTab.entries[selectedTab].title
             }
 
@@ -244,22 +243,16 @@ fun FoodAppRoot() {
                     largeTitle = largeTitle,
                     showGradientOverlay = true,
                     scrollBehavior = scrollBehavior,
-                    startAction = when {
-                        showBack -> { { glassAlpha: Float, shadowAlpha: Float ->
-                            LiquidTopBarButton(
-                                onClick = { todayManagement = false },
-                                backdrop = backdrop,
-                                icon = MiuixIcons.Os4.ChevronBackward,
-                                contentDescription = "返回",
-                                backdropAlpha = glassAlpha,
-                                shadowAlpha = shadowAlpha,
-                            )
-                        } }
-                        else -> null
-                    },
-                    endAction = if (selectedTab == 0 && !todayManagement) { { glassAlpha, shadowAlpha ->
+                    endAction = if (selectedTab == 0) { { glassAlpha, shadowAlpha ->
                         LiquidTopBarButton(
-                            onClick = { todayManagement = true },
+                            onClick = {
+                                context.startActivity(
+                                    android.content.Intent(
+                                        context,
+                                        com.foodcalorie.app.ui.secondary.ManageFoodCardsActivity::class.java,
+                                    ),
+                                )
+                            },
                             backdrop = backdrop,
                             icon = MiuixIcons.Os4.GridView,
                             contentDescription = "管理食物卡片",
@@ -276,7 +269,6 @@ fun FoodAppRoot() {
                     selectedTab = selectedTab,
                     onTabSelected = {
                         selectedTab = it
-                        todayManagement = false
                         showDatePicker = false
                     },
                     liquidGlassBackdrop = backdrop,
@@ -351,7 +343,7 @@ fun FoodAppRoot() {
                                         scrollBehavior = scrollBehavior,
                                         listState = todayList,
                                         addState = addState,
-                                        managementMode = todayManagement,
+                                        managementMode = false,
                                         showDatePicker = showDatePicker,
                                         proteinRingColor = Color(appSettings.proteinRingColor),
                                         carbsRingColor = Color(appSettings.carbsRingColor),
@@ -377,60 +369,60 @@ fun FoodAppRoot() {
                                     )
                                 }
                             }
+                    var sheetContentBackdrop by remember { mutableStateOf<com.kyant.backdrop.Backdrop?>(null) }
+                    val statusBarsPadding = androidx.compose.foundation.layout.WindowInsets.statusBars
+                        .asPaddingValues()
+                        .calculateTopPadding()
+                    BlurBottomSheet(
+                        show = showAdd,
+                        title = if (addState.step is AddStep.PickSource) "添加食物" else "记录食物",
+                        liquidGlassBackdrop = if (glassSupported) backdrop else null,
+                        dimBackground = true,
+                        sheetOffsetDp = statusBarsPadding + 5.dp,
+                        onDismissRequest = { if (!addState.saving) showAdd = false },
+                        onSheetContentBackdropCreated = { sheetContentBackdrop = it },
+                        startAction = {
+                            val material = LocalSheetTopBarMaterial.current
+                            LiquidTopBarButton(
+                                onClick = {
+                                    if (addState.saving) return@LiquidTopBarButton
+                                    if (addState.step is AddStep.PickSource) {
+                                        showAdd = false
+                                    } else {
+                                        addVm.backToPick()
+                                    }
+                                },
+                                backdrop = sheetContentBackdrop ?: backdrop,
+                                icon = if (addState.step is AddStep.PickSource) {
+                                    MiuixIcons.Basic.Close
+                                } else {
+                                    MiuixIcons.Os4.ChevronBackward
+                                },
+                                contentDescription = if (addState.step is AddStep.PickSource) {
+                                    "关闭"
+                                } else {
+                                    "返回添加食物"
+                                },
+                                modifier = Modifier.padding(start = 18.dp),
+                                iconSize = 24.dp,
+                                backdropAlpha = material.backdropAlpha,
+                                shadowAlpha = material.shadowAlpha,
+                            )
+                        },
+                    ) {
+                        AddFoodRoute(
+                            viewModel = addVm,
+                            contentPadding = PaddingValues(top = 61.dp, bottom = 24.dp),
+                            scrollBehavior = null,
+                            listState = addList,
+                            onDone = { showAdd = false },
+                        )
+                    }
                             TopProgressiveBlur()
                         }
                     },
                 )
 
-                var sheetContentBackdrop by remember { mutableStateOf<com.kyant.backdrop.Backdrop?>(null) }
-                val statusBarsPadding = androidx.compose.foundation.layout.WindowInsets.statusBars
-                    .asPaddingValues()
-                    .calculateTopPadding()
-                BlurBottomSheet(
-                    show = showAdd,
-                    title = if (addState.step is AddStep.PickSource) "添加食物" else "记录食物",
-                    liquidGlassBackdrop = if (glassSupported) backdrop else null,
-                    dimBackground = true,
-                    sheetOffsetDp = statusBarsPadding + 5.dp,
-                    onDismissRequest = { if (!addState.saving) showAdd = false },
-                    onSheetContentBackdropCreated = { sheetContentBackdrop = it },
-                    startAction = {
-                        val material = LocalSheetTopBarMaterial.current
-                        LiquidTopBarButton(
-                            onClick = {
-                                if (addState.saving) return@LiquidTopBarButton
-                                if (addState.step is AddStep.PickSource) {
-                                    showAdd = false
-                                } else {
-                                    addVm.backToPick()
-                                }
-                            },
-                            backdrop = sheetContentBackdrop ?: backdrop,
-                            icon = if (addState.step is AddStep.PickSource) {
-                                MiuixIcons.Basic.Close
-                            } else {
-                                MiuixIcons.Os4.ChevronBackward
-                            },
-                            contentDescription = if (addState.step is AddStep.PickSource) {
-                                "关闭"
-                            } else {
-                                "返回添加食物"
-                            },
-                            modifier = Modifier.padding(start = 18.dp),
-                            iconSize = 24.dp,
-                            backdropAlpha = material.backdropAlpha,
-                            shadowAlpha = material.shadowAlpha,
-                        )
-                    },
-                ) {
-                    AddFoodRoute(
-                        viewModel = addVm,
-                        contentPadding = PaddingValues(top = 61.dp, bottom = 24.dp),
-                        scrollBehavior = null,
-                        listState = addList,
-                        onDone = { showAdd = false },
-                    )
-                }
             }
         }
     }
