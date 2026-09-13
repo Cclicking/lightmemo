@@ -13,14 +13,6 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.mutableStateOf
-import com.foodcalorie.app.ui.components.AnimatedOverlayDialog
-import top.yukonga.miuix.kmp.basic.Button
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import com.foodcalorie.app.viewmodel.BackupViewModel
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.unit.dp
@@ -40,29 +32,15 @@ fun MineHubScreen(
     scrollBehavior: ScrollBehavior?,
     listState: LazyListState,
     viewModel: SettingsViewModel,
-    backupViewModel: BackupViewModel,
     onApi: () -> Unit,
     onTarget: () -> Unit,
     onProfile: () -> Unit,
+    onDataManagement: () -> Unit,
     onDatabase: () -> Unit,
     onAppearance: () -> Unit,
     onAbout: () -> Unit,
 ) {
     val settings by viewModel.settings.collectAsState()
-    val backupVm = backupViewModel
-    val backupBusy by backupVm.busy.collectAsState()
-    val backupMessage by backupVm.message.collectAsState()
-    var showReset by remember { mutableStateOf(false) }
-    AnimatedOverlayDialog(show = showReset, title = "恢复食物预设？", summary = "自定义名称、重量和营养将恢复为初始值，饮食记录不受影响。", onDismissRequest = { showReset = false }) {
-        Button(onClick = { backupVm.resetPresets(); showReset = false }, enabled = !backupBusy) { Text("恢复默认") }
-        Button(onClick = { showReset = false }) { Text("取消") }
-    }
-    val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
-        uri?.let(backupVm::export)
-    }
-    val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        uri?.let(backupVm::import)
-    }
 
     LazyColumn(
         modifier = Modifier
@@ -152,8 +130,8 @@ fun MineHubScreen(
                         onClick = onApi,
                     )
                     ArrowPreference(
-                        title = "食物数据库",
-                        summary = "浏览离线食物，点击查看营养素",
+                        title = "数据管理",
+                        summary = "数据库 API、导入导出与预设恢复",
                         endActions = {
                             Text(
                                 text = if (settings.foodDataCentralApiKey.isNotBlank()) "在线已配置" else "离线优先",
@@ -161,30 +139,15 @@ fun MineHubScreen(
                                 color = MiuixTheme.colorScheme.onSurfaceVariantActions,
                             )
                         },
+                        onClick = onDataManagement,
+                    )
+                    ArrowPreference(
+                        title = "数据库浏览",
+                        summary = "浏览离线食物，点击查看营养素",
                         onClick = onDatabase,
-                    )
-                    ArrowPreference(
-                        title = "导出饮食记录",
-                        summary = "保存为备份文件，不含照片和 API 密钥",
-                        enabled = !backupBusy,
-                        onClick = { exportLauncher.launch("轻食记-${java.time.LocalDate.now()}.json") },
-                    )
-                    ArrowPreference(
-                        title = "导入饮食记录",
-                        summary = "合并备份并跳过重复记录，保留现有数据",
-                        enabled = !backupBusy,
-                        onClick = { importLauncher.launch(arrayOf("application/json", "text/plain", "application/octet-stream")) },
-                    )
-                    ArrowPreference(
-                        title = "恢复默认食物预设",
-                        summary = "恢复常用食物的初始名称、重量和营养",
-                        enabled = !backupBusy,
-                        onClick = { showReset = true },
                     )
                 }
             }
-            if (backupBusy) Text("正在处理，请稍候…")
-            backupMessage?.let { Text(it) }
         }
 
         item {

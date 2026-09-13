@@ -66,6 +66,7 @@ import com.foodcalorie.app.ui.screens.ApiSettingsScreen
 import com.foodcalorie.app.ui.screens.AppearanceSettingsScreen
 import com.foodcalorie.app.ui.screens.AboutScreen
 import com.foodcalorie.app.ui.screens.CalorieTargetScreen
+import com.foodcalorie.app.ui.screens.DataManagementScreen
 import com.foodcalorie.app.ui.screens.FoodDatabaseScreen
 import com.foodcalorie.app.ui.screens.MineHubScreen
 import com.foodcalorie.app.ui.screens.PersonalInfoScreen
@@ -210,6 +211,7 @@ fun FoodAppRoot() {
             val apiList = rememberLazyListState()
             val targetList = rememberLazyListState()
             val profileList = rememberLazyListState()
+            val dataManagementList = rememberLazyListState()
             val databaseList = rememberLazyListState()
             val appearanceList = rememberLazyListState()
             val aboutList = rememberLazyListState()
@@ -223,6 +225,7 @@ fun FoodAppRoot() {
                     MineRoute.Api -> apiList
                     MineRoute.Target -> targetList
                     MineRoute.Profile -> profileList
+                    MineRoute.DataManagement -> dataManagementList
                     MineRoute.Database -> databaseList
                     MineRoute.Appearance -> appearanceList
                     MineRoute.About -> aboutList
@@ -394,10 +397,10 @@ fun FoodAppRoot() {
                                             scrollBehavior = scrollBehavior,
                                             listState = mineList,
                                             viewModel = settingsVm,
-                                            backupViewModel = backupVm,
                                             onApi = { mineBackStack.add(MineRoute.Api) },
                                             onTarget = { mineBackStack.add(MineRoute.Target) },
                                             onProfile = { mineBackStack.add(MineRoute.Profile) },
+                                            onDataManagement = { mineBackStack.add(MineRoute.DataManagement) },
                                             onDatabase = { mineBackStack.add(MineRoute.Database) },
                                             onAppearance = { mineBackStack.add(MineRoute.Appearance) },
                                             onAbout = { mineBackStack.add(MineRoute.About) },
@@ -434,10 +437,20 @@ fun FoodAppRoot() {
                                         )
                                         }
                                     }
+                                    entry<MineRoute.DataManagement>(swipeDismiss = NavSwipeDirection.LeftToRight) {
+                                        OpaquePage {
+                                            DataManagementScreen(
+                                            viewModel = settingsVm,
+                                            backupViewModel = backupVm,
+                                            contentPadding = padding,
+                                            scrollBehavior = scrollBehavior,
+                                            listState = dataManagementList,
+                                        )
+                                        }
+                                    }
                                     entry<MineRoute.Database>(swipeDismiss = NavSwipeDirection.LeftToRight) {
                                         OpaquePage {
                                             FoodDatabaseScreen(
-                                            viewModel = settingsVm,
                                             contentPadding = padding,
                                             scrollBehavior = scrollBehavior,
                                             listState = databaseList,

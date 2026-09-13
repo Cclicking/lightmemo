@@ -9,16 +9,13 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -30,7 +27,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -40,7 +36,6 @@ import com.foodcalorie.app.network.FoodDataCentralClient
 import com.foodcalorie.app.ui.basic.SharedScrollBehavior as ScrollBehavior
 import com.foodcalorie.app.ui.components.DropdownPref
 import com.foodcalorie.app.ui.utils.overScrollVertical
-import com.foodcalorie.app.viewmodel.SettingsViewModel
 import kotlinx.coroutines.delay
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CircularProgressIndicator
@@ -52,12 +47,10 @@ private val databaseSources = listOf("全部离线食物", "中国食物成分�
 
 @Composable
 fun FoodDatabaseScreen(
-    viewModel: SettingsViewModel,
     contentPadding: PaddingValues,
     scrollBehavior: ScrollBehavior?,
     listState: LazyListState,
 ) {
-    val settings by viewModel.settings.collectAsState()
     val context = androidx.compose.ui.platform.LocalContext.current
     val database = remember {
         (context.applicationContext as FoodApp).nutritionDatabase
@@ -67,9 +60,6 @@ fun FoodDatabaseScreen(
     var foods by remember { mutableStateOf<List<NutritionReference>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
-    var apiKey by remember(settings.foodDataCentralApiKey) {
-        mutableStateOf(settings.foodDataCentralApiKey)
-    }
 
     LaunchedEffect(query, sourceIndex) {
         delay(180)
@@ -175,33 +165,6 @@ fun FoodDatabaseScreen(
                             modifier = Modifier.padding(16.dp),
                         )
                     }
-                }
-            }
-        }
-        item {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                cornerRadius = 20.dp,
-                insideMargin = PaddingValues(16.dp),
-            ) {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("在线补充（可选）", style = MiuixTheme.textStyles.subtitle)
-                    Text(
-                        "识别未命中时可使用 USDA FoodData Central 在线搜索；留空不会影响离线数据库。",
-                        style = MiuixTheme.textStyles.footnote2,
-                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                    )
-                    TextField(
-                        value = apiKey,
-                        onValueChange = {
-                            apiKey = it
-                            viewModel.setFoodDataCentralApiKey(it)
-                        },
-                        label = "USDA API Key",
-                        singleLine = true,
-                        visualTransformation = PasswordVisualTransformation(),
-                        modifier = Modifier.fillMaxWidth(),
-                    )
                 }
             }
         }

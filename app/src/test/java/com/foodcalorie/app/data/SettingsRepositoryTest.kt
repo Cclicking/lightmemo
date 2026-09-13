@@ -2,6 +2,8 @@ package com.foodcalorie.app.data
 
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.PreferencesSerializer
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.core.okio.OkioStorage
 import okio.FileSystem
 import okio.Path.Companion.toOkioPath
@@ -30,6 +32,21 @@ class SettingsRepositoryTest {
             repo.resetFoodPresets()
             assertEquals(DefaultPresetFoods, repo.foodPresets.first())
         }
+    }
+
+    @Test fun corruptFoodPresetsFallBackToDefaultsAndCanBeSavedAgain() = runBlocking {
+        val file = folder.newFolder().resolve("settings.preferences_pb").toOkioPath()
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        val store = PreferenceDataStoreFactory.create(scope = scope,
+            storage = OkioStorage(FileSystem.SYSTEM, PreferencesSerializer) { file })
+        try {
+            val repo = SettingsRepository(store)
+            store.edit { it[stringPreferencesKey("food_presets")] = "{not-json" }
+            assertEquals(DefaultPresetFoods, repo.foodPresets.first())
+            val edited = DefaultPresetFoods.first().copy(name = "修复后的米饭")
+            repo.updateFoodPreset(edited)
+            assertEquals(edited, repo.foodPresets.first().first())
+        } finally { scope.coroutineContext[Job]!!.cancelAndJoin() }
     }
 
     @Test fun defaultApiPresetIdentityRemainsStableAcrossSettingsChanges() = runBlocking {

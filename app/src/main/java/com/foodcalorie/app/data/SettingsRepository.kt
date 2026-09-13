@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.retryWhen
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
@@ -140,13 +141,20 @@ class SettingsRepository(private val store: androidx.datastore.core.DataStore<an
     constructor(context: Context) : this(context.settingsStore)
     val readError = MutableStateFlow<String?>(null)
     private val foodPresetsKey = stringPreferencesKey("food_presets")
+
+    /** 安全解码：损坏或空数据时回落到默认预设，避免读写整条链路失败。 */
+    private fun decodeFoodPresets(raw: String?): List<PresetFood> {
+        if (raw.isNullOrBlank()) return DefaultPresetFoods
+        return runCatching {
+            settingsJson.decodeFromString<List<PresetFood>>(raw)
+        }.getOrDefault(DefaultPresetFoods).ifEmpty { DefaultPresetFoods }
+    }
+
     val foodPresets: Flow<List<PresetFood>> = store.data.map { prefs ->
-        prefs[foodPresetsKey]?.let { settingsJson.decodeFromString<List<PresetFood>>(it) }
-            ?: DefaultPresetFoods
-    }.retryWhen { error, _ ->
-        readError.value = "预设读取失败，正在重试：${error.message.orEmpty()}"
-        delay(5_000)
-        true
+        decodeFoodPresets(prefs[foodPresetsKey])
+    }.catch { error ->
+        readError.value = "预设读取失败，已恢复默认：${error.message.orEmpty()}"
+        emit(DefaultPresetFoods)
     }
 
     suspend fun updateFoodPreset(updated: PresetFood) {
@@ -155,9 +163,14 @@ class SettingsRepository(private val store: androidx.datastore.core.DataStore<an
         }
         require(updated.nutrition?.isValid() != false) { "营养素必须是非负有效数字" }
         store.edit { prefs ->
-            val current = prefs[foodPresetsKey]?.let { settingsJson.decodeFromString<List<PresetFood>>(it) }
-                ?: DefaultPresetFoods
-            prefs[foodPresetsKey] = settingsJson.encodeToString(current.map { if (it.id == updated.id) updated else it })
+            val current = decodeFoodPresets(prefs[foodPresetsKey])
+            val exists = current.any { it.id == updated.id }
+            val next = if (exists) {
+                current.map { if (it.id == updated.id) updated else it }
+            } else {
+                current + updated
+            }
+            prefs[foodPresetsKey] = settingsJson.encodeToString(next)
         }
     }
 

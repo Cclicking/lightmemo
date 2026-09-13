@@ -34,7 +34,6 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.foodcalorie.app.FoodApp
 import com.foodcalorie.app.data.ActivityLevel
 import com.foodcalorie.app.data.Gender
 import com.foodcalorie.app.ui.basic.SharedScrollBehavior as ScrollBehavior
@@ -742,117 +741,6 @@ private fun RecommendCard(
 
 private fun formatMacro(value: Float): String =
     if (value % 1f == 0f) value.toInt().toString() else "%.1f".format(value)
-
-@Composable
-fun DatabaseSettingsScreen(
-    viewModel: SettingsViewModel,
-    contentPadding: PaddingValues,
-    scrollBehavior: ScrollBehavior?,
-    listState: LazyListState,
-) {
-    val settings by viewModel.settings.collectAsState()
-    val context = LocalContext.current
-    var fdcApiKey by remember(settings.foodDataCentralApiKey) {
-        mutableStateOf(settings.foodDataCentralApiKey)
-    }
-    val offlineStatus = remember {
-        runCatching {
-            (context.applicationContext as FoodApp).nutritionDatabase.offlineStatus()
-        }.getOrNull()
-    }
-
-    LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .overScrollVertical()
-            .then(
-                if (scrollBehavior != null) {
-                    Modifier.nestedScroll(scrollBehavior.nestedScrollConnection)
-                } else {
-                    Modifier
-                },
-            ),
-        state = listState,
-        contentPadding = PaddingValues(
-            start = 16.dp,
-            end = 16.dp,
-            top = contentPadding.calculateTopPadding(),
-            bottom = contentPadding.calculateBottomPadding() + 12.dp,
-        ),
-    ) {
-        item {
-            Column {
-                SmallTitle(
-                    text = "连接情况",
-                    modifier = Modifier.offset(x = (-16).dp),
-                )
-                Spacer(Modifier.height(TitleToFieldSpacing))
-                Card(
-                    cornerRadius = 20.dp,
-                    modifier = Modifier.fillMaxWidth(),
-                    insideMargin = PaddingValues(0.dp),
-                ) {
-                    Column(modifier = Modifier.fillMaxWidth()) {
-                        StatusRow(
-                            title = "USDA 离线库",
-                            summary = "本地 SR Legacy 宏量营养素库",
-                            status = when {
-                                offlineStatus == null -> "检测中"
-                                offlineStatus.usdaAvailable -> "已就绪"
-                                else -> "不可用"
-                            },
-                        )
-                        StatusRow(
-                            title = "中国食物成分表",
-                            summary = "本地第 6 版离线库",
-                            status = when {
-                                offlineStatus == null -> "检测中"
-                                offlineStatus.chinaAvailable -> "已就绪"
-                                else -> "不可用"
-                            },
-                        )
-                        StatusRow(
-                            title = "USDA 在线 API",
-                            summary = "离线未命中时的可选补充",
-                            status = if (settings.foodDataCentralApiKey.isNotBlank()) "已配置" else "未配置",
-                        )
-                    }
-                }
-                Spacer(Modifier.height(12.dp))
-                Text(
-                    text = "查询顺序：USDA 离线库 → USDA 在线 API → 中国食物成分离线库。",
-                    style = MiuixTheme.textStyles.footnote2,
-                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                    modifier = Modifier.padding(horizontal = FootnoteHorizontalPadding),
-                )
-
-                Spacer(Modifier.height(FieldToTitleSpacing))
-                SmallTitle(
-                    text = "USDA FoodData Central API Key",
-                    modifier = Modifier.offset(x = (-16).dp),
-                )
-                Spacer(Modifier.height(TitleToFieldSpacing))
-                TextField(
-                    value = fdcApiKey,
-                    onValueChange = {
-                        fdcApiKey = it
-                        viewModel.setFoodDataCentralApiKey(it)
-                    },
-                    singleLine = true,
-                    visualTransformation = PasswordVisualTransformation(),
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Spacer(Modifier.height(12.dp))
-                Text(
-                    text = "可留空。填写后仅在本地库未命中时调用在线检索。",
-                    style = MiuixTheme.textStyles.footnote2,
-                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                    modifier = Modifier.padding(horizontal = FootnoteHorizontalPadding),
-                )
-            }
-        }
-    }
-}
 
 @Composable
 private fun StatusRow(
