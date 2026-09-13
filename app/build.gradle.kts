@@ -9,11 +9,11 @@ tasks.withType<Test>().configureEach {
 }
 
 android {
-    namespace = "com.foodcalorie.app"
+    namespace = "com.click.lightmemo"
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "com.foodcalorie.app"
+        applicationId = "com.click.lightmemo"
         minSdk = 35
         targetSdk = 37
         versionCode = 11
