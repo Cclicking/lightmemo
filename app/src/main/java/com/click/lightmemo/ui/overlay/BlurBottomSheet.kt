@@ -1,7 +1,6 @@
 /** Custom blur bottom sheet with full-area liquid glass blur. */
 package com.click.lightmemo.ui.overlay
 
-import android.os.Build
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
@@ -77,6 +76,7 @@ import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur
 import com.kyant.backdrop.effects.vibrancy
+import com.kyant.backdrop.isRenderEffectSupported
 import com.kyant.capsule.ContinuousRoundedRectangle
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.anim.folmeSpring
@@ -259,7 +259,8 @@ private fun BlurBottomSheetContent(
                         .imePadding()
                         .clip(ContinuousRoundedRectangle(36.dp))
                         .then(
-                            if (liquidGlassBackdrop != null && Build.VERSION.SDK_INT >= 33) {
+                            // Android 12+：RenderEffect 高斯模糊 + vibrancy；无 lens 折射
+                            if (liquidGlassBackdrop != null && isRenderEffectSupported()) {
                                 val blurPx = with(density) { blurRadius.dp.toPx() }
                                 val backdropEffects: com.kyant.backdrop.BackdropEffectScope.() -> Unit = remember(liquidGlassBackdrop, blurPx) {
                                     {
@@ -279,7 +280,7 @@ private fun BlurBottomSheetContent(
                         )
                         .edgeLight(shape = ContinuousRoundedRectangle(36.dp), edgeLight = rememberDefaultEdgeLight())
                         .background(sheetBgColor.copy(alpha = sheetBackgroundAlpha ?: if (liquidGlassBackdrop != null)
-                            if (Build.VERSION.SDK_INT >= 33) 0.9f else 1f
+                            if (isRenderEffectSupported()) 0.9f else 1f
                             else 1f))
                         .pointerInput(Unit) {
                             detectTapGestures(onTap = {})

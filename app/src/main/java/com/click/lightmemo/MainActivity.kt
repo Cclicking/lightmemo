@@ -91,6 +91,7 @@ import top.yukonga.miuix.kmp.blur.progressiveTextureBlur
 import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop as rememberMiuixLayerBackdrop
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
+import com.kyant.backdrop.isRenderEffectSupported
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.basic.Close
 import top.yukonga.miuix.kmp.icon.os4.ChevronBackward
@@ -172,10 +173,17 @@ fun FoodAppRoot() {
         val palette = remember(appSettings.colorPalette) { appSettings.colorPalette.toComposeColors() }
         val settingsError by settingsVm.error.collectAsState()
         val settingsReadError by settingsVm.readError.collectAsState()
-        // 渐变模糊默认关闭；底栏液体玻璃始终保留
-        val progressiveBlurEnabled = isRuntimeShaderSupported() && appSettings.glassEffectsEnabled
-        val glassSupported = isRuntimeShaderSupported()
-        CompositionLocalProvider(LocalGlassSupported provides glassSupported, LocalOverScrollState provides remember { OverScrollState() }) {
+        // Android 12（API 31–32）：玻璃降级为高斯模糊（RenderEffect），渐变模糊降级为软渐变
+        val fullLiquidGlassSupported = isRuntimeShaderSupported()
+        val blurGlassSupported = isRenderEffectSupported()
+        val progressiveBlurEnabled = fullLiquidGlassSupported && appSettings.glassEffectsEnabled
+        val softGradientBlurEnabled =
+            !fullLiquidGlassSupported && blurGlassSupported &&
+                appSettings.glassEffectsEnabled && appSettings.topGradientBlurEnabled
+        CompositionLocalProvider(
+            LocalGlassSupported provides blurGlassSupported,
+            LocalOverScrollState provides remember { OverScrollState() },
+        ) {
             var selectedTab by rememberSaveable { mutableIntStateOf(0) }
             var showAdd by rememberSaveable { mutableStateOf(false) }
             var todayCalendarExpanded by rememberSaveable { mutableStateOf(false) }
@@ -319,7 +327,7 @@ fun FoodAppRoot() {
                     modifier = Modifier
                         .fillMaxSize()
                         .then(
-                            if (glassSupported) {
+                            if (blurGlassSupported) {
                                 Modifier
                                     .miuixLayerBackdrop(miuixBackdrop)
                                     .layerBackdrop(backdrop)
@@ -352,6 +360,33 @@ fun FoodAppRoot() {
                                 blurRadius = 24f,
                                 gradient = ProgressiveBlur.Top,
                                 enabled = true,
+                            ),
+                    )
+                } else if (softGradientBlurEnabled) {
+                    val statusBarHeight = androidx.compose.foundation.layout.WindowInsets.statusBars
+                        .asPaddingValues()
+                        .calculateTopPadding()
+                    val progressiveHeight =
+                        statusBarHeight + CollapsibleTopAppBarDefaults.CollapsedHeight +
+                            appSettings.topGradientBlurRangeDp.dp
+                    val density = androidx.compose.ui.platform.LocalDensity.current
+                    val gradientColor = MiuixTheme.colorScheme.surface
+                    val endY = progressiveHeight.value * density.density
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(progressiveHeight)
+                            .background(
+                                androidx.compose.ui.graphics.Brush.verticalGradient(
+                                    colorStops = arrayOf(
+                                        0.0f to gradientColor.copy(alpha = 0.9f),
+                                        0.4f to gradientColor.copy(alpha = 0.82f),
+                                        0.7f to gradientColor.copy(alpha = 0.6f),
+                                        1.0f to gradientColor.copy(alpha = 0.0f),
+                                    ),
+                                    startY = 0f,
+                                    endY = endY,
+                                ),
                             ),
                     )
                 }
@@ -406,7 +441,7 @@ fun FoodAppRoot() {
                     BlurBottomSheet(
                         show = showAdd,
                         title = if (addState.step is AddStep.PickSource) "添加食物" else "记录食物",
-                        liquidGlassBackdrop = if (glassSupported) backdrop else null,
+                        liquidGlassBackdrop = if (blurGlassSupported) backdrop else null,
                         dimBackground = true,
                         sheetOffsetDp = statusBarsPadding + 5.dp,
                         onDismissRequest = { if (!addState.saving) showAdd = false },

@@ -12,6 +12,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.click.lightmemo.LocalGlassSupported
 import top.yukonga.miuix.kmp.blur.Backdrop
+import top.yukonga.miuix.kmp.blur.isRuntimeShaderSupported
 import top.yukonga.miuix.kmp.glass.GlassShape
 import top.yukonga.miuix.kmp.glass.GlassStyle
 import top.yukonga.miuix.kmp.glass.GlassStyles
@@ -33,13 +34,13 @@ fun GlassCard(
     } else {
         fallbackColor
     }
-    val supported = LocalGlassSupported.current && backdrop != null
+    val backdropOrNull = backdrop?.takeIf { LocalGlassSupported.current && isRuntimeShaderSupported() }
     Box(
         modifier = modifier
             .then(
-                if (supported && backdrop != null) {
+                if (backdropOrNull != null) {
                     Modifier.glassPanel(
-                        backdrop = backdrop,
+                        backdrop = backdropOrNull,
                         shape = shape,
                         style = style,
                         fallback = Modifier.clip(shape).background(resolvedFallback),

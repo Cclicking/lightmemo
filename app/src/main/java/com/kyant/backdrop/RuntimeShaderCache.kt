@@ -1,5 +1,8 @@
 package com.kyant.backdrop
 
+import android.annotation.SuppressLint
+import android.os.Build
+import androidx.annotation.RequiresApi
 import org.intellij.lang.annotations.Language
 
 sealed interface RuntimeShaderCache {
@@ -9,6 +12,8 @@ sealed interface RuntimeShaderCache {
 
 internal class RuntimeShaderCacheImpl : RuntimeShaderCache {
 
+    // Only called after isRuntimeShaderSupported() (@ChecksSdkIntAtLeast TIRAMISU).
+    @SuppressLint("NewApi")
     override fun obtainRuntimeShader(key: String, string: String): RuntimeShader {
         return ShaderRegistry.runtimeShaders.getOrPut(key) { RuntimeShader(string) }
     }
@@ -24,5 +29,6 @@ internal class RuntimeShaderCacheImpl : RuntimeShaderCache {
 // 各卡片仅修改自己 RenderEffect 里的 uniform（先 set 再 createRuntimeShaderEffect），
 // 共享同一 android.graphics.RuntimeShader 程序本身不互相污染。
 private object ShaderRegistry {
+    @SuppressLint("NewApi")
     val runtimeShaders = mutableMapOf<String, RuntimeShader>()
 }

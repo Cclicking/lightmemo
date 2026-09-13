@@ -4,9 +4,22 @@ plugins {
     id("org.jetbrains.kotlin.plugin.serialization")
 }
 
+import java.util.Properties
+
 tasks.withType<Test>().configureEach {
     systemProperty("food.assets", file("src/main/assets").absolutePath)
 }
+
+val localProperties = Properties().apply {
+    val f = rootProject.file("local.properties")
+    if (f.exists()) {
+        f.inputStream().use { load(it) }
+    }
+}
+
+fun localProp(key: String): String? =
+    localProperties.getProperty(key)?.takeIf { it.isNotBlank() }
+        ?: System.getenv(key)?.takeIf { it.isNotBlank() }
 
 android {
     namespace = "com.click.lightmemo"
@@ -14,18 +27,38 @@ android {
 
     defaultConfig {
         applicationId = "com.click.lightmemo"
-        minSdk = 35
+        minSdk = 31
         targetSdk = 37
-        versionCode = 19
-        versionName = "1.1"
+        versionCode = 20
+        versionName = "1.2"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
+    }
+
+    val releaseStoreFile = localProp("RELEASE_STORE_FILE")
+    val releaseStorePassword = localProp("RELEASE_STORE_PASSWORD")
+    val releaseKeyAlias = localProp("RELEASE_KEY_ALIAS")
+    val releaseKeyPassword = localProp("RELEASE_KEY_PASSWORD")
+
+    signingConfigs {
+        if (releaseStoreFile != null && releaseStorePassword != null &&
+            releaseKeyAlias != null && releaseKeyPassword != null
+        ) {
+            create("release") {
+                storeFile = File(releaseStoreFile)
+                storePassword = releaseStorePassword
+                this.keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            signingConfig = signingConfigs.findByName("release")
+                ?: signingConfigs.getByName("debug")
         }
     }
     compileOptions {

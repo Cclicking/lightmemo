@@ -894,13 +894,13 @@ fun AppearanceSettingsScreen(
                         checked = settings.glassEffectsEnabled,
                         onCheckedChange = { viewModel.setGlassEffectsEnabled(it) },
                         title = "玻璃特效",
-                        summary = "控制顶部渐变模糊等高开销特效。底栏液体玻璃始终保留",
+                        summary = "控制顶部渐变模糊等高开销特效。Android 12 上自动降级为高斯模糊",
                     )
                     SwitchPreference(
                         checked = settings.topGradientBlurEnabled && settings.glassEffectsEnabled,
                         onCheckedChange = { viewModel.setTopGradientBlurEnabled(it) },
                         title = "顶部渐变模糊",
-                        summary = "顶栏下方的 miuix 渐进模糊（progressive blur），需先开启玻璃特效",
+                        summary = "顶栏下方的 miuix 渐进模糊；Android 12 上降级为软渐变",
                         enabled = settings.glassEffectsEnabled,
                     )
                     InputDialogPreferenceRow(

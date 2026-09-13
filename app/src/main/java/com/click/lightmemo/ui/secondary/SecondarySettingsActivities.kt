@@ -39,7 +39,7 @@ import com.click.lightmemo.ui.utils.OverScrollState
 import com.click.lightmemo.viewmodel.BackupViewModel
 import com.click.lightmemo.viewmodel.SettingsViewModel
 import com.kyant.backdrop.Backdrop
-import top.yukonga.miuix.kmp.blur.isRuntimeShaderSupported
+import com.kyant.backdrop.isRenderEffectSupported
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.basic.Close
 import top.yukonga.miuix.kmp.icon.basic.Search
@@ -101,7 +101,7 @@ abstract class SecondarySettingsActivity : ComponentActivity() {
             }
             CompositionLocalProvider(
                 LocalNavigationEventDispatcherOwner provides navigationEventOwner,
-                LocalGlassSupported provides isRuntimeShaderSupported(),
+                LocalGlassSupported provides isRenderEffectSupported(),
                 LocalOverScrollState provides remember { OverScrollState() },
             ) {
                 FoodTheme {

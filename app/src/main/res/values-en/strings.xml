@@ -1,4 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">LightMemo</string>
+    <string name="nav_today">Today</string>
+    <string name="nav_stats">Stats</string>
+    <string name="nav_mine">Me</string>
+    <string name="nav_settings">Settings</string>
 </resources>

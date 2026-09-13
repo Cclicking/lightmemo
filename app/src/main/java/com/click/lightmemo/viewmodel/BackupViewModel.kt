@@ -38,8 +38,16 @@ class BackupViewModel(app: Application) : AndroidViewModel(app) {
 
     fun import(uri: Uri) = perform {
         val limit = 20 * 1024 * 1024
-        val bytes = getApplication<Application>().contentResolver.openInputStream(uri)?.use { it.readNBytes(limit + 1) }
-            ?: error("无法读取备份")
+        val bytes = getApplication<Application>().contentResolver.openInputStream(uri)?.use { input ->
+            val buffer = ByteArray(limit + 1)
+            var offset = 0
+            while (offset < buffer.size) {
+                val read = input.read(buffer, offset, buffer.size - offset)
+                if (read < 0) break
+                offset += read
+            }
+            buffer.copyOf(offset)
+        } ?: error("无法读取备份")
         require(bytes.size <= limit) { "备份超过 20 MB，请拆分后导入" }
         val raw = bytes.toString(Charsets.UTF_8)
         val root = JSONObject(raw)

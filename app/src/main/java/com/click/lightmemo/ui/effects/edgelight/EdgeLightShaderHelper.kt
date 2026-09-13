@@ -1,6 +1,9 @@
 package com.click.lightmemo.ui.effects.edgelight
 
 import android.graphics.RuntimeShader
+import android.os.Build
+import androidx.annotation.ChecksSdkIntAtLeast
+import androidx.annotation.RequiresApi
 import androidx.compose.foundation.shape.CornerBasedShape
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Canvas
@@ -16,6 +19,8 @@ import kotlin.math.min
 internal class EdgeLightShaderCache {
     private val cache = mutableMapOf<String, RuntimeShader>()
 
+    // Only called after isRuntimeShaderSupported() (@ChecksSdkIntAtLeast TIRAMISU).
+    @android.annotation.SuppressLint("NewApi")
     fun getOrCreate(key: String, shaderString: String): RuntimeShader {
         return cache.getOrPut(key) {
             RuntimeShader(shaderString)
@@ -50,6 +55,7 @@ internal fun androidx.compose.ui.graphics.Paint.blur(radius: Float) {
     }
 }
 
+@RequiresApi(Build.VERSION_CODES.TIRAMISU)
 internal fun androidx.compose.ui.graphics.Paint.setRuntimeShader(runtimeShader: RuntimeShader?) {
     asFrameworkPaint().shader = runtimeShader
 }
@@ -76,6 +82,7 @@ internal fun getCornerRadii(
     )
 }
 
+@RequiresApi(Build.VERSION_CODES.TIRAMISU)
 internal fun createEdgeLightShader(
     edgeLight: EdgeLight,
     size: Size,
@@ -130,15 +137,12 @@ private fun androidx.compose.ui.graphics.Color.toArgb(): Int {
     return (alpha shl 24) or (red shl 16) or (green shl 8) or blue
 }
 
+@RequiresApi(Build.VERSION_CODES.TIRAMISU)
 internal fun RuntimeShader.toShaderBrush(): ShaderBrush {
     return ShaderBrush(this)
 }
 
+@ChecksSdkIntAtLeast(Build.VERSION_CODES.TIRAMISU)
 internal fun isRuntimeShaderSupported(): Boolean {
-    return try {
-        Class.forName("android.graphics.RuntimeShader")
-        true
-    } catch (e: ClassNotFoundException) {
-        false
-    }
+    return Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
 }

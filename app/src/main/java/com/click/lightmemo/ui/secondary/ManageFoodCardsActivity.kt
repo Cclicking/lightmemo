@@ -27,7 +27,7 @@ import com.click.lightmemo.ui.utils.LocalOverScrollState
 import com.click.lightmemo.ui.utils.OverScrollState
 import com.click.lightmemo.viewmodel.AddFoodUiState
 import com.click.lightmemo.viewmodel.TodayViewModel
-import top.yukonga.miuix.kmp.blur.isRuntimeShaderSupported
+import com.kyant.backdrop.isRenderEffectSupported
 
 /** Full-screen manage-food-cards page with the system Activity transition. */
 class ManageFoodCardsActivity : ComponentActivity() {
@@ -65,7 +65,7 @@ class ManageFoodCardsActivity : ComponentActivity() {
             }
             CompositionLocalProvider(
                 LocalNavigationEventDispatcherOwner provides navigationEventOwner,
-                LocalGlassSupported provides isRuntimeShaderSupported(),
+                LocalGlassSupported provides isRenderEffectSupported(),
                 LocalOverScrollState provides remember { OverScrollState() },
             ) {
                 val settingsVm: com.click.lightmemo.viewmodel.SettingsViewModel = viewModel()
