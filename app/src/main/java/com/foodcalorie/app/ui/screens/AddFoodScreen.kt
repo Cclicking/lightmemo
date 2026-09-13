@@ -616,10 +616,19 @@ private fun MethodButton(
     onClick: () -> Unit,
     highlightIcon: Boolean = false,
 ) {
-    val contentColor = if (enabled) MiuixTheme.colorScheme.onSurface
-    else MiuixTheme.colorScheme.onSurfaceVariantSummary
+    val isLight = isLightTheme()
+    val contentColor = if (enabled) {
+        MiuixTheme.colorScheme.onSurface
+    } else {
+        MiuixTheme.colorScheme.disabledOnSurface
+    }
     // 浅色：白底；深色：与本餐说明 Card 一致（surfaceContainer）
-    val container = if (isLightTheme()) Color.White else MiuixTheme.colorScheme.surfaceContainer
+    val container = when {
+        !enabled && isLight -> MiuixTheme.colorScheme.secondaryVariant
+        !enabled -> MiuixTheme.colorScheme.disabledSecondaryVariant
+        isLight -> Color.White
+        else -> MiuixTheme.colorScheme.surfaceContainer
+    }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -793,10 +802,7 @@ private fun ManualEntryContent(
             enabled = configured && !recognizing && name.isNotBlank() &&
                 (quantityMode == QuantityMode.PORTIONS || (effectiveGrams.isFinite() && effectiveGrams > 0)),
             modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.buttonColorsPrimary(
-                color = Color(0xFF8EAEFF),
-                contentColor = Color.White,
-            ),
+            colors = ButtonDefaults.buttonColorsPrimary(),
         ) {
             Text(if (recognizing) "正在识别营养..." else "自动识别热量与营养")
         }
@@ -829,9 +835,6 @@ private fun ManualEntryContent(
             }
         }
 
-        if (!validInput) {
-            Text("请填写大于 0 的重量，以及非负的热量和营养素；无摄入的项目请填 0。")
-        }
         Button(
             onClick = {
                 val n = name.trim()
@@ -849,10 +852,7 @@ private fun ManualEntryContent(
             },
             enabled = name.isNotBlank() && validInput && !recognizing,
             modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.buttonColorsPrimary(
-                color = Color(0xFF8EAEFF),
-                contentColor = Color.White,
-            ),
+            colors = ButtonDefaults.buttonColorsPrimary(),
         ) {
             Text("保存")
         }
@@ -946,7 +946,7 @@ private fun NumberInputDialog(
                     draft = value
                 },
                 singleLine = true,
-                colors = sheetFieldColors(),
+                colors = dialogFieldColors(),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -1302,6 +1302,7 @@ private fun ReviewContent(
                 onValueChange = { replacementName = it },
                 label = "菜品名称",
                 singleLine = true,
+                colors = dialogFieldColors(),
                 modifier = Modifier.fillMaxWidth(),
             )
             Button(
@@ -1396,14 +1397,20 @@ private fun ReviewContent(
 
         if (result.confirmationQuestions.isNotEmpty()) {
             item {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("建议确认", style = MiuixTheme.textStyles.title4)
-                    result.confirmationQuestions.forEach { question ->
-                        Text(
-                            text = "• $question",
-                            style = MiuixTheme.textStyles.subtitle,
-                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                        )
+                Card(
+                    cornerRadius = 20.dp,
+                    modifier = Modifier.fillMaxWidth(),
+                    insideMargin = PaddingValues(16.dp),
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("建议确认", style = MiuixTheme.textStyles.title4)
+                        result.confirmationQuestions.forEach { question ->
+                            Text(
+                                text = "• $question",
+                                style = MiuixTheme.textStyles.subtitle,
+                                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                            )
+                        }
                     }
                 }
             }
@@ -1693,7 +1700,7 @@ private fun DatabaseMatchOverlay(
                     onValueChange = { query = it },
                     label = "搜索食物名称",
                     singleLine = true,
-                    colors = sheetFieldColors(),
+                    colors = dialogFieldColors(),
                     modifier = Modifier.fillMaxWidth(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
                 )
@@ -1784,6 +1791,15 @@ private fun isLightTheme(): Boolean {
 private fun sheetFieldColors(): TextFieldColors {
     return if (isLightTheme()) {
         TextFieldDefaults.textFieldColors(backgroundColor = Color.White)
+    } else {
+        TextFieldDefaults.textFieldColors()
+    }
+}
+
+@Composable
+private fun dialogFieldColors(): TextFieldColors {
+    return if (isLightTheme()) {
+        TextFieldDefaults.textFieldColors(backgroundColor = MiuixTheme.colorScheme.secondaryContainer)
     } else {
         TextFieldDefaults.textFieldColors()
     }

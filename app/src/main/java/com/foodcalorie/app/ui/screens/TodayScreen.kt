@@ -4,6 +4,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -154,8 +155,18 @@ fun TodayScreen(
             )
         }
     }
-    LazyColumn(
-        modifier = Modifier.fillMaxSize().overScrollVertical()
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        // Fill only the visible content area (below the date, above the bottom bar).
+        // Extending under the bottom bar would steal presses from the liquid add button.
+        var dateHeightPx by remember { mutableIntStateOf(0) }
+        val swipeMinHeight = (
+            maxHeight -
+                contentPadding.calculateTopPadding() -
+                contentPadding.calculateBottomPadding() -
+                with(LocalDensity.current) { dateHeightPx.toDp() }
+            ).coerceAtLeast(0.dp)
+        LazyColumn(
+            modifier = Modifier.fillMaxSize().overScrollVertical()
             .then(if (scrollBehavior != null) Modifier.nestedScroll(scrollBehavior.nestedScrollConnection) else Modifier),
         state = listState,
         contentPadding = PaddingValues(
@@ -198,6 +209,7 @@ fun TodayScreen(
                         viewModel.selectDate(minOf(next, LocalDate.now()))
                     },
                     onSelect = { viewModel.selectDate(LocalDate.ofEpochDay(it)) },
+                    modifier = Modifier.onSizeChanged { dateHeightPx = it.height },
                     title = { pageDate ->
                         Text(
                             text = (if (previewDate != null && pageDate != date) previewDate else pageDate).format(dateFormatter),
@@ -216,6 +228,7 @@ fun TodayScreen(
                 enabled = !managementMode,
                 canMoveNext = date < LocalDate.now(),
                 onMove = { viewModel.selectDate(date.plusDays(it.toLong())) },
+                modifier = Modifier.heightIn(min = swipeMinHeight),
             ) { direction ->
                 val displayedDate = date.plusDays(direction.toLong())
                 val pageEntries = state.entriesByDate[displayedDate.toEpochDay()].orEmpty()
@@ -306,6 +319,7 @@ fun TodayScreen(
                     }
                 }
             }
+        }
         }
     }
 }

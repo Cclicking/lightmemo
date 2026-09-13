@@ -24,6 +24,7 @@ import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -53,17 +54,18 @@ internal fun DaySwipePages(
     enabled: Boolean,
     canMoveNext: Boolean,
     onMove: (Int) -> Unit,
+    modifier: Modifier = Modifier,
     content: @Composable (Int) -> Unit,
 ) {
     if (!enabled) {
-        Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) { content(0) }
+        Box(modifier.fillMaxWidth().padding(horizontal = 16.dp)) { content(0) }
         return
     }
     val scope = rememberCoroutineScope()
     val sidePaddingPx = with(LocalDensity.current) { 16.dp.roundToPx() }
     val flingThreshold = with(LocalDensity.current) { 400.dp.toPx() }
     Layout(
-        modifier = Modifier.fillMaxWidth().clipToBounds()
+        modifier = modifier.fillMaxWidth().clipToBounds()
             .onSizeChanged { size ->
                 // Pitch = screen - one side margin, so the next card starts at the screen edge
                 // and keeps a 16dp gap from the current card.
@@ -108,8 +110,18 @@ internal fun DaySwipePages(
     ) { measurables, constraints ->
         val pageWidth = (constraints.maxWidth - sidePaddingPx * 2).coerceAtLeast(0)
         val pitch = pageWidth + sidePaddingPx
+        // Respect a parent min-height (e.g. list viewport) so blank space below the cards
+        // still receives horizontal drags.
+        val pageMinHeight = constraints.minHeight
         val pages = measurables.map {
-            it.measure(constraints.copy(minWidth = pageWidth, maxWidth = pageWidth, minHeight = 0))
+            it.measure(
+                Constraints(
+                    minWidth = pageWidth,
+                    maxWidth = pageWidth,
+                    minHeight = pageMinHeight,
+                    maxHeight = Constraints.Infinity,
+                )
+            )
         }
         val next = if (state.offset > 0f) pages[0] else pages[2]
         val height = (pages[1].height + (next.height - pages[1].height) * abs(state.progress)).roundToInt()

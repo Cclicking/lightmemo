@@ -120,7 +120,8 @@ fun LiquidAddButton(
             )
             .edgeLight(shape = CircleShape, edgeLight = rememberDefaultEdgeLight())
             .then(interactiveHighlight.modifier)
-            .then(interactiveHighlight.pressOnlyModifier),
+            // Drag-aware highlight so layerBlock offset/scale can follow the finger.
+            .then(interactiveHighlight.gestureModifier),
         contentAlignment = Alignment.Center,
     ) {
         Icon(

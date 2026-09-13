@@ -110,6 +110,7 @@ internal fun DateCalendar(
     previewEpochDay: Long? = null,
     canMoveNext: Boolean = true,
     title: (@Composable (LocalDate) -> Unit)? = null,
+    modifier: Modifier = Modifier,
 ) {
     val expansion by animateFloatAsState(
         targetValue = if (expanded) 1f else 0f,
@@ -155,7 +156,7 @@ internal fun DateCalendar(
     }
     // Measure all three pages so months with different row counts interpolate in height.
     Layout(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).clipToBounds()
+        modifier = modifier.fillMaxWidth().padding(vertical = 4.dp).clipToBounds()
             .onSizeChanged { size ->
                 // Pitch = screen - one side margin, matching DaySwipePages: next page
                 // starts at the screen edge with a 16dp gap.
