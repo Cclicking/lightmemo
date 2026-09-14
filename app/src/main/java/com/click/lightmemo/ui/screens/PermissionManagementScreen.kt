@@ -74,10 +74,6 @@ fun PermissionManagementScreen(
     val notificationGranted = remember(refreshToken, notificationSupported) {
         !notificationSupported || isGranted(context, Manifest.permission.POST_NOTIFICATIONS)
     }
-    val unknownSourcesGranted = remember(refreshToken) {
-        Build.VERSION.SDK_INT < Build.VERSION_CODES.O || context.packageManager.canRequestPackageInstalls()
-    }
-
     val requestPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) {
@@ -95,14 +91,6 @@ fun PermissionManagementScreen(
 
     fun requestPermission(permission: String) {
         requestPermissionLauncher.launch(permission)
-    }
-
-    fun openUnknownSourcesSettings() {
-        val intent = Intent(
-            Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
-            Uri.parse("package:${context.packageName}"),
-        )
-        runCatching { context.startActivity(intent) }.onFailure { openAppSettings() }
     }
 
     LazyColumn(
@@ -208,12 +196,6 @@ fun PermissionManagementScreen(
                     } else {
                         null
                     },
-                )
-                PermissionStatusRow(
-                    title = "安装未知应用",
-                    summary = "用于从应用内检查并安装版本更新",
-                    status = if (unknownSourcesGranted) "已允许" else "未允许",
-                    onClick = ::openUnknownSourcesSettings,
                 )
             }
             Text(
