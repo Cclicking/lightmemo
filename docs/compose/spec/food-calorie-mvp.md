@@ -82,7 +82,7 @@ data class FoodLog(
 
 Request（OpenAI 兼容）：
 
-- `model`: 设置中的模型名（默认 `gpt-4o-mini`）
+- `model`: 设置中的模型名（默认 `deepseek-flash`）
 - `messages[0]`: system，要求只输出 JSON
 - `messages[1]`: user，含文本指令 + `image_url`（`data:image/*;base64,...`）
 

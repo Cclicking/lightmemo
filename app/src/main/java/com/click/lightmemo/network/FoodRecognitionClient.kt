@@ -1,10 +1,12 @@
 package com.click.lightmemo.network
 
+import com.click.lightmemo.data.DEFAULT_API_MODEL
 import com.click.lightmemo.domain.ComponentSource
 import com.click.lightmemo.domain.DishType
 import com.click.lightmemo.domain.FoodComponent
 import com.click.lightmemo.domain.MealRecognition
 import com.click.lightmemo.domain.RecognizedDish
+import com.click.lightmemo.domain.RecognitionStage
 import java.io.IOException
 import java.util.UUID
 import java.util.concurrent.TimeUnit
@@ -266,8 +268,10 @@ class FoodRecognitionClient(
         userDescription: String = "",
         mealType: String = "",
         plateSize: String = "",
+        onStage: suspend (RecognitionStage) -> Unit = {},
     ): MealRecognition = withContext(Dispatchers.IO) {
         validate(baseUrl, apiKey, imageBase64)
+        onStage(RecognitionStage.RECOGNIZING)
         val dataUrl = "data:$mimeType;base64,$imageBase64"
         val initialContent = complete(
             baseUrl,
@@ -290,6 +294,7 @@ class FoodRecognitionClient(
 
         // 审核服务失败时保留第一阶段结果，营养查询仍可继续。
         runCatching {
+            onStage(RecognitionStage.REVIEWING)
             val reviewed = complete(
                 baseUrl,
                 apiKey,
@@ -337,7 +342,7 @@ class FoodRecognitionClient(
     ): String {
         val body = json.encodeToString(
             ChatRequest.serializer(),
-            ChatRequest(model = model.ifBlank { "gpt-4o-mini" }, messages = messages),
+            ChatRequest(model = model.ifBlank { DEFAULT_API_MODEL }, messages = messages),
         )
         val request = Request.Builder()
             .url(baseUrl.trimEnd('/') + "/chat/completions")

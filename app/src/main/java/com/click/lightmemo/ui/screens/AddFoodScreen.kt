@@ -3,6 +3,7 @@ package com.click.lightmemo.ui.screens
 import android.Manifest
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -47,6 +48,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -65,11 +67,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
+import com.click.lightmemo.data.FoodImages
 import com.click.lightmemo.domain.MealType
 import com.click.lightmemo.domain.Nutrition
 import com.click.lightmemo.domain.FoodComponent
 import com.click.lightmemo.domain.MealRecognition
 import com.click.lightmemo.domain.RecognizedDish
+import com.click.lightmemo.domain.RecognitionStage
 import com.click.lightmemo.ui.basic.SharedScrollBehavior as ScrollBehavior
 import com.click.lightmemo.ui.components.AnimatedOverlayDialog
 import com.click.lightmemo.ui.components.DropdownPref
@@ -87,6 +91,7 @@ import java.time.LocalDate
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import kotlin.math.abs
+import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.Button
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
@@ -138,17 +143,41 @@ fun AddFoodRoute(
     val state by viewModel.uiState.collectAsState()
     val settings by viewModel.settings.collectAsState()
     val context = LocalContext.current
+    val gallerySaveScope = rememberCoroutineScope()
 
     var cameraUriString by rememberSaveable { mutableStateOf<String?>(null) }
     val cameraUri = cameraUriString?.let(Uri::parse)
     var cameraPermissionDenied by remember { mutableStateOf(false) }
+    var pendingRecognitionAction by remember { mutableStateOf<(() -> Unit)?>(null) }
+
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) {
+        val action = pendingRecognitionAction
+        pendingRecognitionAction = null
+        action?.invoke()
+    }
+
+    fun withNotificationPermission(action: () -> Unit) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.POST_NOTIFICATIONS,
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            pendingRecognitionAction = action
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            action()
+        }
+    }
 
     val galleryLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.PickVisualMedia(),
     ) { uri ->
         if (uri != null) {
             runCatching { context.contentResolver.takePersistableUriPermission(uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION) }
-            viewModel.recognizeFromUri(uri)
+            withNotificationPermission { viewModel.recognizeFromUri(uri) }
         }
     }
 
@@ -157,7 +186,16 @@ fun AddFoodRoute(
     ) { success ->
         val uri = cameraUri
         if (success && uri != null) {
-            viewModel.recognizeFromUri(uri)
+            gallerySaveScope.launch {
+                if (settings.savePhotosToGallery) {
+                    runCatching {
+                        FoodImages.saveToGallery(context, uri, settings.gallerySaveLocation)
+                    }.onFailure {
+                        android.widget.Toast.makeText(context, "照片未能保存到相册", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                }
+                withNotificationPermission { viewModel.recognizeFromUri(uri) }
+            }
         }
     }
 
@@ -248,11 +286,12 @@ fun AddFoodRoute(
                     padding = contentPadding,
                     configured = settings.isRecognitionConfigured,
                     recognizing = state.recognizing || state.saving,
+                    recognitionStage = state.recognitionStage,
                     mealType = state.mealType,
                     onMealType = viewModel::setMealType,
                     quickInput = state.quickInput,
                     onQuickInputChange = viewModel::setQuickInput,
-                    onQuickRecognize = { viewModel.recognizeFromText() },
+                    onQuickRecognize = { withNotificationPermission { viewModel.recognizeFromText() } },
                     selectedTags = state.selectedTags,
                     onToggleTag = viewModel::toggleTag,
                     minuteOfDay = state.mealMinuteOfDay,
@@ -268,11 +307,13 @@ fun AddFoodRoute(
                         null
                     },
                     onGallery = {
-                        galleryLauncher.launch(
-                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
-                        )
+                        withNotificationPermission {
+                            galleryLauncher.launch(
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                            )
+                        }
                     },
-                    onCamera = ::onCameraClick,
+                    onCamera = { withNotificationPermission(::onCameraClick) },
                     onManual = { viewModel.openManual() },
                     onPreset = viewModel::openPresetSheet,
                 )
@@ -285,6 +326,7 @@ fun AddFoodRoute(
                     initialGrams = step.initialGrams,
                     configured = settings.isRecognitionConfigured,
                     recognizing = state.recognizing || state.saving,
+                    recognitionStage = state.recognitionStage,
                     nutritionSuggestion = state.manualNutrition,
                     error = state.error,
                     quantityMode = state.quantityMode,
@@ -292,8 +334,12 @@ fun AddFoodRoute(
                     portionCount = state.portionCount,
                     onPortionCountChange = viewModel::setPortionCount,
                     estimatedGrams = state.estimatedPortionGrams,
-                    onRecognizeGrams = viewModel::recognizeManual,
-                    onRecognizePortions = viewModel::recognizeManualWithPortions,
+                    onRecognizeGrams = { name, grams ->
+                        withNotificationPermission { viewModel.recognizeManual(name, grams) }
+                    },
+                    onRecognizePortions = { name, portions ->
+                        withNotificationPermission { viewModel.recognizeManualWithPortions(name, portions) }
+                    },
                     onSave = { name, grams, nutrition ->
                         viewModel.saveManual(name, grams, nutrition, onDone)
                     },
@@ -303,6 +349,7 @@ fun AddFoodRoute(
                     padding = contentPadding,
                     result = step.result,
                     recognizing = state.recognizing || state.saving,
+                    recognitionStage = state.recognitionStage,
                     replacingDishId = state.replacingDishId,
                     mealType = state.mealType,
                     onMealType = viewModel::setMealType,
@@ -328,6 +375,7 @@ private fun PickSourceContent(
     padding: PaddingValues,
     configured: Boolean,
     recognizing: Boolean,
+    recognitionStage: RecognitionStage?,
     mealType: MealType,
     onMealType: (MealType) -> Unit,
     quickInput: String,
@@ -403,19 +451,7 @@ private fun PickSourceContent(
             modifier = Modifier.fillMaxWidth(),
         )
 
-        if (recognizing) {
-            Card(cornerRadius = 20.dp, modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(16.dp)) {
-                Text("识别中", style = MiuixTheme.textStyles.body1)
-                Spacer(Modifier.height(12.dp))
-                LinearProgressIndicator(progress = null, modifier = Modifier.fillMaxWidth())
-                Spacer(Modifier.height(10.dp))
-                Text(
-                    "正在分析食物与营养组成…",
-                    style = MiuixTheme.textStyles.footnote2,
-                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                )
-            }
-        }
+        if (recognizing) RecognitionStatusCard(recognitionStage)
 
         if (!configured) {
             Card(cornerRadius = 20.dp, modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(16.dp)) {
@@ -663,6 +699,7 @@ private fun ManualEntryContent(
     initialGrams: Double? = null,
     configured: Boolean,
     recognizing: Boolean,
+    recognitionStage: RecognitionStage?,
     nutritionSuggestion: Nutrition?,
     error: String?,
     quantityMode: QuantityMode,
@@ -721,6 +758,8 @@ private fun ManualEntryContent(
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         MealTypeSelector(mealType, onMealType)
+
+        if (recognizing) RecognitionStatusCard(recognitionStage)
 
         TextField(
             value = name,
@@ -1277,6 +1316,7 @@ private fun ReviewContent(
     padding: PaddingValues,
     result: MealRecognition,
     recognizing: Boolean,
+    recognitionStage: RecognitionStage?,
     replacingDishId: String?,
     mealType: MealType,
     onMealType: (MealType) -> Unit,
@@ -1337,6 +1377,10 @@ private fun ReviewContent(
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         item { MealTypeSelector(mealType, onMealType) }
+
+        if (recognizing) {
+            item { RecognitionStatusCard(recognitionStage) }
+        }
 
         // 总览卡片：热量 + 宏量环（进度条与圆环间距 27dp，圆环高度对齐文字）
         item {
@@ -1435,6 +1479,35 @@ private fun ReviewContent(
                 Text("保存 ${result.dishes.size} 道菜")
             }
         }
+    }
+}
+
+@Composable
+private fun RecognitionStatusCard(stage: RecognitionStage?) {
+    val currentStage = stage ?: RecognitionStage.PREPARING
+    Card(
+        cornerRadius = 20.dp,
+        modifier = Modifier.fillMaxWidth(),
+        insideMargin = PaddingValues(16.dp),
+    ) {
+        Text(currentStage.title, style = MiuixTheme.textStyles.body1, fontWeight = FontWeight.Medium)
+        Spacer(Modifier.height(10.dp))
+        LinearProgressIndicator(
+            progress = currentStage.progress / 100f,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Spacer(Modifier.height(8.dp))
+        Text(
+            currentStage.detail,
+            style = MiuixTheme.textStyles.footnote2,
+            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+        )
+        Spacer(Modifier.height(4.dp))
+        Text(
+            "已启用后台通知，离开应用后会继续处理",
+            style = MiuixTheme.textStyles.footnote2,
+            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+        )
     }
 }
 

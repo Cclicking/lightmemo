@@ -2,6 +2,7 @@ package com.click.lightmemo.ui.screens
 
 import android.content.Intent
 import android.net.Uri
+import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -18,6 +19,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -51,16 +53,22 @@ import com.click.lightmemo.data.FoodColorPalette
 import com.click.lightmemo.data.FoodPaletteGenerator
 import com.click.lightmemo.data.HsvColor
 import com.click.lightmemo.data.Gender
+import com.click.lightmemo.data.DEFAULT_PROFILE_AGE_YEARS
+import com.click.lightmemo.data.DEFAULT_PROFILE_HEIGHT_CM
+import com.click.lightmemo.data.DEFAULT_PROFILE_WEIGHT_KG
 import com.click.lightmemo.ui.basic.SharedScrollBehavior as ScrollBehavior
 import com.click.lightmemo.ui.components.AnimatedOverlayDialog
 import com.click.lightmemo.ui.components.DropdownPref
 import com.click.lightmemo.ui.theme.FoodPaletteColors
 import com.click.lightmemo.ui.theme.toComposeColors
 import com.click.lightmemo.ui.utils.overScrollVertical
+import com.click.lightmemo.viewmodel.AppUpdateUiState
+import com.click.lightmemo.viewmodel.AppUpdateViewModel
 import com.click.lightmemo.viewmodel.SettingsViewModel
 import top.yukonga.miuix.kmp.basic.Button
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
+import top.yukonga.miuix.kmp.basic.LinearProgressIndicator
 import top.yukonga.miuix.kmp.basic.NumberPicker
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.TabRow
@@ -567,7 +575,15 @@ fun PersonalInfoScreen(
     listState: LazyListState,
 ) {
     val settings by viewModel.settings.collectAsState()
-    val nutrients = settings.recommendedNutrients
+    val heightCm = settings.heightCm.takeIf { it > 0f } ?: DEFAULT_PROFILE_HEIGHT_CM
+    val weightKg = settings.weightKg.takeIf { it > 0f } ?: DEFAULT_PROFILE_WEIGHT_KG
+    val ageYears = settings.ageYears.takeIf { it > 0 } ?: DEFAULT_PROFILE_AGE_YEARS
+    val nutrients = settings.copy(
+        heightCm = heightCm,
+        weightKg = weightKg,
+        ageYears = ageYears,
+    ).recommendedNutrients
+    val context = LocalContext.current
 
     LazyColumn(
         modifier = Modifier
@@ -603,21 +619,21 @@ fun PersonalInfoScreen(
                     NumberPickerPreferenceRow(
                         title = "身高",
                         unit = "cm",
-                        value = settings.heightCm.toInt().takeIf { it > 0 } ?: 170,
+                        value = heightCm.toInt(),
                         range = 100..220,
                         onValueChange = { viewModel.setHeight(it.toFloat()) },
                     )
                     NumberPickerPreferenceRow(
                         title = "体重",
                         unit = "kg",
-                        value = settings.weightKg.toInt().takeIf { it > 0 } ?: 60,
+                        value = weightKg.toInt(),
                         range = 30..150,
                         onValueChange = { viewModel.setWeight(it.toFloat()) },
                     )
                     NumberPickerPreferenceRow(
                         title = "年龄",
                         unit = "岁",
-                        value = settings.ageYears.takeIf { it > 0 } ?: 25,
+                        value = ageYears,
                         range = 10..100,
                         onValueChange = { viewModel.setAge(it) },
                     )
@@ -706,14 +722,6 @@ fun PersonalInfoScreen(
                     modifier = Modifier.padding(horizontal = FootnoteHorizontalPadding),
                 )
 
-                Spacer(Modifier.height(16.dp))
-                Button(
-                    onClick = { viewModel.applyRecommendedTarget() },
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColorsPrimary(),
-                ) {
-                    Text("写入每日热量与营养目标")
-                }
             }
         } else {
             item {
@@ -724,6 +732,26 @@ fun PersonalInfoScreen(
                     color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                     modifier = Modifier.padding(horizontal = FootnoteHorizontalPadding),
                 )
+            }
+        }
+
+        item {
+            Spacer(Modifier.height(16.dp))
+            Button(
+                onClick = {
+                    viewModel.applyRecommendedTarget {
+                        Toast.makeText(
+                            context,
+                            "已成功写入每日热量与营养目标",
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                    }
+                },
+                enabled = nutrients != null,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColorsPrimary(),
+            ) {
+                Text("写入每日热量与营养目标")
             }
         }
     }
@@ -1116,8 +1144,14 @@ fun AboutScreen(
     contentPadding: PaddingValues,
     scrollBehavior: ScrollBehavior?,
     listState: LazyListState,
+    updateViewModel: AppUpdateViewModel,
 ) {
     val context = LocalContext.current
+    val updateState by updateViewModel.uiState.collectAsState()
+    var showUpdateDialog by remember { mutableStateOf(false) }
+    LaunchedEffect(updateState.available) {
+        showUpdateDialog = updateState.available != null
+    }
     val packageInfo = remember {
         runCatching {
             context.packageManager.getPackageInfo(context.packageName, 0)
@@ -1128,6 +1162,21 @@ fun AboutScreen(
     val githubUrl = "https://github.com/Cclicking/lightmemo"
     val acknowledgements = remember {
         listOf(
+            Acknowledgement(
+                name = "NexioSchedule",
+                author = "HaoZai000",
+                url = "https://github.com/HaoZai000/NexioSchedule",
+            ),
+            Acknowledgement(
+                name = "miuix-skill",
+                author = "limczhh",
+                url = "https://github.com/limczhh/miuix-skill/tree/main",
+            ),
+            Acknowledgement(
+                name = "liquid-composer",
+                author = "frontedu",
+                url = "https://github.com/frontedu/liquid-composer",
+            ),
             Acknowledgement(
                 name = "miuix",
                 author = "compose-miuix-ui",
@@ -1197,6 +1246,27 @@ fun AboutScreen(
                             title = "版本",
                             summary = "versionName / versionCode",
                             status = "$versionName ($versionCode)",
+                        )
+                        StatusRow(
+                            title = "检查更新",
+                            summary = when {
+                                updateState.checking -> "正在检查 GitHub 最新版本"
+                                updateState.error != null -> updateState.error.orEmpty()
+                                updateState.available != null -> "发现新版本 ${updateState.available?.versionName}"
+                                else -> updateState.message ?: "从 GitHub 检查最新版本"
+                            },
+                            status = when {
+                                updateState.checking -> "检查中…"
+                                updateState.available != null -> "有更新"
+                                else -> "检查"
+                            },
+                            onClick = {
+                                if (updateState.available != null) {
+                                    showUpdateDialog = true
+                                } else {
+                                    updateViewModel.checkForUpdate()
+                                }
+                            },
                         )
                         StatusRow(
                             title = "包名",
@@ -1271,6 +1341,97 @@ fun AboutScreen(
             }
         }
     }
+
+    AppUpdateDialog(
+        show = showUpdateDialog,
+        state = updateState,
+        onDismiss = { showUpdateDialog = false },
+        onDownload = updateViewModel::downloadUpdate,
+        onInstall = { updateViewModel.installDownloadedApk(context) },
+    )
+}
+
+@Composable
+fun AppUpdateDialog(
+    show: Boolean,
+    state: AppUpdateUiState,
+    onDismiss: () -> Unit,
+    onDownload: () -> Unit,
+    onInstall: () -> Unit,
+) {
+    val update = state.available ?: return
+    val title = update.releaseName.takeIf { it.isNotBlank() } ?: "发现新版本 ${update.versionName}"
+    AnimatedOverlayDialog(
+        show = show,
+        title = title,
+        summary = "当前版本 ${state.currentVersionName} → ${update.versionName}",
+        onDismissRequest = { if (!state.downloading) onDismiss() },
+    ) {
+        Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            if (update.releaseNotes.isNotBlank()) {
+                Text(
+                    text = update.releaseNotes,
+                    style = MiuixTheme.textStyles.body2,
+                    maxLines = 8,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Text(
+                text = "安装包：${update.apkFileName} · ${formatUpdateSize(update.apkSizeBytes)}",
+                style = MiuixTheme.textStyles.footnote2,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+            )
+            if (state.downloading) {
+                LinearProgressIndicator(
+                    progress = state.downloadProgress?.div(100f),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Text(
+                    text = state.downloadProgress?.let { "正在下载 $it%" } ?: "正在下载…",
+                    style = MiuixTheme.textStyles.footnote2,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                )
+            }
+            state.error?.let {
+                Text(
+                    text = it,
+                    style = MiuixTheme.textStyles.footnote2,
+                    color = MiuixTheme.colorScheme.error,
+                )
+            }
+            state.message?.let {
+                Text(
+                    text = it,
+                    style = MiuixTheme.textStyles.footnote2,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                )
+            }
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Button(
+                    onClick = onDismiss,
+                    enabled = !state.downloading,
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColors(),
+                ) {
+                    Text("稍后")
+                }
+                Button(
+                    onClick = if (state.downloadedApkPath != null) onInstall else onDownload,
+                    enabled = !state.downloading,
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColorsPrimary(),
+                ) {
+                    Text(if (state.downloadedApkPath != null) "安装更新" else "下载更新")
+                }
+            }
+        }
+    }
+}
+
+private fun formatUpdateSize(bytes: Long): String = when {
+    bytes <= 0L -> "大小未知"
+    bytes >= 1024L * 1024L -> "%.1f MB".format(bytes / (1024f * 1024f))
+    else -> "%.0f KB".format(bytes / 1024f)
 }
 
 private data class Acknowledgement(

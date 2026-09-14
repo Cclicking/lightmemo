@@ -16,6 +16,36 @@ import org.junit.rules.TemporaryFolder
 
 class SettingsRepositoryTest {
     @get:Rule val folder = TemporaryFolder()
+    @Test fun emptyApiPresetUsesDeepSeekDefaults() = runBlocking {
+        val file = folder.newFolder().resolve("empty-settings.preferences_pb").toOkioPath()
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        val store = PreferenceDataStoreFactory.create(scope = scope,
+            storage = OkioStorage(FileSystem.SYSTEM, PreferencesSerializer) { file })
+        try {
+            val preset = SettingsRepository(store).settings.first().activePreset
+            assertEquals(DEFAULT_API_BASE_URL, preset.baseUrl)
+            assertEquals(DEFAULT_API_MODEL, preset.model)
+            assertEquals("", preset.apiKey)
+        } finally { scope.coroutineContext[Job]!!.cancelAndJoin() }
+    }
+
+    @Test fun existingApiPresetIsNotReplacedByNewDefaults() = runBlocking {
+        val file = folder.newFolder().resolve("existing-settings.preferences_pb").toOkioPath()
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        val store = PreferenceDataStoreFactory.create(scope = scope,
+            storage = OkioStorage(FileSystem.SYSTEM, PreferencesSerializer) { file })
+        try {
+            val repo = SettingsRepository(store)
+            val id = repo.settings.first().activePreset.id
+            repo.updatePreset(id, "我的服务", "https://example.com/v1", "user-key", "user-model")
+
+            val saved = repo.settings.first().activePreset
+            assertEquals("https://example.com/v1", saved.baseUrl)
+            assertEquals("user-key", saved.apiKey)
+            assertEquals("user-model", saved.model)
+        } finally { scope.coroutineContext[Job]!!.cancelAndJoin() }
+    }
+
     @Test fun promptOverridesPersistAndRestoreIndependently() = runBlocking {
         val file = folder.newFolder().resolve("prompts.preferences_pb").toOkioPath()
         suspend fun useStore(block: suspend (SettingsRepository) -> Unit) {

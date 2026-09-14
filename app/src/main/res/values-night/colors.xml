@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Matches the Miuix dark surface behind the home-page cards. -->
+    <color name="splash_screen_background">#1C1C1E</color>
+</resources>

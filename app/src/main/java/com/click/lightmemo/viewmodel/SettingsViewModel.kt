@@ -6,8 +6,12 @@ import androidx.lifecycle.viewModelScope
 import com.click.lightmemo.FoodApp
 import com.click.lightmemo.data.ActivityLevel
 import com.click.lightmemo.data.AppSettings
+import com.click.lightmemo.data.DEFAULT_PROFILE_AGE_YEARS
+import com.click.lightmemo.data.DEFAULT_PROFILE_HEIGHT_CM
+import com.click.lightmemo.data.DEFAULT_PROFILE_WEIGHT_KG
 import com.click.lightmemo.data.Gender
 import com.click.lightmemo.data.ColorThemePreset
+import com.click.lightmemo.data.GallerySaveLocation
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
@@ -171,12 +175,26 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
         repo.updateTopGradientBlurRangeDp(value)
     }
 
+    fun setSavePhotosToGallery(value: Boolean) = saveSetting {
+        repo.updateSavePhotosToGallery(value)
+    }
+
+    fun setGallerySaveLocation(value: GallerySaveLocation) = saveSetting {
+        repo.updateGallerySaveLocation(value)
+    }
+
     /** 将推荐热量与营养素写入目标。 */
-    fun applyRecommendedTarget() = saveSetting {
-        val nutrients = settings.value.recommendedNutrients ?: return@saveSetting
+    fun applyRecommendedTarget(onSuccess: () -> Unit = {}) = saveSetting {
+        val current = settings.value
+        val nutrients = current.recommendedNutrients ?: current.copy(
+            heightCm = current.heightCm.takeIf { it > 0f } ?: DEFAULT_PROFILE_HEIGHT_CM,
+            weightKg = current.weightKg.takeIf { it > 0f } ?: DEFAULT_PROFILE_WEIGHT_KG,
+            ageYears = current.ageYears.takeIf { it > 0 } ?: DEFAULT_PROFILE_AGE_YEARS,
+        ).recommendedNutrients ?: return@saveSetting
         repo.updateDailyTarget(nutrients.calories)
         repo.updateProteinTarget(nutrients.proteinG)
         repo.updateFatTarget(nutrients.fatG)
         repo.updateCarbsTarget(nutrients.carbsG)
+        onSuccess()
     }
 }

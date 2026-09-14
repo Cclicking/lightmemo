@@ -39,6 +39,7 @@ import androidx.compose.ui.unit.sp
 import com.click.lightmemo.domain.FoodLog
 import com.click.lightmemo.domain.MealType
 import com.click.lightmemo.domain.Nutrition
+import com.click.lightmemo.domain.RecognitionStage
 import com.click.lightmemo.ui.basic.SharedScrollBehavior as ScrollBehavior
 import com.click.lightmemo.ui.components.AnimatedOverlayDialog
 import com.click.lightmemo.ui.theme.FoodPaletteColors
@@ -263,7 +264,7 @@ fun TodayScreen(
                                 text = meal.label,
                                 insideMargin = PaddingValues(start = 12.dp, top = 8.dp, end = 12.dp, bottom = 0.dp),
                             )
-                            if (recognizingHere) FoodCardRow(left = { RecognitionCard() })
+                            if (recognizingHere) FoodCardRow(left = { RecognitionCard(addState.recognitionStage) })
                             pendingDishes.chunked(2).forEach { row ->
                                 androidx.compose.runtime.key("pending-${meal.name}-${row.first().id}") {
                                     FoodCardRow(
@@ -460,13 +461,17 @@ private fun FoodCard(entry: FoodLog, managementMode: Boolean, onClick: () -> Uni
 }
 
 @Composable
-private fun RecognitionCard() {
+private fun RecognitionCard(stage: RecognitionStage?) {
+    val currentStage = stage ?: RecognitionStage.PREPARING
     Card(modifier = Modifier.fillMaxWidth().heightIn(min = 132.dp), cornerRadius = 20.dp, insideMargin = PaddingValues(14.dp)) {
-        Text("识别中", style = MiuixTheme.textStyles.body1)
-        Spacer(Modifier.height(12.dp))
-        LinearProgressIndicator(progress = null, modifier = Modifier.fillMaxWidth())
+        Text(currentStage.title, style = MiuixTheme.textStyles.body1)
         Spacer(Modifier.height(10.dp))
-        Text("正在分析食物与营养组成…", style = MiuixTheme.textStyles.footnote2, color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
+        LinearProgressIndicator(
+            progress = currentStage.progress / 100f,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Spacer(Modifier.height(8.dp))
+        Text(currentStage.detail, style = MiuixTheme.textStyles.footnote2, color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
     }
 }
 

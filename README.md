@@ -93,10 +93,14 @@ APK：`app/build/outputs/apk/debug/app-debug.apk`
 
 依赖本机 `~/.m2` 中的 miuix 本地包。若改过 miuix 源码，在 `miuix-glass` 工程执行各模块 `publishAndroidPublicationToMavenLocal`（`-Prc=local`）。
 
+### 应用更新
+
+应用每次冷启动会检查 GitHub 仓库的最新 Release。发现新版本后，用户可以在弹窗中下载 APK 并交给系统安装器完成更新；
+
 ### 使用前配置
 
 1. 打开 App → 设置
-2. 填写 OpenAI 兼容 Base URL（如 `https://api.openai.com/v1`）、API Key、模型名
+2. 默认使用 DeepSeek：Base URL 为 `https://api.deepseek.com`、模型为 `deepseek-flash`；也可填写其他 OpenAI 兼容服务的 Base URL、API Key 和模型名
 3. 可选：USDA FDC API Key
 4. 设置每日热量目标
 

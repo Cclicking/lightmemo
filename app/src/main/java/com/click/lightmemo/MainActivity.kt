@@ -13,11 +13,13 @@ import com.click.lightmemo.ui.components.LiquidAddButton
 import com.click.lightmemo.ui.components.ScheduleBottomBar
 import com.click.lightmemo.ui.overlay.BlurBottomSheet
 import com.click.lightmemo.ui.overlay.LocalSheetTopBarMaterial
+import com.click.lightmemo.ui.platform.NativeTextContextMenuHost
 import com.click.lightmemo.ui.utils.LocalOverScrollState
 import com.click.lightmemo.ui.utils.OverScrollState
 import top.yukonga.miuix.kmp.basic.Text
 import android.os.Build
 import android.os.Bundle
+import android.content.Intent
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
@@ -65,6 +67,7 @@ import androidx.navigationevent.OnBackInvokedDefaultInput
 import androidx.navigationevent.compose.LocalNavigationEventDispatcherOwner
 import androidx.navigationevent.compose.rememberNavigationEventDispatcherOwner
 import com.click.lightmemo.ui.screens.AddFoodRoute
+import com.click.lightmemo.ui.screens.AppUpdateDialog
 import com.click.lightmemo.ui.screens.ApiSettingsScreen
 import com.click.lightmemo.ui.screens.AppearanceSettingsScreen
 import com.click.lightmemo.ui.screens.AboutScreen
@@ -79,6 +82,7 @@ import com.click.lightmemo.ui.theme.FoodTheme
 import com.click.lightmemo.ui.theme.toComposeColors
 import com.click.lightmemo.viewmodel.AddFoodViewModel
 import com.click.lightmemo.viewmodel.AddStep
+import com.click.lightmemo.viewmodel.AppUpdateViewModel
 import com.click.lightmemo.viewmodel.BackupViewModel
 import com.click.lightmemo.viewmodel.SettingsViewModel
 import com.click.lightmemo.viewmodel.StatsViewModel
@@ -99,12 +103,16 @@ import top.yukonga.miuix.kmp.icon.os4.GridView
 import top.yukonga.miuix.kmp.icon.os4.Months
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import java.time.LocalDate
+import kotlinx.coroutines.flow.MutableStateFlow
 
 val LocalGlassSupported = staticCompositionLocalOf { true }
 
 class MainActivity : ComponentActivity() {
+    private val openRecognition = MutableStateFlow(false)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        handleRecognitionIntent(intent)
         setContent {
             val dark = isSystemInDarkTheme()
             DisposableEffect(dark) {
@@ -147,6 +155,24 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleRecognitionIntent(intent)
+    }
+
+    private fun handleRecognitionIntent(intent: Intent?) {
+        if (intent?.getBooleanExtra(com.click.lightmemo.recognition.EXTRA_OPEN_RECOGNITION, false) == true) {
+            openRecognition.value = true
+        }
+    }
+
+    internal fun consumeOpenRecognition() {
+        openRecognition.value = false
+    }
+
+    internal fun openRecognitionState() = openRecognition
 }
 
 private enum class AppTab(val title: String) {
@@ -164,31 +190,48 @@ fun FoodAppRoot() {
     val addVm: AddFoodViewModel = viewModel()
     val settingsVm: SettingsViewModel = viewModel()
     val backupVm: BackupViewModel = viewModel()
+    val appUpdateVm: AppUpdateViewModel = viewModel()
 
     FoodTheme {
-        val context = LocalContext.current
-        val addState by addVm.uiState.collectAsState()
-        val selectedDate by todayVm.date.collectAsState()
-        val appSettings by settingsVm.settings.collectAsState()
-        val palette = remember(appSettings.colorPalette) { appSettings.colorPalette.toComposeColors() }
-        val settingsError by settingsVm.error.collectAsState()
-        val settingsReadError by settingsVm.readError.collectAsState()
-        // Android 12（API 31–32）：玻璃降级为高斯模糊（RenderEffect），渐变模糊降级为软渐变
-        val fullLiquidGlassSupported = isRuntimeShaderSupported()
-        val blurGlassSupported = isRenderEffectSupported()
-        val progressiveBlurEnabled = fullLiquidGlassSupported && appSettings.glassEffectsEnabled
-        val softGradientBlurEnabled =
-            !fullLiquidGlassSupported && blurGlassSupported &&
-                appSettings.glassEffectsEnabled && appSettings.topGradientBlurEnabled
-        CompositionLocalProvider(
-            LocalGlassSupported provides blurGlassSupported,
-            LocalOverScrollState provides remember { OverScrollState() },
-        ) {
+        NativeTextContextMenuHost {
+            val context = LocalContext.current
+            val addState by addVm.uiState.collectAsState()
+            val appUpdateState by appUpdateVm.uiState.collectAsState()
+            val selectedDate by todayVm.date.collectAsState()
+            val appSettings by settingsVm.settings.collectAsState()
+            val palette = remember(appSettings.colorPalette) { appSettings.colorPalette.toComposeColors() }
+            val settingsError by settingsVm.error.collectAsState()
+            val settingsReadError by settingsVm.readError.collectAsState()
+            // Android 12（API 31–32）：玻璃降级为高斯模糊（RenderEffect），渐变模糊降级为软渐变
+            val fullLiquidGlassSupported = isRuntimeShaderSupported()
+            val blurGlassSupported = isRenderEffectSupported()
+            val progressiveBlurEnabled = fullLiquidGlassSupported && appSettings.glassEffectsEnabled
+            val softGradientBlurEnabled =
+                !fullLiquidGlassSupported && blurGlassSupported &&
+                    appSettings.glassEffectsEnabled && appSettings.topGradientBlurEnabled
+            CompositionLocalProvider(
+                LocalGlassSupported provides blurGlassSupported,
+                LocalOverScrollState provides remember { OverScrollState() },
+            ) {
             var selectedTab by rememberSaveable { mutableIntStateOf(0) }
             var showAdd by rememberSaveable { mutableStateOf(false) }
+            var showUpdateDialog by rememberSaveable { mutableStateOf(false) }
             var todayCalendarExpanded by rememberSaveable { mutableStateOf(false) }
             var statsCalendarExpanded by rememberSaveable { mutableStateOf(false) }
             var showDatePicker by remember { mutableStateOf(false) }
+            val activity = context as? MainActivity
+            val openRecognition = if (activity != null) {
+                activity.openRecognitionState().collectAsState().value
+            } else {
+                false
+            }
+            LaunchedEffect(openRecognition) {
+                if (openRecognition) {
+                    selectedTab = 0
+                    showAdd = true
+                    activity?.consumeOpenRecognition()
+                }
+            }
             LaunchedEffect(settingsError, settingsReadError) {
                 (settingsError ?: settingsReadError)?.let { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
             }
@@ -231,6 +274,15 @@ fun FoodAppRoot() {
                 addVm.events.collect { message ->
                     Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
                 }
+            }
+
+            // Check once for every app-process startup. Network failures are kept silent here;
+            // the About page still exposes the error and a manual retry action.
+            LaunchedEffect(Unit) {
+                appUpdateVm.checkForUpdate()
+            }
+            LaunchedEffect(appUpdateState.available) {
+                showUpdateDialog = appUpdateState.available != null
             }
 
             val largeTitle = when (selectedTab) {
@@ -489,10 +541,17 @@ fun FoodAppRoot() {
                     },
                 )
 
+                AppUpdateDialog(
+                    show = showUpdateDialog,
+                    state = appUpdateState,
+                    onDismiss = { showUpdateDialog = false },
+                    onDownload = appUpdateVm::downloadUpdate,
+                    onInstall = { appUpdateVm.installDownloadedApk(context) },
+                )
+
             }
         }
     }
 }
 
-
-
+}

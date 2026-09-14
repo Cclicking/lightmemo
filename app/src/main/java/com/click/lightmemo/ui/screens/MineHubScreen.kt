@@ -27,6 +27,7 @@ import com.click.lightmemo.ui.secondary.CalorieTargetActivity
 import com.click.lightmemo.ui.secondary.DataManagementActivity
 import com.click.lightmemo.ui.secondary.FoodDatabaseActivity
 import com.click.lightmemo.ui.secondary.PersonalInfoActivity
+import com.click.lightmemo.ui.secondary.PermissionManagementActivity
 import com.click.lightmemo.ui.utils.overScrollVertical
 import com.click.lightmemo.viewmodel.SettingsViewModel
 import top.yukonga.miuix.kmp.basic.Card
@@ -173,6 +174,11 @@ fun MineHubScreen(
                         title = "个性化设置",
                         summary = "颜色主题、自动配色与顶部模糊效果",
                         onClick = { open(AppearanceSettingsActivity::class.java) },
+                    )
+                    ArrowPreference(
+                        title = "权限管理",
+                        summary = "相机、通知以及照片保存设置",
+                        onClick = { open(PermissionManagementActivity::class.java) },
                     )
                     ArrowPreference(
                         title = "关于",

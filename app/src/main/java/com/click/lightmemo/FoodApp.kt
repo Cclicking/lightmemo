@@ -5,6 +5,7 @@ import com.click.lightmemo.data.FoodLogRepository
 import com.click.lightmemo.data.SettingsRepository
 import com.click.lightmemo.network.FoodRecognitionClient
 import com.click.lightmemo.network.FoodDataCentralClient
+import com.click.lightmemo.recognition.RecognitionTaskStore
 import kotlinx.coroutines.flow.first
 
 class FoodApp : Application() {
@@ -16,6 +17,7 @@ class FoodApp : Application() {
         promptOverrides = { settingsRepository.settings.first().promptOverrides },
     )
     val nutritionDatabase by lazy { FoodDataCentralClient(this) }
+    val recognitionTaskStore by lazy { RecognitionTaskStore(this) }
 
     override fun onCreate() {
         super.onCreate()

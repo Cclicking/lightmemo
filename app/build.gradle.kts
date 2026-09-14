@@ -29,8 +29,8 @@ android {
         applicationId = "com.click.lightmemo"
         minSdk = 31
         targetSdk = 37
-        versionCode = 20
-        versionName = "1.2"
+        versionCode = 21
+        versionName = "1.3"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
     }
@@ -67,6 +67,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
     packaging {
         resources {
@@ -90,6 +91,9 @@ dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2025.10.00")
     implementation(composeBom)
     implementation("androidx.activity:activity-compose:1.11.0")
+    // ProgressStyle and promoted ongoing notifications for Android 16+;
+    // it falls back to a standard progress notification on older releases.
+    implementation("androidx.core:core-ktx:1.18.0")
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.compose.runtime:runtime")

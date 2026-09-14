@@ -2,4 +2,6 @@
 <resources>
     <color name="ic_launcher_background">#E8F5E9</color>
     <color name="ic_launcher_foreground">#2E7D32</color>
+    <!-- Matches the Miuix surface behind the home-page cards. -->
+    <color name="splash_screen_background">#F7F7F7</color>
 </resources>

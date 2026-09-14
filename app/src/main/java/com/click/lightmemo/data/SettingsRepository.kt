@@ -25,6 +25,12 @@ import org.json.JSONObject
 private val Context.settingsStore by preferencesDataStore(name = "food_settings")
 private val settingsJson = Json { ignoreUnknownKeys = true }
 
+const val DEFAULT_API_BASE_URL = "https://api.deepseek.com"
+const val DEFAULT_API_MODEL = "deepseek-flash"
+const val DEFAULT_PROFILE_HEIGHT_CM = 170f
+const val DEFAULT_PROFILE_WEIGHT_KG = 60f
+const val DEFAULT_PROFILE_AGE_YEARS = 25
+
 enum class Gender(val label: String) {
     MALE("男"),
     FEMALE("女"),
@@ -36,13 +42,18 @@ enum class ActivityLevel(val label: String, val factor: Float, val summary: Stri
     HIGH("高强度", 1.725f, "每周 6–7 天高强度运动"),
 }
 
+enum class GallerySaveLocation(val label: String, val relativePath: String) {
+    PICTURES("Pictures/轻食记", "Pictures/轻食记"),
+    DCIM("DCIM/轻食记", "DCIM/轻食记"),
+}
+
 @Serializable
 data class ApiPreset(
     val id: String = UUID.randomUUID().toString(),
     val name: String = "默认配置",
-    val baseUrl: String = "https://api.openai.com/v1",
+    val baseUrl: String = DEFAULT_API_BASE_URL,
     val apiKey: String = "",
-    val model: String = "gpt-4o-mini",
+    val model: String = DEFAULT_API_MODEL,
 )
 
 data class AppSettings(
@@ -79,6 +90,9 @@ data class AppSettings(
     val topGradientBlurEnabled: Boolean = false,
     /** 顶部渐变模糊覆盖范围，单位 dp。 */
     val topGradientBlurRangeDp: Int = 72,
+    /** 是否将相机拍摄的照片复制到系统相册。 */
+    val savePhotosToGallery: Boolean = true,
+    val gallerySaveLocation: GallerySaveLocation = GallerySaveLocation.PICTURES,
 ) {
     val activePreset: ApiPreset
         get() = apiPresets.firstOrNull { it.id == activePresetId }
@@ -243,6 +257,8 @@ class SettingsRepository(private val store: androidx.datastore.core.DataStore<an
                 put("glassEffectsEnabled", current.glassEffectsEnabled)
                 put("topGradientBlurEnabled", current.topGradientBlurEnabled)
                 put("topGradientBlurRangeDp", current.topGradientBlurRangeDp)
+                put("savePhotosToGallery", current.savePhotosToGallery)
+                put("gallerySaveLocation", current.gallerySaveLocation.name)
             })
             put("foodPresets", JSONArray(settingsJson.encodeToString(presets)))
         }
@@ -290,6 +306,9 @@ class SettingsRepository(private val store: androidx.datastore.core.DataStore<an
         val colorTheme = settingsJsonObject.optString("colorTheme")
             .let { value -> ColorThemePreset.entries.firstOrNull { it.name == value } }
             ?: defaults.colorTheme
+        val gallerySaveLocation = settingsJsonObject.optString("gallerySaveLocation")
+            .let { value -> GallerySaveLocation.entries.firstOrNull { it.name == value } }
+            ?: defaults.gallerySaveLocation
 
         store.edit { prefs ->
             val active = importedPresets.first { it.id == activePresetId }
@@ -336,6 +355,11 @@ class SettingsRepository(private val store: androidx.datastore.core.DataStore<an
             prefs[Keys.TOP_GRADIENT_BLUR_RANGE] = settingsJsonObject
                 .optInt("topGradientBlurRangeDp", defaults.topGradientBlurRangeDp)
                 .coerceIn(0, 240)
+            prefs[Keys.SAVE_PHOTOS_TO_GALLERY] = settingsJsonObject.optBoolean(
+                "savePhotosToGallery",
+                defaults.savePhotosToGallery,
+            )
+            prefs[Keys.GALLERY_SAVE_LOCATION] = gallerySaveLocation.name
         }
     }
 
@@ -371,6 +395,8 @@ class SettingsRepository(private val store: androidx.datastore.core.DataStore<an
         val GLASS_EFFECTS = booleanPreferencesKey("glass_effects_enabled")
         val TOP_GRADIENT_BLUR = booleanPreferencesKey("top_gradient_blur_enabled")
         val TOP_GRADIENT_BLUR_RANGE = intPreferencesKey("top_gradient_blur_range_dp")
+        val SAVE_PHOTOS_TO_GALLERY = booleanPreferencesKey("save_photos_to_gallery")
+        val GALLERY_SAVE_LOCATION = stringPreferencesKey("gallery_save_location")
     }
 
     val settings: Flow<AppSettings> = store.data.map { prefs ->
@@ -447,6 +473,10 @@ class SettingsRepository(private val store: androidx.datastore.core.DataStore<an
             glassEffectsEnabled = prefs[Keys.GLASS_EFFECTS] ?: false,
             topGradientBlurEnabled = prefs[Keys.TOP_GRADIENT_BLUR] ?: false,
             topGradientBlurRangeDp = (prefs[Keys.TOP_GRADIENT_BLUR_RANGE] ?: 72).coerceIn(0, 240),
+            savePhotosToGallery = prefs[Keys.SAVE_PHOTOS_TO_GALLERY] ?: true,
+            gallerySaveLocation = prefs[Keys.GALLERY_SAVE_LOCATION]?.let { name ->
+                GallerySaveLocation.entries.firstOrNull { it.name == name }
+            } ?: GallerySaveLocation.PICTURES,
         )
     }.retryWhen { error, _ ->
         readError.value = "设置读取失败，正在重试：${error.message.orEmpty()}"
@@ -469,9 +499,9 @@ class SettingsRepository(private val store: androidx.datastore.core.DataStore<an
             ApiPreset(
                 id = "default",
                 name = "默认配置",
-                baseUrl = legacyBaseUrl ?: "https://api.openai.com/v1",
+                baseUrl = legacyBaseUrl?.takeIf { it.isNotBlank() } ?: DEFAULT_API_BASE_URL,
                 apiKey = legacyApiKey.orEmpty(),
-                model = legacyModel ?: "gpt-4o-mini",
+                model = legacyModel?.takeIf { it.isNotBlank() } ?: DEFAULT_API_MODEL,
             ),
         )
     }
@@ -713,5 +743,13 @@ class SettingsRepository(private val store: androidx.datastore.core.DataStore<an
 
     suspend fun updateTopGradientBlurRangeDp(value: Int) {
         store.edit { it[Keys.TOP_GRADIENT_BLUR_RANGE] = value.coerceIn(0, 240) }
+    }
+
+    suspend fun updateSavePhotosToGallery(value: Boolean) {
+        store.edit { it[Keys.SAVE_PHOTOS_TO_GALLERY] = value }
+    }
+
+    suspend fun updateGallerySaveLocation(value: GallerySaveLocation) {
+        store.edit { it[Keys.GALLERY_SAVE_LOCATION] = value.name }
     }
 }

@@ -24,6 +24,7 @@ data class Nutrition(
     )
 }
 
+@kotlinx.serialization.Serializable
 enum class DishType {
     SINGLE_FOOD,
     MIXED_DISH,
@@ -37,12 +38,14 @@ enum class DishType {
     OTHER,
 }
 
+@kotlinx.serialization.Serializable
 enum class ComponentSource {
     VISIBLE,
     INFERRED,
     USER_PROVIDED,
 }
 
+@kotlinx.serialization.Serializable
 data class NutritionReference(
     val sourceId: String,
     val description: String,
@@ -50,6 +53,7 @@ data class NutritionReference(
     val per100g: Nutrition,
 )
 
+@kotlinx.serialization.Serializable
 data class FoodComponent(
     val id: String,
     val name: String,
@@ -73,6 +77,7 @@ data class FoodComponent(
         get() = nutritionReference?.per100g?.times(weightMaxG / 100.0) ?: Nutrition()
 }
 
+@kotlinx.serialization.Serializable
 data class RecognizedDish(
     val id: String,
     val name: String,
@@ -92,6 +97,7 @@ data class RecognizedDish(
     val nutritionMax: Nutrition get() = allComponents.fold(Nutrition()) { total, item -> total + item.nutritionMax }
 }
 
+@kotlinx.serialization.Serializable
 data class MealRecognition(
     val isFoodImage: Boolean,
     val mealName: String,
@@ -116,11 +122,26 @@ private fun RecognizedDish.splitDishes(): List<RecognizedDish> =
         children.forEach { addAll(it.splitDishes()) }
     }
 
+@kotlinx.serialization.Serializable
 enum class MealType(val label: String) {
     BREAKFAST("早餐"),
     LUNCH("午餐"),
     DINNER("晚餐"),
     SNACK("加餐"),
+}
+
+/** User-visible stages shared by the screen and the foreground live update. */
+@kotlinx.serialization.Serializable
+enum class RecognitionStage(
+    val title: String,
+    val detail: String,
+    val progress: Int,
+) {
+    PREPARING("准备中", "正在准备识别任务", 8),
+    RECOGNIZING("识别中", "正在分析食物与重量", 25),
+    REVIEWING("复核中", "正在复核识别结果", 50),
+    MATCHING("匹配中", "正在匹配营养数据库", 75),
+    COMPLETED("识别完成", "点击查看识别结果", 100),
 }
 
 data class FoodLog(

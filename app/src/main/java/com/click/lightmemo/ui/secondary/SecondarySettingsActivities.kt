@@ -33,10 +33,12 @@ import com.click.lightmemo.ui.screens.CalorieTargetScreen
 import com.click.lightmemo.ui.screens.DataManagementScreen
 import com.click.lightmemo.ui.screens.FoodDatabaseScreen
 import com.click.lightmemo.ui.screens.PersonalInfoScreen
+import com.click.lightmemo.ui.screens.PermissionManagementScreen
 import com.click.lightmemo.ui.theme.FoodTheme
 import com.click.lightmemo.ui.utils.LocalOverScrollState
 import com.click.lightmemo.ui.utils.OverScrollState
 import com.click.lightmemo.viewmodel.BackupViewModel
+import com.click.lightmemo.viewmodel.AppUpdateViewModel
 import com.click.lightmemo.viewmodel.SettingsViewModel
 import com.kyant.backdrop.Backdrop
 import com.kyant.backdrop.isRenderEffectSupported
@@ -288,7 +290,28 @@ class AboutActivity : SecondarySettingsActivity() {
         contentPadding: PaddingValues,
         scrollBehavior: SharedScrollBehavior,
     ) {
+        val updateVm: AppUpdateViewModel = viewModel()
         AboutScreen(
+            contentPadding = contentPadding,
+            scrollBehavior = scrollBehavior,
+            listState = rememberLazyListState(),
+            updateViewModel = updateVm,
+        )
+    }
+}
+
+class PermissionManagementActivity : SecondarySettingsActivity() {
+    override val pageTitle = "权限管理"
+
+    @Composable
+    override fun PageContent(
+        settingsVm: SettingsViewModel,
+        backupVm: BackupViewModel,
+        contentPadding: PaddingValues,
+        scrollBehavior: SharedScrollBehavior,
+    ) {
+        PermissionManagementScreen(
+            viewModel = settingsVm,
             contentPadding = contentPadding,
             scrollBehavior = scrollBehavior,
             listState = rememberLazyListState(),

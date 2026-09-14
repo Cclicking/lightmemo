@@ -15,22 +15,25 @@ import com.click.lightmemo.domain.FoodComponent
 import com.click.lightmemo.domain.MealRecognition
 import com.click.lightmemo.domain.RecognizedDish
 import com.click.lightmemo.domain.NutritionReference
-import com.click.lightmemo.domain.splitDishes
-import com.click.lightmemo.network.RecognitionException
+import com.click.lightmemo.domain.RecognitionStage
+import com.click.lightmemo.recognition.RecognitionRequest
+import com.click.lightmemo.recognition.RecognitionRequestType
+import com.click.lightmemo.recognition.RecognitionService
+import com.click.lightmemo.recognition.RecognitionTaskRecord
+import com.click.lightmemo.recognition.RecognitionTaskStatus
 import java.time.LocalDate
 import java.time.LocalTime
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 sealed interface AddStep {
     data object PickSource : AddStep
@@ -55,6 +58,7 @@ enum class QuantityMode(val label: String) {
 data class AddFoodUiState(
     val step: AddStep = AddStep.PickSource,
     val recognizing: Boolean = false,
+    val recognitionStage: RecognitionStage? = null,
     val replacingDishId: String? = null,
     val saving: Boolean = false,
     val error: String? = null,
@@ -100,11 +104,11 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
     private val foodApp = app as FoodApp
     private val repo = foodApp.foodLogRepository
     private val settingsRepo = foodApp.settingsRepository
-    private val client = foodApp.recognitionClient
     private val nutritionDatabase = foodApp.nutritionDatabase
+    private val recognitionTaskStore = foodApp.recognitionTaskStore
 
-    private var recognitionJob: Job? = null
     private var databaseSearchJob: Job? = null
+    private var activeTaskId: String? = null
     private val _uiState = MutableStateFlow(AddFoodUiState())
     val uiState: StateFlow<AddFoodUiState> = _uiState.asStateFlow()
 
@@ -113,6 +117,9 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
             settingsRepo.foodPresets.collect { presets ->
                 _uiState.value = _uiState.value.copy(presets = presets)
             }
+        }
+        viewModelScope.launch {
+            recognitionTaskStore.state.collect(::syncRecognitionTask)
         }
     }
 
@@ -289,12 +296,18 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
 
     fun backToPick() {
         if (_uiState.value.saving) return
-        recognitionJob?.cancel()
+        val task = recognitionTaskStore.state.value
+        if (task?.status == RecognitionTaskStatus.RUNNING) {
+            RecognitionService.cancel(foodApp, task.request.id)
+        } else {
+            recognitionTaskStore.clear(task?.request?.id)
+        }
         databaseSearchJob?.cancel()
         _uiState.value = _uiState.value.copy(
             step = AddStep.PickSource,
             error = null,
             recognizing = false,
+            recognitionStage = null,
             manualNutrition = null,
             showPresetSheet = false,
             databaseSearch = null,
@@ -324,40 +337,27 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
             _uiState.value = _uiState.value.copy(error = "请输入食物名称")
             return
         }
-        recognitionJob?.cancel()
-        recognitionJob = viewModelScope.launch {
-            val current = settings.value
-            if (!current.isRecognitionConfigured) {
-                notify("请先在设置中配置 API Key 与 Base URL")
-                _uiState.value = _uiState.value.copy(error = "请先在设置中配置 API Key 与 Base URL")
-                return@launch
-            }
-            _uiState.value = _uiState.value.copy(recognizing = true, error = null)
-            notify("已开始识别营养，完成后自动回填")
-            try {
-                val query = client.normalizeFoodQuery(
-                    baseUrl = current.baseUrl,
-                    apiKey = current.apiKey,
-                    model = current.model,
-                    foodName = trimmedName,
-                )
-                val reference = nutritionDatabase.lookup(query, current.foodDataCentralApiKey)
-                    ?: throw RecognitionException("USDA 数据库中未找到该食物，请尝试更具体的名称")
-                _uiState.value = _uiState.value.copy(
-                    recognizing = false,
-                    manualNutrition = reference.per100g * (grams / 100.0),
-                )
-                notify("营养识别完成，已自动回填")
-            } catch (e: RecognitionException) {
-                notify(e.message ?: "识别失败")
-                _uiState.value = _uiState.value.copy(recognizing = false, error = e.message)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                notify(e.message ?: "识别失败")
-                _uiState.value = _uiState.value.copy(recognizing = false, error = e.message ?: "识别失败")
-            }
-        }
+        val state = _uiState.value
+        _uiState.value = state.copy(
+            step = AddStep.Manual(initialName = trimmedName, initialGrams = grams),
+            quantityMode = QuantityMode.GRAMS,
+            manualNutrition = null,
+            error = null,
+        )
+        startRecognition(
+            RecognitionRequest(
+                type = RecognitionRequestType.MANUAL_GRAMS,
+                foodName = trimmedName,
+                grams = grams,
+                mealType = state.mealType,
+                targetDateEpochDay = state.targetDateEpochDay,
+                mealMinuteOfDay = state.mealMinuteOfDay,
+                note = state.note,
+                selectedTags = state.selectedTags.toList(),
+                plateSize = state.plateSize,
+            ),
+            startMessage = "已开始识别营养，完成后自动回填",
+        )
     }
 
     /** 份数模式：先用大模型估重，再识别营养。 */
@@ -368,38 +368,34 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
             _uiState.value = _uiState.value.copy(error = "请输入食物名称")
             return
         }
-        recognitionJob?.cancel()
-        recognitionJob = viewModelScope.launch {
-            val current = settings.value
-            if (!current.isRecognitionConfigured) {
-                notify("请先在设置中配置 API Key 与 Base URL")
-                _uiState.value = _uiState.value.copy(error = "请先在设置中配置 API Key 与 Base URL")
-                return@launch
-            }
-            _uiState.value = _uiState.value.copy(recognizing = true, error = null)
-            notify("正在用大模型估计重量…")
-            try {
-                val grams = client.estimatePortionGrams(
-                    baseUrl = current.baseUrl,
-                    apiKey = current.apiKey,
-                    model = current.model,
-                    foodName = trimmedName,
-                    portions = portions,
-                    portionHint = _uiState.value.photoDescription,
-                )
-                _uiState.value = _uiState.value.copy(estimatedPortionGrams = grams)
-                notify("估计重量 ${grams.toInt()}g，继续识别营养…")
-                recognizeManual(trimmedName, grams)
-            } catch (e: RecognitionException) {
-                notify(e.message ?: "估重失败")
-                _uiState.value = _uiState.value.copy(recognizing = false, error = e.message)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                notify(e.message ?: "估重失败")
-                _uiState.value = _uiState.value.copy(recognizing = false, error = e.message ?: "估重失败")
-            }
+        if (!portions.isFinite() || portions <= 0) {
+            _uiState.value = _uiState.value.copy(error = "请输入大于 0 的有效份数")
+            return
         }
+        val state = _uiState.value
+        _uiState.value = state.copy(
+            step = AddStep.Manual(initialName = trimmedName),
+            quantityMode = QuantityMode.PORTIONS,
+            portionCount = portions,
+            estimatedPortionGrams = null,
+            manualNutrition = null,
+            error = null,
+        )
+        startRecognition(
+            RecognitionRequest(
+                type = RecognitionRequestType.MANUAL_PORTIONS,
+                foodName = trimmedName,
+                portions = portions,
+                portionHint = state.photoDescription,
+                mealType = state.mealType,
+                targetDateEpochDay = state.targetDateEpochDay,
+                mealMinuteOfDay = state.mealMinuteOfDay,
+                note = state.note,
+                selectedTags = state.selectedTags.toList(),
+                plateSize = state.plateSize,
+            ),
+            startMessage = "正在用大模型估计重量…",
+        )
     }
 
     /** 顶部输入框回车：立刻文字识别。 */
@@ -410,105 +406,200 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
             _uiState.value = _uiState.value.copy(error = "请先输入食物描述")
             return
         }
-        recognitionJob?.cancel()
-        recognitionJob = viewModelScope.launch {
-            val current = settings.value
-            if (!current.isRecognitionConfigured) {
-                notify("请先在设置中配置 API Key 与 Base URL")
-                _uiState.value = _uiState.value.copy(error = "请先在设置中配置 API Key 与 Base URL")
-                return@launch
-            }
+        val state = _uiState.value
+        _uiState.value = state.copy(
+            quickInput = text,
+            step = AddStep.PickSource,
+            error = null,
+        )
+        startRecognition(
+            RecognitionRequest(
+                type = RecognitionRequestType.TEXT,
+                text = text,
+                mealType = state.mealType,
+                targetDateEpochDay = state.targetDateEpochDay,
+                mealMinuteOfDay = state.mealMinuteOfDay,
+                note = state.note,
+                selectedTags = state.selectedTags.toList(),
+                plateSize = state.plateSize,
+            ),
+            startMessage = "已开始文字识别…",
+        )
+    }
+
+    fun recognizeFromUri(uri: Uri) {
+        val state = _uiState.value
+        _uiState.value = state.copy(step = AddStep.PickSource, error = null)
+        startRecognition(
+            RecognitionRequest(
+                type = RecognitionRequestType.IMAGE,
+                imageUri = uri.toString(),
+                mealType = state.mealType,
+                targetDateEpochDay = state.targetDateEpochDay,
+                mealMinuteOfDay = state.mealMinuteOfDay,
+                note = state.note,
+                selectedTags = state.selectedTags.toList(),
+                plateSize = state.plateSize,
+            ),
+            startMessage = "已开始识别食物，结果将在后台返回",
+        )
+    }
+
+    private fun startRecognition(request: RecognitionRequest, startMessage: String) {
+        val previous = recognitionTaskStore.state.value
+        if (previous?.status == RecognitionTaskStatus.RUNNING) {
+            RecognitionService.cancel(foodApp, previous.request.id)
+        }
+        recognitionTaskStore.begin(request)
+        notify(startMessage)
+        try {
+            RecognitionService.start(foodApp, request)
+        } catch (error: Exception) {
+            val message = error.message ?: "无法启动后台识别"
+            recognitionTaskStore.fail(request.id, message)
+            notify(message)
+        }
+    }
+
+    private fun syncRecognitionTask(record: RecognitionTaskRecord?) {
+        if (record == null) {
             _uiState.value = _uiState.value.copy(
-                recognizing = true,
-                error = null,
-                quickInput = text,
-                step = AddStep.PickSource,
+                recognizing = false,
+                recognitionStage = null,
+                replacingDishId = null,
             )
-            notify("已开始文字识别…")
-            try {
-                val tagsDesc = _uiState.value.selectedTags.joinToString("、")
-                val visualResult = client.recognizeFromText(
-                    baseUrl = current.baseUrl,
-                    apiKey = current.apiKey,
-                    model = current.model,
-                    text = text,
-                    userDescription = buildList {
-                        current.systemBackground.takeIf { it.isNotBlank() }?.let { add("用户背景：$it") }
-                        tagsDesc.takeIf { it.isNotBlank() }?.let { add("本餐说明：$it") }
-                        _uiState.value.note.takeIf { it.isNotBlank() }?.let { add("备注：$it") }
-                    }.joinToString("\n"),
-                    mealType = _uiState.value.mealType.label,
-                    plateSize = _uiState.value.plateSize,
-                )
-                if (visualResult.dishes.isEmpty()) {
-                    throw RecognitionException("未能识别到可记录的食物，请换个说法")
+            return
+        }
+
+        val request = record.request
+        val baseState = _uiState.value.copy(
+            mealType = request.mealType,
+            targetDateEpochDay = request.targetDateEpochDay,
+            mealMinuteOfDay = request.mealMinuteOfDay,
+            note = request.note,
+            selectedTags = request.selectedTags.toSet(),
+            plateSize = request.plateSize,
+        )
+        when (record.status) {
+            RecognitionTaskStatus.RUNNING -> {
+                activeTaskId = request.id
+                val step = when (request.type) {
+                    RecognitionRequestType.MANUAL_GRAMS,
+                    RecognitionRequestType.MANUAL_PORTIONS,
+                    -> AddStep.Manual(
+                        initialName = request.foodName.orEmpty(),
+                        initialGrams = request.grams,
+                    )
+
+                    RecognitionRequestType.REPLACE_DISH -> AddStep.Review(
+                        imageUri = request.imageUri,
+                        result = request.baseResult ?: return,
+                    )
+
+                    else -> AddStep.PickSource
                 }
-                val result = nutritionDatabase.enrich(visualResult, current.foodDataCentralApiKey).splitDishes()
-                _uiState.value = _uiState.value.copy(
-                    recognizing = false,
-                    step = AddStep.Review(imageUri = null, result = result),
+                _uiState.value = baseState.copy(
+                    step = step,
+                    quickInput = request.text ?: baseState.quickInput,
+                    quantityMode = if (request.type == RecognitionRequestType.MANUAL_PORTIONS) {
+                        QuantityMode.PORTIONS
+                    } else {
+                        baseState.quantityMode
+                    },
+                    portionCount = request.portions ?: baseState.portionCount,
+                    recognizing = true,
+                    recognitionStage = record.stage,
+                    replacingDishId = request.replaceDishId,
+                    error = null,
                 )
-                notify("识别完成，请确认结果")
-            } catch (e: RecognitionException) {
-                notify(e.message ?: "识别失败")
-                _uiState.value = _uiState.value.copy(recognizing = false, error = e.message)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                notify(e.message ?: "识别失败")
-                _uiState.value = _uiState.value.copy(recognizing = false, error = e.message ?: "识别失败")
+            }
+
+            RecognitionTaskStatus.COMPLETED -> {
+                val shouldNotify = activeTaskId == request.id
+                activeTaskId = null
+                when (request.type) {
+                    RecognitionRequestType.MANUAL_GRAMS,
+                    RecognitionRequestType.MANUAL_PORTIONS,
+                    -> _uiState.value = baseState.copy(
+                        step = AddStep.Manual(
+                            initialName = request.foodName.orEmpty(),
+                            initialGrams = request.grams,
+                        ),
+                        quantityMode = if (request.type == RecognitionRequestType.MANUAL_PORTIONS) {
+                            QuantityMode.PORTIONS
+                        } else {
+                            QuantityMode.GRAMS
+                        },
+                        portionCount = request.portions ?: baseState.portionCount,
+                        estimatedPortionGrams = record.estimatedPortionGrams,
+                        manualNutrition = record.manualNutrition,
+                        recognizing = false,
+                        recognitionStage = null,
+                        replacingDishId = null,
+                        error = null,
+                    )
+
+                    RecognitionRequestType.TEXT,
+                    RecognitionRequestType.IMAGE,
+                    -> record.result?.let { result ->
+                        _uiState.value = baseState.copy(
+                            step = AddStep.Review(record.imageUri, result),
+                            quickInput = request.text ?: baseState.quickInput,
+                            recognizing = false,
+                            recognitionStage = null,
+                            replacingDishId = null,
+                            error = null,
+                        )
+                    }
+
+                    RecognitionRequestType.REPLACE_DISH -> record.result?.let { replacement ->
+                        _uiState.value = baseState.copy(
+                            step = AddStep.Review(
+                                request.imageUri,
+                                mergeReplacement(request, replacement),
+                            ),
+                            recognizing = false,
+                            recognitionStage = null,
+                            replacingDishId = null,
+                            error = null,
+                        )
+                    }
+                }
+                if (shouldNotify) {
+                    notify(
+                        when (request.type) {
+                            RecognitionRequestType.MANUAL_GRAMS,
+                            RecognitionRequestType.MANUAL_PORTIONS,
+                            -> "营养识别完成，已自动回填"
+                            RecognitionRequestType.REPLACE_DISH -> "菜品已更换"
+                            else -> "识别完成，请确认结果"
+                        },
+                    )
+                }
+            }
+
+            RecognitionTaskStatus.FAILED -> {
+                val shouldNotify = activeTaskId == request.id
+                activeTaskId = null
+                _uiState.value = baseState.copy(
+                    recognizing = false,
+                    recognitionStage = null,
+                    replacingDishId = null,
+                    error = record.error ?: "识别失败",
+                )
+                if (shouldNotify) notify(record.error ?: "识别失败")
             }
         }
     }
 
-    fun recognizeFromUri(uri: Uri) {
-        recognitionJob?.cancel()
-        recognitionJob = viewModelScope.launch {
-            val current = settings.value
-            if (!current.isRecognitionConfigured) {
-                notify("请先在设置中配置 API Key 与 Base URL")
-                _uiState.value = _uiState.value.copy(error = "请先在设置中配置 API Key 与 Base URL")
-                return@launch
-            }
-            _uiState.value = _uiState.value.copy(recognizing = true, error = null, step = AddStep.PickSource)
-            notify("已开始识别食物，结果将在后台返回")
-            try {
-                val base64 = withContext(Dispatchers.IO) { encodeImage(uri) }
-                val tagsDesc = _uiState.value.selectedTags.joinToString("、")
-                val visualResult = client.recognize(
-                    baseUrl = current.baseUrl,
-                    apiKey = current.apiKey,
-                    model = current.model,
-                    imageBase64 = base64,
-                    mimeType = "image/jpeg",
-                    userDescription = buildList {
-                        current.systemBackground.takeIf { it.isNotBlank() }?.let { add("用户背景：$it") }
-                        tagsDesc.takeIf { it.isNotBlank() }?.let { add("本餐说明：$it") }
-                        _uiState.value.note.takeIf { it.isNotBlank() }?.let { add("备注：$it") }
-                    }.joinToString("\n"),
-                    mealType = _uiState.value.mealType.label,
-                    plateSize = _uiState.value.plateSize,
-                )
-                if (!visualResult.isFoodImage || visualResult.dishes.isEmpty()) {
-                    throw RecognitionException("图片中没有识别到可记录的食物")
-                }
-                val result = nutritionDatabase.enrich(visualResult, current.foodDataCentralApiKey).splitDishes()
-                val savedImageUri = FoodImages.persistEncoded(foodApp, base64)
-                _uiState.value = _uiState.value.copy(
-                    recognizing = false,
-                    step = AddStep.Review(imageUri = savedImageUri.toString(), result = result),
-                )
-                notify("食物识别完成，照片已保存，请确认结果")
-            } catch (e: RecognitionException) {
-                notify(e.message ?: "识别失败")
-                _uiState.value = _uiState.value.copy(recognizing = false, error = e.message)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                notify(e.message ?: "识别失败")
-                _uiState.value = _uiState.value.copy(recognizing = false, error = e.message ?: "识别失败")
-            }
-        }
+    private fun mergeReplacement(request: RecognitionRequest, replacement: MealRecognition): MealRecognition {
+        val original = request.baseResult ?: return replacement
+        val replacementDishes = replacement.dishes.map { it.withFreshIds() }
+        return original.copy(
+            dishes = original.dishes.flatMap { dish ->
+                if (dish.id == request.replaceDishId) replacementDishes else listOf(dish)
+            },
+        )
     }
 
     fun saveManual(name: String, grams: Double, nutrition: Nutrition, onSaved: () -> Unit = {}) {
@@ -525,6 +616,7 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
                     mealTags = _uiState.value.selectedTags.toList(),
                 ),
             )
+            recognitionTaskStore.clear()
             _uiState.value = _uiState.value.copy(step = AddStep.PickSource, error = null)
             notify("食物已保存")
         }
@@ -575,49 +667,23 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
         val review = state.step as? AddStep.Review ?: return
         val original = review.result.dishes.find { it.id == dishId } ?: return
         if (state.recognizing || state.saving || name.isBlank()) return
-        val current = settings.value
-        if (!current.isRecognitionConfigured) {
-            notify("请先在设置中配置 API Key 与 Base URL")
-            return
-        }
         _uiState.value = state.copy(recognizing = true, replacingDishId = dishId, error = null)
-        recognitionJob = viewModelScope.launch {
-            try {
-                val visual = client.recognizeFromText(
-                    baseUrl = current.baseUrl,
-                    apiKey = current.apiKey,
-                    model = current.model,
-                    text = "${original.grams}克${name.trim()}",
-                    userDescription = "更正一道菜品，保持总重量，重新识别组成。",
-                    mealType = state.mealType.label,
-                    plateSize = state.plateSize,
-                )
-                val replacement = nutritionDatabase.enrich(visual, current.foodDataCentralApiKey).splitDishes()
-                require(replacement.dishes.isNotEmpty() && replacement.dishes.all { it.allComponents.isNotEmpty() }) {
-                    "未识别到新菜品，请重试"
-                }
-                val latest = _uiState.value.step as? AddStep.Review ?: return@launch
-                // Fresh IDs isolate replacement rows from old edit state and other recognition results.
-                val dishes = replacement.dishes.map { dish ->
-                    dish.copy(
-                        id = java.util.UUID.randomUUID().toString(),
-                        components = dish.components.map { it.copy(id = java.util.UUID.randomUUID().toString()) },
-                    )
-                }
-                _uiState.value = _uiState.value.copy(step = latest.copy(result = latest.result.copy(
-                    dishes = latest.result.dishes.flatMap { if (it.id == dishId) dishes else listOf(it) },
-                )))
-                notify("菜品已更换")
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                val message = e.message ?: "更换失败，请重试"
-                _uiState.value = _uiState.value.copy(error = message)
-                notify(message)
-            } finally {
-                _uiState.value = _uiState.value.copy(recognizing = false, replacingDishId = null)
-            }
-        }
+        startRecognition(
+            RecognitionRequest(
+                type = RecognitionRequestType.REPLACE_DISH,
+                imageUri = review.imageUri,
+                foodName = name.trim(),
+                mealType = state.mealType,
+                targetDateEpochDay = state.targetDateEpochDay,
+                mealMinuteOfDay = state.mealMinuteOfDay,
+                note = state.note,
+                selectedTags = state.selectedTags.toList(),
+                plateSize = state.plateSize,
+                baseResult = review.result,
+                replaceDishId = dishId,
+            ),
+            startMessage = "正在重新识别菜品…",
+        )
     }
 
     fun saveRecognized(result: MealRecognition, imageUri: String?, onSaved: () -> Unit = {}) {
@@ -648,6 +714,7 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
                         mealTags = tags,
                     )
             })
+            recognitionTaskStore.clear()
             _uiState.value = _uiState.value.copy(
                 step = AddStep.PickSource,
                 error = null,
@@ -677,8 +744,6 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
     }
-
-    private suspend fun encodeImage(uri: Uri): String = FoodImages.encode(foodApp, uri)
 
 }
 
@@ -713,6 +778,12 @@ private fun RecognizedDish.withReference(
         if (component.id == componentId) component.copy(nutritionReference = reference) else component
     },
     children = children.map { it.withReference(componentId, reference) },
+)
+
+private fun RecognizedDish.withFreshIds(): RecognizedDish = copy(
+    id = java.util.UUID.randomUUID().toString(),
+    components = components.map { it.copy(id = java.util.UUID.randomUUID().toString()) },
+    children = children.map { it.withFreshIds() },
 )
 
 private inline fun MutableStateFlow<AddFoodUiState>.updateDatabaseSearch(

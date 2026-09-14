@@ -5,4 +5,5 @@
     <string name="nav_stats">统计</string>
     <string name="nav_mine">我的</string>
     <string name="nav_settings">设置</string>
+    <string name="recognition_notification_channel">食物识别</string>
 </resources>
