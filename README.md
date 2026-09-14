@@ -2,8 +2,6 @@
 
 拍照识别或手动记录一餐的热量与营养，准确拆分基础食物，数据库匹配热量与营养。
 
-**minSdk** 35
-
 ---
 
 ## 功能展示
@@ -12,46 +10,50 @@
 
 - **热量总览**：当日摄入大数字 + 进度条，对照每日目标一眼可见
 - **三大营养素环**：蛋白质 / 碳水 / 脂肪各自进度与目标
-- **按餐次组织**：早餐、午餐、晚餐、加餐；有记录才出现标题，空态有引导卡片
+- **按餐次组织**：早餐、午餐、晚餐、加餐；卡片式全览
 
+<p align="center">
+  <img src="docs/readme_pics/Today.jpg" alt="今日页面" width="280">
+</p>
 
 ### 记录一餐
 
-- **拍照 / 相册**：相机权限申请，Photo Picker 选图
-- **识别流水线**：图片质量检查 → 菜品识别 → 组成拆解 → 二次视觉审核 → 映射标准食物 → 按重量计算
-- **确认页可改**：按菜品展示组成、估计重量区间、置信度与数据出处；改任一克数即时重算整餐
-- **手动录入兜底**：未配置 API 也能直接填名称与营养
+- **多种方式任选：** 总有一种你想要的
+- **识别上岛***：接入安卓16实时更新通知，支持的系统可以上岛
+- **识别流程**：图片质量检查 → 菜品识别 → 组成拆解 → 二次视觉审核 → 映射标准食物 → 按重量计算
+- **丰富的识别结果**：按菜品展示组成、估计重量区间、置信度与数据出处；改动即时重算
+
+<p align="center">
+  <img src="docs/readme_pics/Record.jpg" alt="记录一餐" width="280">
+  <img src="docs/readme_pics/Result.jpg" alt="识别结果" width="280">
+</p>
 
 ### 统计
 
-- **共用日期组件**：与今日页同一套日历（周 / 月、跟手滑动、标题样式一致）
 - **日均与达标**：记录日数、日均热量、未超目标 / 超标天数
 - **饮食结构**：各餐次热量占比环图
 - **每日柱状图**：近一段时间逐日摄入，点选查看单日详情
-- **宏量摄入**：平均蛋白 / 碳水 / 脂肪对照目标
+- **摄入建议**：实时推荐摄入种类
 
-### 我的 · 设置
+<p align="center">
+  <img src="docs/readme_pics/Statistics.jpg" alt="统计页面" width="280">
+</p>
 
-- 每日热量与宏量目标
-- OpenAI 兼容 Vision API（Base URL / Key / 模型）
-- USDA FoodData Central API Key（可选）
-- 数据备份与恢复、食物库管理、外观（玻璃效果等）
 
 ---
 
 ## 界面
 
-整体是 HyperOS 风格的液态玻璃，内容铺在可采样的背景层上，导航与按钮实时折射下层画面。
+整体是 HyperOS 风格的液态玻璃，这太Hyper了
 
 | 区域 | 表现 |
 |------|------|
-| 底栏 | 胶囊玻璃 Tab，拖动时有阻尼拉伸与速度拉长；中央 **Liquid Add** 圆形按钮可按压缩放、拖拽跟手形变 |
+| 底栏 | 胶囊玻璃 Tab，拖动时有阻尼拉伸与速度拉长；圆形液态玻璃按钮可按压缩放、拖拽跟手形变 |
 | 顶栏 | 可折叠大标题 + 渐进模糊；右侧液态图标按钮（管理卡片、切换月视图） |
-| 卡片 | Miuix `Card`，内容区统一 16dp 边距；跨页滑动时页宽 = 卡片宽 + 间隙 |
-| 弹层 | 添加食物使用毛玻璃 Bottom Sheet；详情 / 编辑为圆角浮层 |
-| 背景 | `layerBackdrop` 捕获页面底色与滚动内容，供玻璃导航、按钮、卡片采样 |
+| 卡片 | Miuix `Card`，内容区统一 16dp 边距； |
+| 弹层 | 毛玻璃 Bottom Sheet |
+|  |
 
-无 Runtime Shader 时降级为半透明表面，保证功能可用。
 
 ---
 
@@ -100,17 +102,10 @@ APK：`app/build/outputs/apk/debug/app-debug.apk`
 ### 使用前配置
 
 1. 打开 App → 设置
-2. 默认使用 DeepSeek：Base URL 为 `https://api.deepseek.com`、模型为 `deepseek-flash`；也可填写其他 OpenAI 兼容服务的 Base URL、API Key 和模型名
-3. 可选：USDA FDC API Key
-4. 设置每日热量目标
+2. 填入api key；默认使用 DeepSeek配置，也可填写其他 OpenAI 兼容服务的 Base URL、API Key 和模型名
+3. 设置每日热量目标
+4.  可选：USDA FDC API Key
 
-未配置 API 时仍可手动录入；拍照识别会提示先完成配置。
 
-### 更新离线营养库
 
-```powershell
-python tools/generate_fdc_asset.py <CSV解压目录> app/src/main/assets/fdc_sr_legacy_macros.tsv.gz
-python tools/generate_china_food_asset.py <food_composition_full.csv> app/src/main/assets/china_food_composition.tsv.gz
-```
-
-第三方许可与数据来源见 [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md)。
+第三方许可与数据来源见 [`docs/THIRD-PARTY-NOTICES.md`](docs/THIRD-PARTY-NOTICES.md)。
