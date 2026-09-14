@@ -1,5 +1,6 @@
 package com.click.lightmemo.data
 
+import com.click.lightmemo.domain.FoodComponent
 import com.click.lightmemo.domain.Nutrition
 import kotlinx.serialization.Serializable
 
@@ -10,6 +11,8 @@ data class PresetFood(
     val defaultGrams: Double,
     val portionLabel: String,
     val nutrition: Nutrition? = null,
+    /** 预设食物的组成成分，可与营养并存 */
+    val components: List<FoodComponent> = emptyList(),
 )
 
 val DefaultPresetFoods = listOf(

@@ -490,7 +490,14 @@ fun FoodAppRoot() {
                         .calculateTopPadding()
                     BlurBottomSheet(
                         show = showAdd,
-                        title = if (addState.step is AddStep.PickSource) "添加食物" else "记录食物",
+                        title = when (addState.step) {
+                            AddStep.PickSource -> "添加食物"
+                            AddStep.PresetList -> "预设食物"
+                            is AddStep.PresetEdit -> "编辑预设"
+                            is AddStep.Manual -> "文字录入"
+                            is AddStep.ManualEdit -> "手动录入"
+                            is AddStep.Review -> "识别结果"
+                        },
                         liquidGlassBackdrop = if (blurGlassSupported) backdrop else null,
                         dimBackground = true,
                         sheetOffsetDp = statusBarsPadding + 5.dp,
@@ -501,10 +508,9 @@ fun FoodAppRoot() {
                             LiquidTopBarButton(
                                 onClick = {
                                     if (addState.saving) return@LiquidTopBarButton
-                                    if (addState.step is AddStep.PickSource) {
-                                        showAdd = false
-                                    } else {
-                                        addVm.backToPick()
+                                    when {
+                                        addState.step is AddStep.PickSource -> showAdd = false
+                                        else -> addVm.requestSecondaryBack()
                                     }
                                 },
                                 backdrop = sheetContentBackdrop ?: backdrop,

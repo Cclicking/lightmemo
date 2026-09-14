@@ -42,10 +42,27 @@ sealed interface AddStep {
         val result: MealRecognition,
     ) : AddStep
 
+    /** 文字录入：名称 / 计量 / 自动识别 / 手动录入入口 */
     data class Manual(
         val initialName: String = "",
         val initialGrams: Double? = null,
         val initialNutrition: Nutrition? = null,
+    ) : AddStep
+
+    /** 手动录入：完整复用编辑记录页元素 */
+    data class ManualEdit(
+        val initialName: String = "",
+        val initialGrams: Double? = null,
+        val initialNutrition: Nutrition? = null,
+        val initialComponents: List<FoodComponent> = emptyList(),
+    ) : AddStep
+
+    /** 预设列表（与手动录入同级的 bottomsheet 步骤页） */
+    data object PresetList : AddStep
+
+    /** 预设编辑：复用手动录入页，去掉餐次与用餐信息 */
+    data class PresetEdit(
+        val preset: PresetFood,
     ) : AddStep
 }
 
@@ -74,9 +91,14 @@ data class AddFoodUiState(
     val quantityMode: QuantityMode = QuantityMode.GRAMS,
     val portionCount: Double = 1.0,
     val estimatedPortionGrams: Double? = null,
-    val showPresetSheet: Boolean = false,
     val presets: List<PresetFood> = DefaultPresetFoods,
     val databaseSearch: DatabaseSearchState? = null,
+    /** 手动录入（编辑记录式）页的成分数据库搜索 */
+    val draftDatabaseSearch: DatabaseSearchState? = null,
+    /** 二级页是否已有未保存内容（用于返回确认） */
+    val secondaryHasContent: Boolean = false,
+    val showLeaveConfirm: Boolean = false,
+    val showDeletePresetConfirm: Boolean = false,
 )
 
 data class DatabaseSearchState(
@@ -175,6 +197,7 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
         _uiState.value = _uiState.value.copy(note = value)
     }
 
+    /** 进入文字录入页（原手动录入入口）。 */
     fun openManual(
         initialName: String = "",
         initialGrams: Double? = null,
@@ -188,20 +211,222 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
             ),
             error = null,
             manualNutrition = initialNutrition,
-            showPresetSheet = false,
             quantityMode = QuantityMode.GRAMS,
             estimatedPortionGrams = null,
             portionCount = 1.0,
+            secondaryHasContent = initialName.isNotBlank() || initialNutrition != null,
+            showLeaveConfirm = false,
         )
     }
 
-    fun openPresetSheet() {
-        _uiState.value = _uiState.value.copy(showPresetSheet = true, error = null)
+    /** 进入手动录入页（复用编辑记录页）。 */
+    fun openManualEdit(
+        initialName: String = "",
+        initialGrams: Double? = null,
+        initialNutrition: Nutrition? = null,
+        initialComponents: List<FoodComponent> = emptyList(),
+    ) {
+        _uiState.value = _uiState.value.copy(
+            step = AddStep.ManualEdit(
+                initialName = initialName,
+                initialGrams = initialGrams,
+                initialNutrition = initialNutrition,
+                initialComponents = initialComponents,
+            ),
+            error = null,
+            draftDatabaseSearch = null,
+            secondaryHasContent = initialName.isNotBlank() ||
+                (initialGrams != null && initialGrams > 0) ||
+                initialNutrition != null ||
+                initialComponents.isNotEmpty(),
+            showLeaveConfirm = false,
+        )
     }
 
-    fun closePresetSheet() {
-        _uiState.value = _uiState.value.copy(showPresetSheet = false)
+    fun openPresetList() {
+        _uiState.value = _uiState.value.copy(
+            step = AddStep.PresetList,
+            error = null,
+            draftDatabaseSearch = null,
+            secondaryHasContent = false,
+            showLeaveConfirm = false,
+            showDeletePresetConfirm = false,
+        )
     }
+
+    fun openPresetEdit(preset: PresetFood) {
+        _uiState.value = _uiState.value.copy(
+            step = AddStep.PresetEdit(preset),
+            error = null,
+            draftDatabaseSearch = null,
+            secondaryHasContent = true,
+            showLeaveConfirm = false,
+        )
+    }
+
+    /** 新建预设：空白草稿进入编辑页。 */
+    fun openCreatePreset() {
+        val blank = PresetFood(
+            id = java.util.UUID.randomUUID().toString(),
+            name = "",
+            defaultGrams = 100.0,
+            portionLabel = "",
+            nutrition = null,
+            components = emptyList(),
+        )
+        _uiState.value = _uiState.value.copy(
+            step = AddStep.PresetEdit(blank),
+            error = null,
+            draftDatabaseSearch = null,
+            secondaryHasContent = false,
+            showLeaveConfirm = false,
+        )
+    }
+
+    fun openDraftComponentSearch(component: FoodComponent) {
+        val initialLookupQuery = component.databaseQuery.trim().ifBlank { component.name }
+        databaseSearchJob?.cancel()
+        _uiState.value = _uiState.value.copy(
+            draftDatabaseSearch = DatabaseSearchState(
+                componentId = component.id,
+                query = component.name,
+                loading = true,
+                initialLookupQuery = initialLookupQuery,
+            ),
+        )
+        searchDraftComponentInternal(
+            componentId = component.id,
+            displayQuery = component.name,
+            lookupQuery = initialLookupQuery,
+            keepInitialLookupQuery = true,
+        )
+    }
+
+    fun openDraftNewComponentSearch() {
+        databaseSearchJob?.cancel()
+        _uiState.value = _uiState.value.copy(
+            draftDatabaseSearch = DatabaseSearchState(
+                componentId = NewComponentId,
+                query = "",
+            ),
+        )
+    }
+
+    fun searchDraftComponentDatabase(componentId: String, query: String) {
+        val current = _uiState.value.draftDatabaseSearch
+        val useInitialLookupQuery = current?.componentId == componentId &&
+            current.query.trim() == query.trim()
+        val lookupQuery = if (useInitialLookupQuery) {
+            current.initialLookupQuery ?: query
+        } else {
+            query
+        }
+        searchDraftComponentInternal(
+            componentId = componentId,
+            displayQuery = query,
+            lookupQuery = lookupQuery,
+            keepInitialLookupQuery = false,
+        )
+    }
+
+    private fun searchDraftComponentInternal(
+        componentId: String,
+        displayQuery: String,
+        lookupQuery: String,
+        keepInitialLookupQuery: Boolean,
+    ) {
+        databaseSearchJob?.cancel()
+        val trimmed = lookupQuery.trim()
+        if (trimmed.isBlank()) {
+            updateDraftDatabaseSearch(componentId) {
+                it.copy(
+                    query = displayQuery,
+                    loading = false,
+                    results = emptyList(),
+                    error = "请输入食物名称",
+                    initialLookupQuery = if (keepInitialLookupQuery) it.initialLookupQuery else null,
+                )
+            }
+            return
+        }
+        updateDraftDatabaseSearch(componentId) {
+            it.copy(
+                query = displayQuery,
+                loading = true,
+                error = null,
+                initialLookupQuery = if (keepInitialLookupQuery) it.initialLookupQuery else null,
+            )
+        }
+        databaseSearchJob = viewModelScope.launch {
+            try {
+                val results = nutritionDatabase.searchCandidates(
+                    query = trimmed,
+                    apiKey = settings.value.foodDataCentralApiKey,
+                    limit = 20,
+                )
+                updateDraftDatabaseSearch(componentId) {
+                    it.copy(
+                        loading = false,
+                        results = results,
+                        error = if (results.isEmpty()) "没有找到相近的食物" else null,
+                    )
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                updateDraftDatabaseSearch(componentId) {
+                    it.copy(loading = false, results = emptyList(), error = e.message ?: "数据库查询失败")
+                }
+            }
+        }
+    }
+
+    fun closeDraftComponentSearch() {
+        databaseSearchJob?.cancel()
+        _uiState.value = _uiState.value.copy(draftDatabaseSearch = null)
+    }
+
+    private inline fun updateDraftDatabaseSearch(
+        componentId: String,
+        transform: (DatabaseSearchState) -> DatabaseSearchState,
+    ) {
+        val current = _uiState.value.draftDatabaseSearch ?: return
+        if (current.componentId == componentId) {
+            _uiState.value = _uiState.value.copy(draftDatabaseSearch = transform(current))
+        }
+    }
+
+    /** 手动录入页保存：按完整草稿写入一条食物记录。 */
+    fun saveManualDraft(draft: FoodLog, onSaved: () -> Unit = {}) {
+        save(onSaved) {
+            repo.insert(draft)
+            recognitionTaskStore.clear()
+            _uiState.value = _uiState.value.copy(
+                step = AddStep.PickSource,
+                error = null,
+                draftDatabaseSearch = null,
+                secondaryHasContent = false,
+                showLeaveConfirm = false,
+            )
+            notify("食物已保存")
+        }
+    }
+
+    /** 克重变化时按比例缩放已填营养。 */
+    fun scaleManualNutrition(fromGrams: Double, toGrams: Double) {
+        val current = _uiState.value.manualNutrition ?: return
+        if (!fromGrams.isFinite() || fromGrams <= 0.0 || !toGrams.isFinite() || toGrams <= 0.0) return
+        val ratio = toGrams / fromGrams
+        _uiState.value = _uiState.value.copy(
+            manualNutrition = Nutrition(
+                caloriesKcal = current.caloriesKcal * ratio,
+                proteinG = current.proteinG * ratio,
+                carbsG = current.carbsG * ratio,
+                fatG = current.fatG * ratio,
+            ),
+        )
+    }
+
 
     fun openComponentSearch(component: FoodComponent, replaceComponentName: Boolean = false) {
         // The component name is user-facing (usually Chinese), while the
@@ -314,21 +539,56 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
         _uiState.value = _uiState.value.copy(databaseSearch = null)
     }
 
-    fun updatePreset(updated: PresetFood, onSaved: () -> Unit) {
+    fun updatePreset(updated: PresetFood, onSaved: () -> Unit = {}) {
         save(onSaved) {
             settingsRepo.updateFoodPreset(updated)
+            _uiState.value = _uiState.value.copy(
+                step = AddStep.PresetList,
+                error = null,
+                draftDatabaseSearch = null,
+                secondaryHasContent = false,
+                showLeaveConfirm = false,
+                showDeletePresetConfirm = false,
+            )
             notify("预设「${updated.name}」已保存")
         }
     }
 
+    fun openDeletePresetConfirm() {
+        _uiState.value = _uiState.value.copy(showDeletePresetConfirm = true)
+    }
+
+    fun dismissDeletePresetConfirm() {
+        _uiState.value = _uiState.value.copy(showDeletePresetConfirm = false)
+    }
+
+    fun confirmDeletePreset(presetId: String, presetName: String) {
+        save({
+            _uiState.value = _uiState.value.copy(showDeletePresetConfirm = false)
+        }) {
+            settingsRepo.deleteFoodPreset(presetId)
+            _uiState.value = _uiState.value.copy(
+                step = AddStep.PresetList,
+                error = null,
+                draftDatabaseSearch = null,
+                secondaryHasContent = false,
+                showLeaveConfirm = false,
+                showDeletePresetConfirm = false,
+            )
+            notify("预设「$presetName」已删除")
+        }
+    }
+
     fun applyPreset(preset: PresetFood) {
-        // 已有营养数据时直接进手动录入并回填，避免再走识别
+        // 已有营养/成分时直接进手动录入编辑页，避免再走识别
         val nutrition = preset.nutrition
-        if (nutrition != null && nutrition.caloriesKcal > 0.0) {
-            openManual(
+        val hasNutrition = nutrition != null && nutrition.caloriesKcal > 0.0
+        if (hasNutrition || preset.components.isNotEmpty()) {
+            openManualEdit(
                 initialName = preset.name,
                 initialGrams = preset.defaultGrams,
                 initialNutrition = nutrition,
+                initialComponents = preset.components,
             )
             return
         }
@@ -339,17 +599,18 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
         }
         _uiState.value = _uiState.value.copy(
             quickInput = text,
-            showPresetSheet = false,
+            step = AddStep.PickSource,
             error = null,
         )
         recognizeFromText(text)
     }
 
     fun applyPresetManual(preset: PresetFood) {
-        openManual(
+        openManualEdit(
             initialName = preset.name,
             initialGrams = preset.defaultGrams,
             initialNutrition = preset.nutrition,
+            initialComponents = preset.components,
         )
     }
 
@@ -368,9 +629,88 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
             recognizing = false,
             recognitionStage = null,
             manualNutrition = null,
-            showPresetSheet = false,
             databaseSearch = null,
+            draftDatabaseSearch = null,
+            secondaryHasContent = false,
+            showLeaveConfirm = false,
+            showDeletePresetConfirm = false,
         )
+    }
+
+    /** 手动录入页返回文字录入，保留名称与克重。 */
+    fun backFromManualEdit() {
+        if (_uiState.value.saving) return
+        val step = _uiState.value.step
+        if (step is AddStep.ManualEdit) {
+            databaseSearchJob?.cancel()
+            _uiState.value = _uiState.value.copy(
+                step = AddStep.Manual(
+                    initialName = step.initialName,
+                    initialGrams = step.initialGrams,
+                    initialNutrition = step.initialNutrition,
+                ),
+                error = null,
+                draftDatabaseSearch = null,
+                showLeaveConfirm = false,
+            )
+        } else {
+            backToPick()
+        }
+    }
+
+    fun setSecondaryHasContent(value: Boolean) {
+        if (_uiState.value.secondaryHasContent == value) return
+        _uiState.value = _uiState.value.copy(secondaryHasContent = value)
+    }
+
+    /** 二级页返回：先关搜索层，有内容则弹确认，否则直接回上级。 */
+    fun requestSecondaryBack() {
+        val current = _uiState.value
+        if (current.step is AddStep.PickSource) return
+        if (current.saving) return
+        if (current.draftDatabaseSearch != null) {
+            closeDraftComponentSearch()
+            return
+        }
+        if (current.databaseSearch != null) {
+            closeComponentSearch()
+            return
+        }
+        if (current.step is AddStep.PresetEdit) {
+            if (current.showDeletePresetConfirm) {
+                dismissDeletePresetConfirm()
+                return
+            }
+            if (current.secondaryHasContent) {
+                _uiState.value = current.copy(showLeaveConfirm = true)
+            } else {
+                openPresetList()
+            }
+            return
+        }
+        if (current.secondaryHasContent) {
+            _uiState.value = current.copy(showLeaveConfirm = true)
+        } else {
+            performSecondaryBack()
+        }
+    }
+
+    fun dismissLeaveConfirm() {
+        _uiState.value = _uiState.value.copy(showLeaveConfirm = false)
+    }
+
+    fun confirmLeaveSecondary() {
+        _uiState.value = _uiState.value.copy(showLeaveConfirm = false)
+        performSecondaryBack()
+    }
+
+    private fun performSecondaryBack() {
+        when (_uiState.value.step) {
+            is AddStep.ManualEdit -> backFromManualEdit()
+            is AddStep.PresetEdit -> openPresetList()
+            is AddStep.Manual, is AddStep.Review, AddStep.PresetList -> backToPick()
+            AddStep.PickSource -> Unit
+        }
     }
 
     fun setQuantityMode(mode: QuantityMode) {
@@ -398,10 +738,15 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
         }
         val state = _uiState.value
         _uiState.value = state.copy(
-            step = AddStep.Manual(initialName = trimmedName, initialGrams = grams),
+            step = AddStep.Review(
+                imageUri = null,
+                result = buildManualMealRecognition(trimmedName, grams, Nutrition()),
+            ),
             quantityMode = QuantityMode.GRAMS,
             manualNutrition = null,
             error = null,
+            recognizing = true,
+            recognitionStage = RecognitionStage.PREPARING,
         )
         startRecognition(
             RecognitionRequest(
@@ -433,12 +778,17 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
         }
         val state = _uiState.value
         _uiState.value = state.copy(
-            step = AddStep.Manual(initialName = trimmedName),
+            step = AddStep.Review(
+                imageUri = null,
+                result = buildManualMealRecognition(trimmedName, 0.0, Nutrition()),
+            ),
             quantityMode = QuantityMode.PORTIONS,
             portionCount = portions,
             estimatedPortionGrams = null,
             manualNutrition = null,
             error = null,
+            recognizing = true,
+            recognitionStage = RecognitionStage.PREPARING,
         )
         startRecognition(
             RecognitionRequest(
@@ -545,10 +895,16 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
                 val step = when (request.type) {
                     RecognitionRequestType.MANUAL_GRAMS,
                     RecognitionRequestType.MANUAL_PORTIONS,
-                    -> AddStep.Manual(
-                        initialName = request.foodName.orEmpty(),
-                        initialGrams = request.grams,
-                    )
+                    -> {
+                        val name = request.foodName.orEmpty()
+                        val grams = request.grams ?: 0.0
+                        // 识别中：先放食物卡片占位，进度条与视觉识别一致
+                        val existing = _uiState.value.step as? AddStep.Review
+                        existing ?: AddStep.Review(
+                            imageUri = null,
+                            result = buildManualMealRecognition(name, grams, Nutrition()),
+                        )
+                    }
 
                     RecognitionRequestType.REPLACE_DISH -> AddStep.Review(
                         imageUri = request.imageUri,
@@ -579,24 +935,31 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
                 when (request.type) {
                     RecognitionRequestType.MANUAL_GRAMS,
                     RecognitionRequestType.MANUAL_PORTIONS,
-                    -> _uiState.value = baseState.copy(
-                        step = AddStep.Manual(
-                            initialName = request.foodName.orEmpty(),
-                            initialGrams = request.grams,
-                        ),
-                        quantityMode = if (request.type == RecognitionRequestType.MANUAL_PORTIONS) {
-                            QuantityMode.PORTIONS
-                        } else {
-                            QuantityMode.GRAMS
-                        },
-                        portionCount = request.portions ?: baseState.portionCount,
-                        estimatedPortionGrams = record.estimatedPortionGrams,
-                        manualNutrition = record.manualNutrition,
-                        recognizing = false,
-                        recognitionStage = null,
-                        replacingDishId = null,
-                        error = null,
-                    )
+                    -> {
+                        val name = request.foodName.orEmpty()
+                        val grams = record.estimatedPortionGrams
+                            ?: request.grams
+                            ?: 0.0
+                        val nutrition = record.manualNutrition ?: Nutrition()
+                        _uiState.value = baseState.copy(
+                            step = AddStep.Review(
+                                imageUri = null,
+                                result = buildManualMealRecognition(name, grams, nutrition),
+                            ),
+                            quantityMode = if (request.type == RecognitionRequestType.MANUAL_PORTIONS) {
+                                QuantityMode.PORTIONS
+                            } else {
+                                QuantityMode.GRAMS
+                            },
+                            portionCount = request.portions ?: baseState.portionCount,
+                            estimatedPortionGrams = record.estimatedPortionGrams,
+                            manualNutrition = nutrition,
+                            recognizing = false,
+                            recognitionStage = null,
+                            replacingDishId = null,
+                            error = null,
+                        )
+                    }
 
                     RecognitionRequestType.TEXT,
                     RecognitionRequestType.IMAGE,
@@ -804,6 +1167,50 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+}
+
+const val NewComponentId = "__new_food_component__"
+
+/** 文字/手动识别结果卡片：与视觉识别 Review 同构。 */
+private fun buildManualMealRecognition(
+    name: String,
+    grams: Double,
+    nutrition: Nutrition,
+): MealRecognition {
+    val safeName = name.ifBlank { "食物" }
+    val safeGrams = grams.takeIf { it.isFinite() && it > 0.0 } ?: 0.0
+    val per100g = if (safeGrams > 0.0) nutrition * (100.0 / safeGrams) else Nutrition()
+    val component = FoodComponent(
+        id = java.util.UUID.randomUUID().toString(),
+        name = safeName,
+        databaseQuery = safeName,
+        chinaDatabaseQuery = safeName,
+        source = com.click.lightmemo.domain.ComponentSource.USER_PROVIDED,
+        estimatedWeightG = safeGrams,
+        weightMinG = safeGrams,
+        weightMaxG = safeGrams,
+        confidence = 1.0,
+        nutritionReference = NutritionReference(
+            sourceId = "manual-recognition",
+            description = safeName,
+            dataType = "文字识别",
+            per100g = per100g,
+        ),
+    )
+    val dish = RecognizedDish(
+        id = java.util.UUID.randomUUID().toString(),
+        name = safeName,
+        type = com.click.lightmemo.domain.DishType.SINGLE_FOOD,
+        confidence = 1.0,
+        components = listOf(component),
+    )
+    return MealRecognition(
+        isFoodImage = false,
+        mealName = safeName,
+        dishes = listOf(dish),
+        overallConfidence = 1.0,
+        confirmationQuestions = emptyList(),
+    )
 }
 
 private fun RecognizedDish.updateWeight(componentId: String, grams: Double): RecognizedDish = copy(

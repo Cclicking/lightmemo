@@ -214,6 +214,19 @@ class SettingsRepository(private val store: androidx.datastore.core.DataStore<an
         }
     }
 
+    suspend fun deleteFoodPreset(presetId: String) {
+        store.edit { prefs ->
+            val current = decodeFoodPresets(prefs[foodPresetsKey])
+            val next = current.filterNot { it.id == presetId }
+            if (next.isEmpty()) {
+                // 至少保留一条，避免列表完全为空
+                prefs[foodPresetsKey] = settingsJson.encodeToString(DefaultPresetFoods)
+            } else {
+                prefs[foodPresetsKey] = settingsJson.encodeToString(next)
+            }
+        }
+    }
+
     suspend fun resetFoodPresets() {
         store.edit { it.remove(foodPresetsKey) }
     }

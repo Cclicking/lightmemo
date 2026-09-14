@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -29,6 +30,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -70,6 +72,10 @@ import androidx.core.content.FileProvider
 import com.click.lightmemo.data.FoodImages
 import com.click.lightmemo.domain.MealType
 import com.click.lightmemo.domain.Nutrition
+import com.click.lightmemo.viewmodel.NewComponentId
+import com.click.lightmemo.viewmodel.newFoodComponent
+import com.click.lightmemo.domain.ComponentSource
+import com.click.lightmemo.domain.FoodLog
 import com.click.lightmemo.domain.FoodComponent
 import com.click.lightmemo.domain.MealRecognition
 import com.click.lightmemo.domain.RecognizedDish
@@ -93,6 +99,7 @@ import java.time.format.DateTimeFormatter
 import kotlin.math.abs
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.Button
+import top.yukonga.miuix.kmp.basic.ButtonColors
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CircularProgressIndicator
@@ -101,6 +108,7 @@ import top.yukonga.miuix.kmp.basic.LinearProgressIndicator
 import top.yukonga.miuix.kmp.basic.NumberPicker
 import top.yukonga.miuix.kmp.basic.ProgressIndicatorDefaults
 import top.yukonga.miuix.kmp.basic.TabRowWithContour
+import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.basic.TextFieldColors
@@ -123,8 +131,9 @@ private val clockFormatter = DateTimeFormatter.ofPattern("HH:mm")
 
 private fun stepOrder(step: AddStep): Int = when (step) {
     AddStep.PickSource -> 0
-    is AddStep.Manual -> 1
-    is AddStep.Review -> 2
+    is AddStep.Manual, AddStep.PresetList -> 1
+    is AddStep.ManualEdit, is AddStep.PresetEdit -> 2
+    is AddStep.Review -> 3
 }
 
 private val ProteinTarget = 120f
@@ -144,6 +153,17 @@ fun AddFoodRoute(
     val settings by viewModel.settings.collectAsState()
     val context = LocalContext.current
     val gallerySaveScope = rememberCoroutineScope()
+
+    // 二级页：系统返回键回上级；有内容时先确认
+    val isSecondaryStep = state.step !is AddStep.PickSource
+    BackHandler(enabled = isSecondaryStep && !state.saving) {
+        viewModel.requestSecondaryBack()
+    }
+    LeaveConfirmDialog(
+        show = state.showLeaveConfirm,
+        onDismiss = viewModel::dismissLeaveConfirm,
+        onConfirm = viewModel::confirmLeaveSecondary,
+    )
 
     var cameraUriString by rememberSaveable { mutableStateOf<String?>(null) }
     val cameraUri = cameraUriString?.let(Uri::parse)
@@ -235,17 +255,6 @@ fun AddFoodRoute(
         }
     }
 
-    // 预设弹层
-    PresetOverlay(
-        show = state.showPresetSheet,
-        presets = state.presets,
-        saving = state.saving,
-        error = state.error,
-        onDismiss = viewModel::closePresetSheet,
-        onSelect = viewModel::applyPreset,
-        onUpdate = viewModel::updatePreset,
-    )
-
     ComponentDatabaseOverlay(
         searchState = state.databaseSearch,
         adding = false,
@@ -318,7 +327,7 @@ fun AddFoodRoute(
                     },
                     onCamera = { withNotificationPermission(::onCameraClick) },
                     onManual = { viewModel.openManual() },
-                    onPreset = viewModel::openPresetSheet,
+                    onPreset = viewModel::openPresetList,
                 )
 
                 is AddStep.Manual -> ManualEntryContent(
@@ -330,7 +339,6 @@ fun AddFoodRoute(
                     configured = settings.isRecognitionConfigured,
                     recognizing = state.recognizing || state.saving,
                     recognitionStage = state.recognitionStage,
-                    nutritionSuggestion = state.manualNutrition,
                     error = state.error,
                     quantityMode = state.quantityMode,
                     onQuantityModeChange = viewModel::setQuantityMode,
@@ -343,35 +351,172 @@ fun AddFoodRoute(
                     onRecognizePortions = { name, portions ->
                         withNotificationPermission { viewModel.recognizeManualWithPortions(name, portions) }
                     },
-                    onSave = { name, grams, nutrition ->
-                        viewModel.saveManual(name, grams, nutrition, onDone)
+                    onOpenManualEdit = { name, grams ->
+                        viewModel.openManualEdit(
+                            initialName = name,
+                            initialGrams = grams,
+                            initialNutrition = null,
+                        )
                     },
+                    onHasContentChange = viewModel::setSecondaryHasContent,
                 )
 
-                is AddStep.Review -> ReviewContent(
+                is AddStep.ManualEdit -> {
+                    val calorieTarget = settings.dailyCalorieTarget
+                    val proteinTarget = settings.effectiveProteinG.takeIf { it > 0f } ?: ProteinTarget
+                    val carbsTarget = settings.effectiveCarbsG.takeIf { it > 0f } ?: CarbsTarget
+                    val fatTarget = settings.effectiveFatG.takeIf { it > 0f } ?: FatTarget
+
+                    ManualEditContent(
+                        padding = contentPadding,
+                        initialName = step.initialName,
+                        initialGrams = step.initialGrams,
+                        initialNutrition = step.initialNutrition,
+                        initialComponents = step.initialComponents,
+                        defaultMealType = state.mealType,
+                        defaultDateEpochDay = state.targetDateEpochDay,
+                        defaultMinuteOfDay = state.mealMinuteOfDay,
+                        defaultNote = state.note,
+                        defaultTags = state.selectedTags,
+                        calorieTarget = calorieTarget,
+                        proteinTarget = proteinTarget,
+                        carbsTarget = carbsTarget,
+                        fatTarget = fatTarget,
+                        palette = palette,
+                        draftDatabaseSearch = state.draftDatabaseSearch,
+                        saving = state.saving,
+                        error = state.error,
+                        showMealType = true,
+                        showMealInfo = true,
+                        onOpenComponentSearch = viewModel::openDraftComponentSearch,
+                        onOpenNewComponentSearch = viewModel::openDraftNewComponentSearch,
+                        onSearchComponent = viewModel::searchDraftComponentDatabase,
+                        onCloseComponentSearch = viewModel::closeDraftComponentSearch,
+                        onSave = { draft -> viewModel.saveManualDraft(draft, onDone) },
+                        onHasContentChange = viewModel::setSecondaryHasContent,
+                    )
+                }
+
+                AddStep.PresetList -> PresetListContent(
                     padding = contentPadding,
-                    result = step.result,
-                    recognizing = state.recognizing || state.saving,
-                    recognitionStage = state.recognitionStage,
-                    replacingDishId = state.replacingDishId,
-                    selectedComponentId = state.databaseSearch?.componentId,
-                    mealType = state.mealType,
-                    onMealType = viewModel::setMealType,
-                    onWeightChange = viewModel::updateComponentWeight,
-                    onRemoveComponent = viewModel::removeComponent,
-                    onRemoveDish = viewModel::removeDish,
-                    onDatabaseSearch = { component -> viewModel.openComponentSearch(component) },
-                    onReplaceComponent = { component ->
-                        viewModel.openComponentSearch(component, replaceComponentName = true)
-                    },
-                    onReplaceDish = viewModel::replaceDish,
-                    error = state.error,
-                    onSave = {
-                        viewModel.saveRecognized(step.result, step.imageUri, onDone)
-                    },
-                    listState = listState,
-                    palette = palette,
+                    presets = state.presets,
+                    onSelect = viewModel::applyPreset,
+                    onEdit = viewModel::openPresetEdit,
+                    onCreate = viewModel::openCreatePreset,
                 )
+
+                is AddStep.PresetEdit -> {
+                    val calorieTarget = settings.dailyCalorieTarget
+                    val proteinTarget = settings.effectiveProteinG.takeIf { it > 0f } ?: ProteinTarget
+                    val carbsTarget = settings.effectiveCarbsG.takeIf { it > 0f } ?: CarbsTarget
+                    val fatTarget = settings.effectiveFatG.takeIf { it > 0f } ?: FatTarget
+                    val preset = step.preset
+                    val presetExists = state.presets.any { it.id == preset.id }
+
+                    ManualEditContent(
+                        padding = contentPadding,
+                        initialName = preset.name,
+                        initialGrams = preset.defaultGrams,
+                        initialNutrition = preset.nutrition,
+                        initialComponents = preset.components,
+                        defaultMealType = state.mealType,
+                        defaultDateEpochDay = state.targetDateEpochDay,
+                        defaultMinuteOfDay = state.mealMinuteOfDay,
+                        defaultNote = "",
+                        defaultTags = emptySet(),
+                        calorieTarget = calorieTarget,
+                        proteinTarget = proteinTarget,
+                        carbsTarget = carbsTarget,
+                        fatTarget = fatTarget,
+                        palette = palette,
+                        draftDatabaseSearch = state.draftDatabaseSearch,
+                        saving = state.saving,
+                        error = state.error,
+                        showMealType = false,
+                        showMealInfo = false,
+                        saveButtonLabel = "保存预设",
+                        showDeletePreset = presetExists,
+                        onOpenDeletePresetConfirm = viewModel::openDeletePresetConfirm,
+                        onOpenComponentSearch = viewModel::openDraftComponentSearch,
+                        onOpenNewComponentSearch = viewModel::openDraftNewComponentSearch,
+                        onSearchComponent = viewModel::searchDraftComponentDatabase,
+                        onCloseComponentSearch = viewModel::closeDraftComponentSearch,
+                        onSave = { draft ->
+                            val nutritionFromComponents = completeComponentNutrition(draft.components)
+                            val nutrition = nutritionFromComponents ?: draft.nutrition
+                            viewModel.updatePreset(
+                                preset.copy(
+                                    name = draft.name.trim().ifBlank { preset.name },
+                                    defaultGrams = draft.grams.takeIf { it.isFinite() && it > 0 }
+                                        ?: preset.defaultGrams,
+                                    nutrition = nutrition,
+                                    components = draft.components,
+                                ),
+                            )
+                        },
+                        onHasContentChange = viewModel::setSecondaryHasContent,
+                    )
+
+                    AnimatedOverlayDialog(
+                        show = state.showDeletePresetConfirm,
+                        title = "删除预设？",
+                        summary = "删除「${preset.name.ifBlank { "该预设" }}」后不可恢复",
+                        onDismissRequest = viewModel::dismissDeletePresetConfirm,
+                    ) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Button(
+                                onClick = { viewModel.confirmDeletePreset(preset.id, preset.name) },
+                                modifier = Modifier.weight(1f),
+                                colors = ButtonDefaults.buttonColorsPrimary(
+                                    color = MiuixTheme.colorScheme.error,
+                                    contentColor = Color.White,
+                                ),
+                            ) {
+                                Text("删除")
+                            }
+                            Button(
+                                onClick = viewModel::dismissDeletePresetConfirm,
+                                modifier = Modifier.weight(1f),
+                                colors = ButtonDefaults.buttonColors(),
+                            ) {
+                                Text("取消")
+                            }
+                        }
+                    }
+                }
+
+                                is AddStep.Review -> {
+                    LaunchedEffect(step.result.dishes.size) {
+                        viewModel.setSecondaryHasContent(step.result.dishes.isNotEmpty())
+                    }
+                    ReviewContent(
+                        padding = contentPadding,
+                        result = step.result,
+                        recognizing = state.recognizing || state.saving,
+                        recognitionStage = state.recognitionStage,
+                        replacingDishId = state.replacingDishId,
+                        selectedComponentId = state.databaseSearch?.componentId,
+                        mealType = state.mealType,
+                        onMealType = viewModel::setMealType,
+                        onWeightChange = viewModel::updateComponentWeight,
+                        onRemoveComponent = viewModel::removeComponent,
+                        onRemoveDish = viewModel::removeDish,
+                        onDatabaseSearch = { component -> viewModel.openComponentSearch(component) },
+                        onReplaceComponent = { component ->
+                            viewModel.openComponentSearch(component, replaceComponentName = true)
+                        },
+                        onReplaceDish = viewModel::replaceDish,
+                        error = state.error,
+                        onSave = {
+                            viewModel.saveRecognized(step.result, step.imageUri, onDone)
+                        },
+                        listState = listState,
+                        palette = palette,
+                    )
+                }
             }
         }
     }
@@ -466,7 +611,7 @@ private fun PickSourceContent(
                     Text("尚未配置识别 API", style = MiuixTheme.textStyles.title4)
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        text = "请到「我的 → 识别 API」填写 Base URL 与 API Key。手动录入不依赖网络。",
+                        text = "请到「我的 → 识别 API」填写 Base URL 与 API Key。文字录入不依赖网络。",
                         style = MiuixTheme.textStyles.subtitle,
                         color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                     )
@@ -538,7 +683,7 @@ private fun PickSourceContent(
             )
             MethodButton(
                 icon = { Icon(MiuixIcons.Os4.Edit, contentDescription = null) },
-                label = "手动录入",
+                label = "文字录入",
                 enabled = !recognizing,
                 onClick = onManual,
             )
@@ -707,7 +852,6 @@ private fun ManualEntryContent(
     configured: Boolean,
     recognizing: Boolean,
     recognitionStage: RecognitionStage?,
-    nutritionSuggestion: Nutrition?,
     error: String?,
     quantityMode: QuantityMode,
     onQuantityModeChange: (QuantityMode) -> Unit,
@@ -716,38 +860,25 @@ private fun ManualEntryContent(
     estimatedGrams: Double?,
     onRecognizeGrams: (String, Double) -> Unit,
     onRecognizePortions: (String, Double) -> Unit,
-    onSave: (String, Double, Nutrition) -> Unit,
+    onOpenManualEdit: (name: String, grams: Double?) -> Unit,
+    onHasContentChange: (Boolean) -> Unit,
 ) {
     var name by rememberSaveable { mutableStateOf(initialName) }
     var grams by rememberSaveable { mutableStateOf(initialGrams?.formatInput() ?: "100") }
-    var kcal by rememberSaveable { mutableStateOf("") }
-    var protein by rememberSaveable { mutableStateOf("") }
-    var carbs by rememberSaveable { mutableStateOf("") }
-    var fat by rememberSaveable { mutableStateOf("") }
     var showPortionDialog by remember { mutableStateOf(false) }
     var showGramsDialog by remember { mutableStateOf(false) }
 
-    LaunchedEffect(nutritionSuggestion) {
-        nutritionSuggestion?.let { nutrition ->
-            kcal = nutrition.caloriesKcal.formatInput()
-            protein = nutrition.proteinG.formatInput()
-            carbs = nutrition.carbsG.formatInput()
-            fat = nutrition.fatG.formatInput()
-        }
-    }
-
     LaunchedEffect(estimatedGrams) {
         estimatedGrams?.let { grams = it.formatInput() }
+    }
+    LaunchedEffect(name) {
+        onHasContentChange(name.isNotBlank())
     }
 
     val effectiveGrams = when (quantityMode) {
         QuantityMode.GRAMS -> grams.toDoubleOrNull() ?: Double.NaN
         QuantityMode.PORTIONS -> if (estimatedGrams != null) grams.toDoubleOrNull() ?: Double.NaN else Double.NaN
     }
-    val validInput = effectiveGrams.isFinite() && effectiveGrams > 0.0 &&
-        listOf(kcal, protein, carbs, fat).all { value ->
-            value.toDoubleOrNull()?.let { it.isFinite() && it >= 0.0 } == true
-        }
 
     Column(
         modifier = Modifier
@@ -777,7 +908,6 @@ private fun ManualEntryContent(
             modifier = Modifier.fillMaxWidth(),
         )
 
-        // 计量方式 + 数量
         Card(
             cornerRadius = 20.dp,
             modifier = Modifier.fillMaxWidth(),
@@ -854,9 +984,21 @@ private fun ManualEntryContent(
             Text(if (recognizing) "正在识别营养..." else "自动识别热量与营养")
         }
 
+        MethodButton(
+            icon = { Icon(MiuixIcons.Os4.Edit, contentDescription = null) },
+            label = "手动录入",
+            enabled = !recognizing,
+            onClick = {
+                val n = name.trim()
+                val g = grams.toDoubleOrNull()?.takeIf { it.isFinite() && it > 0 }
+                    ?: estimatedGrams
+                onOpenManualEdit(n, g)
+            },
+        )
+
         if (!configured) {
             Text(
-                text = "自动识别需要先在「我的 → 识别 API」配置服务；也可以继续手动填写。",
+                text = "自动识别需要先在「我的 → 识别 API」配置服务；也可以手动录入填写营养。",
                 style = MiuixTheme.textStyles.subtitle,
                 color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
             )
@@ -868,41 +1010,6 @@ private fun ManualEntryContent(
                 style = MiuixTheme.textStyles.subtitle,
             )
         }
-
-        Card(
-            cornerRadius = 20.dp,
-            modifier = Modifier.fillMaxWidth(),
-            insideMargin = PaddingValues(0.dp),
-        ) {
-            Column {
-                NutritionArrowRow("热量 kcal", kcal) { kcal = it }
-                NutritionArrowRow("蛋白质 g", protein) { protein = it }
-                NutritionArrowRow("碳水 g", carbs) { carbs = it }
-                NutritionArrowRow("脂肪 g", fat) { fat = it }
-            }
-        }
-
-        Button(
-            onClick = {
-                val n = name.trim()
-                if (n.isEmpty()) return@Button
-                onSave(
-                    n,
-                    effectiveGrams,
-                    Nutrition(
-                        caloriesKcal = kcal.toDoubleOrNull() ?: 0.0,
-                        proteinG = protein.toDoubleOrNull() ?: 0.0,
-                        carbsG = carbs.toDoubleOrNull() ?: 0.0,
-                        fatG = fat.toDoubleOrNull() ?: 0.0,
-                    ),
-                )
-            },
-            enabled = name.isNotBlank() && validInput && !recognizing,
-            modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.buttonColorsPrimary(),
-        ) {
-            Text("保存")
-        }
     }
 
     NumberInputDialog(
@@ -911,19 +1018,7 @@ private fun ManualEntryContent(
         summary = "输入可食用重量",
         initial = grams,
         onDismiss = { showGramsDialog = false },
-        onConfirm = { value ->
-            val before = grams.toDoubleOrNull()
-            val after = value.toDoubleOrNull()
-            if (before != null && before > 0 && after != null && after.isFinite() && after > 0) {
-                val ratio = after / before
-                kcal = kcal.toDoubleOrNull()?.times(ratio)?.formatInput() ?: kcal
-                protein = protein.toDoubleOrNull()?.times(ratio)?.formatInput() ?: protein
-                carbs = carbs.toDoubleOrNull()?.times(ratio)?.formatInput() ?: carbs
-                fat = fat.toDoubleOrNull()?.times(ratio)?.formatInput() ?: fat
-            }
-            grams = value
-            showGramsDialog = false
-        },
+        onConfirm = { grams = it; showGramsDialog = false },
     )
     NumberInputDialog(
         show = showPortionDialog,
@@ -939,34 +1034,458 @@ private fun ManualEntryContent(
     )
 }
 
+/** 手动录入：完整复刻编辑记录页元素，高度与记录食物 bottomsheet 一致。 */
 @Composable
-private fun NutritionArrowRow(
-    title: String,
-    value: String,
-    onValueChange: (String) -> Unit,
+private fun ManualEditContent(
+    padding: PaddingValues,
+    initialName: String,
+    initialGrams: Double?,
+    initialNutrition: Nutrition?,
+    initialComponents: List<FoodComponent> = emptyList(),
+    defaultMealType: MealType,
+    defaultDateEpochDay: Long,
+    defaultMinuteOfDay: Int,
+    defaultNote: String,
+    defaultTags: Set<String>,
+    calorieTarget: Float,
+    proteinTarget: Float,
+    carbsTarget: Float,
+    fatTarget: Float,
+    palette: FoodPaletteColors,
+    draftDatabaseSearch: com.click.lightmemo.viewmodel.DatabaseSearchState?,
+    saving: Boolean,
+    error: String?,
+    showMealType: Boolean = true,
+    showMealInfo: Boolean = true,
+    saveButtonLabel: String = "保存",
+    showDeletePreset: Boolean = false,
+    deletePresetLabel: String = "删除预设",
+    onOpenDeletePresetConfirm: (() -> Unit)? = null,
+    onOpenComponentSearch: (FoodComponent) -> Unit,
+    onOpenNewComponentSearch: () -> Unit,
+    onSearchComponent: (String, String) -> Unit,
+    onCloseComponentSearch: () -> Unit,
+    onSave: (FoodLog) -> Unit,
+    onHasContentChange: (Boolean) -> Unit,
 ) {
-    var showDialog by remember { mutableStateOf(false) }
-    ArrowPreference(
-        title = title,
-        endActions = {
-            Text(
-                text = value.ifBlank { "0" },
-                fontSize = 14.5.sp,
-                color = MiuixTheme.colorScheme.onSurfaceVariantActions,
+    val initialEpochDay = defaultDateEpochDay
+    val componentGrams = initialComponents.sumOf { it.estimatedWeightG }
+    val initialDraft = remember(
+        initialName,
+        initialGrams,
+        initialNutrition,
+        initialComponents,
+        defaultMealType,
+        initialEpochDay,
+    ) {
+        FoodLog(
+            name = initialName,
+            mealType = defaultMealType,
+            grams = when {
+                componentGrams > 0.0 -> componentGrams
+                initialGrams != null && initialGrams.isFinite() && initialGrams > 0 -> initialGrams
+                else -> 100.0
+            },
+            nutrition = initialNutrition
+                ?: completeComponentNutrition(initialComponents)
+                ?: Nutrition(),
+            components = initialComponents,
+            dateEpochDay = initialEpochDay,
+            mealMinuteOfDay = defaultMinuteOfDay,
+            note = defaultNote.takeIf { it.isNotBlank() },
+            mealTags = defaultTags.toList(),
+        )
+    }
+    var draft by remember { mutableStateOf(initialDraft) }
+    var gramsInput by remember { mutableStateOf(initialDraft.grams.formatEditNumber()) }
+
+    LaunchedEffect(draft.name, draft.components, draft.nutrition, draft.note) {
+        val emptyNutrition = Nutrition()
+        val has = draft.name.isNotBlank() ||
+            draft.components.isNotEmpty() ||
+            draft.nutrition != emptyNutrition ||
+            !draft.note.isNullOrBlank()
+        onHasContentChange(has)
+    }
+    var dateInput by remember { mutableStateOf(LocalDate.ofEpochDay(initialEpochDay).toString()) }
+    var timeInput by remember {
+        mutableStateOf("%02d:%02d".format(java.util.Locale.ROOT, defaultMinuteOfDay / 60, defaultMinuteOfDay % 60))
+    }
+    var nutritionField by remember { mutableStateOf<NutritionField?>(null) }
+    var textEditField by remember { mutableStateOf<TextEditField?>(null) }
+    var showWeightDialog by remember { mutableStateOf(false) }
+    var showAddComponent by remember { mutableStateOf(false) }
+    var showDatePicker by remember { mutableStateOf(false) }
+    var showTimePicker by remember { mutableStateOf(false) }
+
+    val busy = saving
+    val editingAddComponent = draftDatabaseSearch?.componentId == NewComponentId
+    val parsedWeight = gramsInput.toDoubleOrNull()
+    val parsedDate = runCatching { LocalDate.parse(dateInput) }.getOrNull()
+    val parsedTime = runCatching { LocalTime.parse(timeInput) }.getOrNull()
+    val valid = draft.name.isNotBlank() &&
+        parsedWeight?.let { it.isFinite() && it > 0 } == true &&
+        parsedDate != null &&
+        draft.nutrition.isValidEditNutrition()
+    val componentNutrition = completeComponentNutrition(draft.components)
+    val hasManualNutritionOverride = componentNutrition != null && draft.nutrition != componentNutrition
+
+    fun updateWeight(value: String) {
+        gramsInput = value
+        val nextWeight = value.toDoubleOrNull()
+        if (nextWeight != null && nextWeight.isFinite() && nextWeight > 0 && draft.grams > 0) {
+            val ratio = nextWeight / draft.grams
+            val componentsAreSource = completeComponentNutrition(draft.components)?.let {
+                draft.nutrition == it
+            } == true
+            val nextComponents = if (draft.components.isNotEmpty()) {
+                draft.components.map { it.withEditWeight(it.estimatedWeightG * ratio) }
+            } else {
+                draft.components
+            }
+            draft = draft.copy(
+                grams = nextWeight,
+                components = nextComponents,
+                nutrition = if (nextComponents.isNotEmpty()) {
+                    if (componentsAreSource) {
+                        completeComponentNutrition(nextComponents) ?: draft.nutrition * ratio
+                    } else {
+                        draft.nutrition * ratio
+                    }
+                } else {
+                    draft.nutrition * ratio
+                },
             )
+        }
+    }
+
+    MealDatePickerOverlay(
+        show = showDatePicker,
+        date = parsedDate ?: LocalDate.ofEpochDay(initialEpochDay),
+        onDismiss = { showDatePicker = false },
+        onConfirm = {
+            dateInput = it.toString()
+            showDatePicker = false
         },
-        onClick = { showDialog = true },
     )
+    MealTimePickerOverlay(
+        show = showTimePicker,
+        minuteOfDay = parsedTime?.let { it.hour * 60 + it.minute }
+            ?: defaultMinuteOfDay.coerceIn(0, 1439),
+        onDismiss = { showTimePicker = false },
+        onConfirm = { minute ->
+            timeInput = "%02d:%02d".format(java.util.Locale.ROOT, minute / 60, minute % 60)
+            showTimePicker = false
+        },
+    )
+
+    EditNutritionDialog(
+        field = nutritionField,
+        nutrition = draft.nutrition,
+        onDismiss = { nutritionField = null },
+        onConfirm = { field, value ->
+            draft = draft.copy(nutrition = draft.nutrition.withField(field, value))
+            nutritionField = null
+        },
+    )
+
     NumberInputDialog(
-        show = showDialog,
-        title = title,
-        initial = value,
-        onDismiss = { showDialog = false },
-        onConfirm = { draft ->
-            onValueChange(draft)
-            showDialog = false
+        show = showWeightDialog,
+        title = "重量 g",
+        summary = "修改后按比例更新营养与组成",
+        initial = gramsInput,
+        onDismiss = { showWeightDialog = false },
+        onConfirm = {
+            updateWeight(it)
+            showWeightDialog = false
         },
     )
+
+    TextInputDialog(
+        field = textEditField,
+        initial = when (textEditField) {
+            TextEditField.FOOD_NAME -> draft.name
+            TextEditField.NOTE -> draft.note.orEmpty()
+            null -> ""
+        },
+        onDismiss = { textEditField = null },
+        onConfirm = { field, value ->
+            when (field) {
+                TextEditField.FOOD_NAME -> draft = draft.copy(name = value)
+                TextEditField.NOTE -> draft = draft.copy(note = value.trim().ifBlank { null })
+            }
+            textEditField = null
+        },
+    )
+
+    ComponentDatabaseOverlay(
+        searchState = draftDatabaseSearch,
+        adding = editingAddComponent,
+        showAdd = showAddComponent,
+        onDismiss = {
+            showAddComponent = false
+            onCloseComponentSearch()
+        },
+        onSearch = onSearchComponent,
+        onSelect = { componentId, query, grams, reference ->
+            if (componentId == NewComponentId) {
+                val weight = grams.toDoubleOrNull()
+                if (weight != null && weight.isFinite() && weight > 0 && query.isNotBlank()) {
+                    val next = draft.components + newFoodComponent(query, weight, reference)
+                    draft = draft.copy(
+                        components = next,
+                        grams = next.sumOf { it.estimatedWeightG },
+                        nutrition = completeComponentNutrition(next) ?: draft.nutrition,
+                    )
+                    gramsInput = draft.grams.formatEditNumber()
+                    showAddComponent = false
+                    onCloseComponentSearch()
+                }
+            } else {
+                val next = draft.components.map { component ->
+                    if (component.id == componentId) {
+                        val selectedQuery = query.trim()
+                        component.copy(
+                            nutritionReference = reference,
+                            databaseQuery = if (reference.dataType.contains("中国")) {
+                                selectedQuery
+                            } else {
+                                reference.description
+                            },
+                            chinaDatabaseQuery = selectedQuery,
+                        )
+                    } else {
+                        component
+                    }
+                }
+                draft = draft.copy(
+                    components = next,
+                    nutrition = completeComponentNutrition(next) ?: draft.nutrition,
+                )
+                onCloseComponentSearch()
+            }
+        },
+    )
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(AddFoodSheetHeight)
+            .overScrollVertical()
+            .navigationBarsPadding(),
+        contentPadding = PaddingValues(
+            start = 16.dp,
+            end = 16.dp,
+            top = padding.calculateTopPadding(),
+            bottom = padding.calculateBottomPadding() + 40.dp,
+        ),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        if (showMealType) {
+            item {
+                MealTypeSelector(
+                    selected = draft.mealType,
+                    onSelect = { if (!busy) draft = draft.copy(mealType = it) },
+                )
+            }
+        }
+
+        item {
+            Column {
+                SmallTitle(
+                    text = "食物信息",
+                    modifier = Modifier.offset(x = (-16).dp),
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                    PickerField(
+                        label = "食物名称",
+                        value = draft.name.ifBlank { "未设置" },
+                        enabled = !busy,
+                        modifier = Modifier.weight(1f),
+                        onClick = { textEditField = TextEditField.FOOD_NAME },
+                    )
+                    PickerField(
+                        label = "重量 g",
+                        value = gramsInput,
+                        enabled = !busy,
+                        modifier = Modifier.weight(1f),
+                        onClick = { showWeightDialog = true },
+                    )
+                }
+            }
+        }
+
+        item {
+            EditNutritionSummary(
+                nutrition = draft.nutrition,
+                calorieTarget = calorieTarget,
+                proteinTarget = proteinTarget,
+                carbsTarget = carbsTarget,
+                fatTarget = fatTarget,
+                palette = palette,
+                enabled = !busy,
+                onNutritionField = { nutritionField = it },
+            )
+        }
+
+        if (showMealInfo) {
+            item {
+                Column {
+                    SmallTitle(
+                        text = "用餐信息",
+                        modifier = Modifier.offset(x = (-16).dp),
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                        PickerField(
+                            label = "日期",
+                            value = dateInput,
+                            enabled = !busy,
+                            modifier = Modifier.weight(1f),
+                            onClick = { showDatePicker = true },
+                        )
+                        PickerField(
+                            label = "时间",
+                            value = timeInput.ifBlank { "未设置" },
+                            enabled = !busy,
+                            modifier = Modifier.weight(1f),
+                            onClick = { showTimePicker = true },
+                        )
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    Card(
+                        cornerRadius = 20.dp,
+                        modifier = Modifier.fillMaxWidth(),
+                        insideMargin = PaddingValues(0.dp),
+                    ) {
+                        ArrowPreference(
+                            title = "备注",
+                            summary = draft.note?.takeIf { it.isNotBlank() } ?: "点击添加备注",
+                            enabled = !busy,
+                            onClick = { textEditField = TextEditField.NOTE },
+                        )
+                    }
+                }
+            }
+        }
+
+        item {
+            Column {
+                SmallTitle(
+                    text = "组成部分",
+                    modifier = Modifier.offset(x = (-16).dp),
+                )
+                Card(cornerRadius = 20.dp, modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(16.dp)) {
+                    if (draft.components.isEmpty()) {
+                        Text("暂无食物成分", color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
+                    } else {
+                        Column {
+                            draft.components.forEach { component ->
+                                ComponentResultRow(
+                                    component = component,
+                                    onWeightChange = { componentId, weight ->
+                                        if (!busy) {
+                                            val next = draft.components.map {
+                                                if (it.id == componentId) it.withEditWeight(weight) else it
+                                            }
+                                            draft = draft.copy(
+                                                components = next,
+                                                grams = next.sumOf { it.estimatedWeightG },
+                                                nutrition = completeComponentNutrition(next) ?: draft.nutrition,
+                                            )
+                                            gramsInput = draft.grams.formatEditNumber()
+                                        }
+                                    },
+                                    onRemove = { componentId ->
+                                        if (!busy) {
+                                            val next = draft.components.filterNot { it.id == componentId }
+                                            draft = if (next.isEmpty()) {
+                                                draft.copy(components = emptyList())
+                                            } else {
+                                                draft.copy(
+                                                    components = next,
+                                                    grams = next.sumOf { it.estimatedWeightG },
+                                                    nutrition = completeComponentNutrition(next) ?: draft.nutrition,
+                                                )
+                                            }
+                                            if (next.isNotEmpty()) gramsInput = draft.grams.formatEditNumber()
+                                        }
+                                    },
+                                    onMatch = { if (!busy) onOpenComponentSearch(it) },
+                                )
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(10.dp))
+                Button(
+                    onClick = {
+                        if (!busy) {
+                            showAddComponent = true
+                            onOpenNewComponentSearch()
+                        }
+                    },
+                    enabled = !busy,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = sheetSecondaryButtonColors(enabled = !busy),
+                ) { Text("添加食物成分") }
+            }
+        }
+
+        if (hasManualNutritionOverride) {
+            item {
+                Text(
+                    "手动修改了总营养后，保存时将移除组成部分；如需保留组成，请修改克重或数据库匹配。",
+                    style = MiuixTheme.textStyles.footnote2,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                )
+            }
+        }
+        error?.let { message ->
+            item { Text(message, color = MiuixTheme.colorScheme.error) }
+        }
+        item {
+            Button(
+                onClick = {
+                    if (parsedWeight != null && parsedDate != null) {
+                        val saved = draft.copy(
+                            name = draft.name.trim(),
+                            grams = parsedWeight,
+                            dateEpochDay = parsedDate.toEpochDay(),
+                            mealMinuteOfDay = parsedTime?.let { it.hour * 60 + it.minute },
+                            note = draft.note?.trim()?.ifBlank { null },
+                        ).let { candidate ->
+                            val nutritionFromComponents = completeComponentNutrition(candidate.components)
+                            if (nutritionFromComponents != null && candidate.nutrition != nutritionFromComponents) {
+                                candidate.copy(components = emptyList())
+                            } else {
+                                candidate
+                            }
+                        }
+                        onSave(saved)
+                    }
+                },
+                enabled = valid && !busy,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColorsPrimary(),
+            ) { Text(if (busy) "保存中…" else saveButtonLabel) }
+        }
+
+        if (showDeletePreset && onOpenDeletePresetConfirm != null) {
+            item {
+                Button(
+                    onClick = { if (!busy) onOpenDeletePresetConfirm() },
+                    enabled = !busy,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColorsPrimary(
+                        color = MiuixTheme.colorScheme.error,
+                        contentColor = Color.White,
+                    ),
+                ) {
+                    Text(deletePresetLabel)
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -1128,198 +1647,88 @@ fun MealTimePickerOverlay(
 }
 
 @Composable
-private fun PresetOverlay(
-    show: Boolean,
+private fun PresetListContent(
+    padding: PaddingValues,
     presets: List<PresetFood>,
-    saving: Boolean,
-    error: String?,
-    onDismiss: () -> Unit,
     onSelect: (PresetFood) -> Unit,
-    onUpdate: (PresetFood, () -> Unit) -> Unit,
+    onEdit: (PresetFood) -> Unit,
+    onCreate: () -> Unit,
 ) {
-    var editing by remember { mutableStateOf<PresetFood?>(null) }
-    BlurBottomSheet(
-        show = show,
-        title = "预设食物",
-        dimBackground = true,
-        sheetOffsetDp = 0.dp,
-        onDismissRequest = onDismiss,
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(AddFoodSheetHeight)
+            .overScrollVertical()
+            .navigationBarsPadding(),
+        contentPadding = PaddingValues(
+            start = 16.dp,
+            end = 16.dp,
+            // 与上级页边距一致，标题下再多留一点
+            top = padding.calculateTopPadding() + 12.dp,
+            bottom = padding.calculateBottomPadding() + 40.dp,
+        ),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        LazyColumn(
-            modifier = Modifier
-                .heightIn(min = 220.dp, max = 500.dp)
-                .navigationBarsPadding(),
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 61.dp, bottom = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            items(presets, key = { it.id }) { preset ->
-                Card(
-                    cornerRadius = 14.dp,
+        items(presets, key = { it.id }) { preset ->
+            Card(
+                cornerRadius = 14.dp,
+                modifier = Modifier.fillMaxWidth(),
+                insideMargin = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+                pressFeedbackType = PressFeedbackType.Sink,
+                onClick = { onSelect(preset) },
+            ) {
+                Row(
                     modifier = Modifier.fillMaxWidth(),
-                    insideMargin = PaddingValues(12.dp),
-                    pressFeedbackType = PressFeedbackType.Sink,
-                    onClick = { onSelect(preset) },
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(preset.name, style = MiuixTheme.textStyles.body1, fontWeight = FontWeight.Medium)
+                        val nutritionText = preset.nutrition?.let {
+                            "${it.caloriesKcal.toInt()} kcal · 蛋 ${it.proteinG.formatInput()}g · 碳 ${it.carbsG.formatInput()}g · 脂 ${it.fatG.formatInput()}g"
+                        } ?: completeComponentNutrition(preset.components)?.let {
+                            "${it.caloriesKcal.toInt()} kcal · 蛋 ${it.proteinG.formatInput()}g · 碳 ${it.carbsG.formatInput()}g · 脂 ${it.fatG.formatInput()}g"
+                        } ?: "未设置营养"
+                        val portion = buildString {
+                            if (preset.portionLabel.isNotBlank()) append(preset.portionLabel).append(" · ")
+                            append("约 ${preset.defaultGrams.toInt()}g")
+                            if (preset.components.isNotEmpty()) {
+                                append(" · ").append("${preset.components.size} 种成分")
+                            }
+                        }
+                        Text(
+                            portion,
+                            style = MiuixTheme.textStyles.footnote2,
+                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                        )
+                        Text(
+                            nutritionText,
+                            style = MiuixTheme.textStyles.footnote2,
+                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                        )
+                    }
+                    Button(
+                        onClick = { onEdit(preset) },
+                        minWidth = 48.dp,
+                        minHeight = 28.dp,
+                        insideMargin = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                        // 浅灰底，与列表内小操作按钮一致
+                        colors = ButtonDefaults.buttonColors(),
                     ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(preset.name, style = MiuixTheme.textStyles.body1, fontWeight = FontWeight.Medium)
-                            val nutritionText = preset.nutrition?.let {
-                                "${it.caloriesKcal.toInt()} kcal · 蛋 ${it.proteinG.formatInput()}g · 碳 ${it.carbsG.formatInput()}g · 脂 ${it.fatG.formatInput()}g"
-                            } ?: "未设置营养"
-                            Text(
-                                "${preset.portionLabel} · 约 ${preset.defaultGrams.toInt()}g",
-                                style = MiuixTheme.textStyles.footnote2,
-                                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                            )
-                            Text(
-                                nutritionText,
-                                style = MiuixTheme.textStyles.footnote2,
-                                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                            )
-                        }
-                        Button(
-                            onClick = { editing = preset },
-                            minWidth = 48.dp,
-                            minHeight = 28.dp,
-                            insideMargin = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                        ) {
-                            Text("编辑", style = MiuixTheme.textStyles.footnote1)
-                        }
+                        Text("编辑", style = MiuixTheme.textStyles.footnote1)
                     }
                 }
             }
         }
-    }
 
-    PresetEditDialog(
-        show = editing != null,
-        preset = editing,
-        saving = saving,
-        error = error,
-        onDismiss = { if (!saving) editing = null },
-        onSave = { updated ->
-            onUpdate(updated) { editing = null }
-        },
-    )
-}
-
-@Composable
-private fun PresetEditDialog(
-    show: Boolean,
-    preset: PresetFood?,
-    saving: Boolean,
-    error: String?,
-    onDismiss: () -> Unit,
-    onSave: (PresetFood) -> Unit,
-) {
-    var displayedPreset by remember { mutableStateOf<PresetFood?>(null) }
-    LaunchedEffect(preset) {
-        if (preset != null) displayedPreset = preset
-    }
-    val currentPreset = displayedPreset
-    if (currentPreset == null) return
-    var name by remember(currentPreset.id) { mutableStateOf(currentPreset.name) }
-    var grams by remember(currentPreset.id) { mutableStateOf(currentPreset.defaultGrams.formatInput()) }
-    var kcal by remember(currentPreset.id) { mutableStateOf(currentPreset.nutrition?.caloriesKcal?.formatInput() ?: "") }
-    var protein by remember(currentPreset.id) { mutableStateOf(currentPreset.nutrition?.proteinG?.formatInput() ?: "") }
-    var carbs by remember(currentPreset.id) { mutableStateOf(currentPreset.nutrition?.carbsG?.formatInput() ?: "") }
-    var fat by remember(currentPreset.id) { mutableStateOf(currentPreset.nutrition?.fatG?.formatInput() ?: "") }
-
-    AnimatedOverlayDialog(
-        title = "编辑预设",
-        summary = "修改名称、默认克重与营养数据",
-        show = show,
-        onDismissRequest = onDismiss,
-        onDismissFinished = { if (!show) displayedPreset = null },
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(360.dp)
-                .verticalScroll(rememberScrollState())
-                .imePadding(),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            // 浅色保持默认浅灰底，不强制白底
-            TextField(
-                value = name,
-                onValueChange = { name = it },
-                label = "食物名称",
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
+        // 列表末尾：添加预设（与外层录入方式按钮一致）
+        item {
+            MethodButton(
+                icon = { Icon(MiuixIcons.Os4.Edit, contentDescription = null) },
+                label = "添加预设食物",
+                enabled = true,
+                onClick = onCreate,
             )
-            TextField(
-                value = grams,
-                onValueChange = { grams = it },
-                label = "默认克数 g",
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                modifier = Modifier.fillMaxWidth(),
-            )
-            TextField(
-                value = kcal,
-                onValueChange = { kcal = it },
-                label = "热量 kcal",
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                modifier = Modifier.fillMaxWidth(),
-            )
-            TextField(
-                value = protein,
-                onValueChange = { protein = it },
-                label = "蛋白质 g",
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                modifier = Modifier.fillMaxWidth(),
-            )
-            TextField(
-                value = carbs,
-                onValueChange = { carbs = it },
-                label = "碳水 g",
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                modifier = Modifier.fillMaxWidth(),
-            )
-            TextField(
-                value = fat,
-                onValueChange = { fat = it },
-                label = "脂肪 g",
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                modifier = Modifier.fillMaxWidth(),
-            )
-            error?.let { Text(it, color = MiuixTheme.colorScheme.error) }
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-                Button(onClick = onDismiss, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors()) {
-                    Text("取消")
-                }
-                Button(
-                    onClick = {
-                        onSave(
-                            currentPreset.copy(
-                                name = name.trim().ifBlank { currentPreset.name },
-                                defaultGrams = grams.toDoubleOrNull()?.takeIf { it > 0.0 } ?: currentPreset.defaultGrams,
-                                nutrition = Nutrition(
-                                    caloriesKcal = kcal.toDoubleOrNull() ?: 0.0,
-                                    proteinG = protein.toDoubleOrNull() ?: 0.0,
-                                    carbsG = carbs.toDoubleOrNull() ?: 0.0,
-                                    fatG = fat.toDoubleOrNull() ?: 0.0,
-                                ),
-                            ),
-                        )
-                    },
-                    enabled = !saving && name.isNotBlank() && grams.toDoubleOrNull()?.let { it.isFinite() && it > 0 } == true &&
-                        listOf(kcal, protein, carbs, fat).all { it.toDoubleOrNull()?.let { n -> n.isFinite() && n >= 0 } == true },
-                    modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.buttonColorsPrimary(),
-                ) {
-                    Text("保存")
-                }
-            }
         }
     }
 }
@@ -1842,6 +2251,64 @@ private fun Int.toLocalTime(): LocalTime = LocalTime.of(this / 60, this % 60)
 private fun isLightTheme(): Boolean {
     val bg = MiuixTheme.colorScheme.background
     return (0.299f * bg.red + 0.587f * bg.green + 0.114f * bg.blue) > 0.5f
+}
+
+/** bottomsheet 内次要按钮：浅色白底，深色 surfaceContainer（与 MethodButton 一致） */
+@Composable
+private fun sheetSecondaryButtonColors(enabled: Boolean = true): ButtonColors {
+    val isLight = isLightTheme()
+    val container = when {
+        !enabled && isLight -> MiuixTheme.colorScheme.secondaryVariant
+        !enabled -> MiuixTheme.colorScheme.disabledSecondaryVariant
+        isLight -> Color.White
+        else -> MiuixTheme.colorScheme.surfaceContainer
+    }
+    val content = if (enabled) {
+        MiuixTheme.colorScheme.onSurface
+    } else {
+        MiuixTheme.colorScheme.disabledOnSurface
+    }
+    return ButtonDefaults.buttonColors(
+        color = container,
+        disabledColor = if (isLight) {
+            MiuixTheme.colorScheme.secondaryVariant
+        } else {
+            MiuixTheme.colorScheme.disabledSecondaryVariant
+        },
+        contentColor = content,
+        disabledContentColor = MiuixTheme.colorScheme.disabledOnSurface,
+    )
+}
+
+@Composable
+private fun LeaveConfirmDialog(
+    show: Boolean,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    AnimatedOverlayDialog(
+        show = show,
+        title = "放弃当前内容？",
+        summary = "返回后未保存的填写将丢失",
+        onDismissRequest = onDismiss,
+    ) {
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+            Button(
+                onClick = onConfirm,
+                modifier = Modifier.weight(1f),
+                colors = ButtonDefaults.buttonColorsPrimary(),
+            ) {
+                Text("放弃并返回")
+            }
+            Button(
+                onClick = onDismiss,
+                modifier = Modifier.weight(1f),
+                colors = ButtonDefaults.buttonColors(),
+            ) {
+                Text("继续填写")
+            }
+        }
+    }
 }
 
 @Composable

@@ -64,8 +64,8 @@ import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 
-private enum class NutritionField { CALORIES, PROTEIN, CARBS, FAT }
-private enum class TextEditField { FOOD_NAME, NOTE }
+internal enum class NutritionField { CALORIES, PROTEIN, CARBS, FAT }
+internal enum class TextEditField { FOOD_NAME, NOTE }
 
 @Composable
 fun EditFoodScreen(
@@ -279,11 +279,18 @@ fun EditFoodScreen(
         contentPadding = PaddingValues(
             start = 16.dp,
             end = 16.dp,
-            top = contentPadding.calculateTopPadding(),
+            top = contentPadding.calculateTopPadding() + 16.dp,
             bottom = contentPadding.calculateBottomPadding() + 24.dp,
         ),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        item {
+            MealTypeSelector(
+                selected = draft.mealType,
+                onSelect = { if (!busy) draft = draft.copy(mealType = it) },
+            )
+        }
+
         item {
             Column {
                 SmallTitle(
@@ -319,13 +326,6 @@ fun EditFoodScreen(
                 palette = palette,
                 enabled = !busy,
                 onNutritionField = { nutritionField = it },
-            )
-        }
-
-        item {
-            MealTypeSelector(
-                selected = draft.mealType,
-                onSelect = { if (!busy) draft = draft.copy(mealType = it) },
             )
         }
 
@@ -471,7 +471,7 @@ fun EditFoodScreen(
 }
 
 @Composable
-private fun PickerField(
+internal fun PickerField(
     label: String,
     value: String,
     enabled: Boolean,
@@ -492,7 +492,7 @@ private fun PickerField(
 }
 
 @Composable
-private fun EditNutritionSummary(
+internal fun EditNutritionSummary(
     nutrition: Nutrition,
     calorieTarget: Float,
     proteinTarget: Float,
@@ -542,7 +542,7 @@ private fun EditNutritionSummary(
 }
 
 @Composable
-private fun EditableMacroRing(
+internal fun EditableMacroRing(
     label: String,
     value: Double,
     target: Float,
@@ -580,7 +580,7 @@ private fun EditableMacroRing(
 }
 
 @Composable
-private fun EditNutritionDialog(
+internal fun EditNutritionDialog(
     field: NutritionField?,
     nutrition: Nutrition,
     onDismiss: () -> Unit,
@@ -609,7 +609,7 @@ private fun EditNutritionDialog(
 }
 
 @Composable
-private fun TextInputDialog(
+internal fun TextInputDialog(
     field: TextEditField?,
     initial: String,
     onDismiss: () -> Unit,
@@ -654,7 +654,7 @@ private fun TextInputDialog(
     }
 }
 
-private fun FoodComponent.withEditWeight(weight: Double): FoodComponent {
+internal fun FoodComponent.withEditWeight(weight: Double): FoodComponent {
     val old = estimatedWeightG.takeIf { it > 0 } ?: 1.0
     return copy(
         estimatedWeightG = weight,
@@ -663,29 +663,29 @@ private fun FoodComponent.withEditWeight(weight: Double): FoodComponent {
     )
 }
 
-private fun completeComponentNutrition(components: List<FoodComponent>): Nutrition? {
+internal fun completeComponentNutrition(components: List<FoodComponent>): Nutrition? {
     if (components.isEmpty() || components.any { it.nutritionReference == null }) return null
     return components.fold(Nutrition()) { total, component -> total + component.nutrition }
 }
 
-private fun Nutrition.withField(field: NutritionField, value: Double): Nutrition = when (field) {
+internal fun Nutrition.withField(field: NutritionField, value: Double): Nutrition = when (field) {
     NutritionField.CALORIES -> copy(caloriesKcal = value)
     NutritionField.PROTEIN -> copy(proteinG = value)
     NutritionField.CARBS -> copy(carbsG = value)
     NutritionField.FAT -> copy(fatG = value)
 }
 
-private fun Nutrition.isValidEditNutrition(): Boolean = listOf(caloriesKcal, proteinG, carbsG, fatG).all { it.isFinite() && it >= 0 }
+internal fun Nutrition.isValidEditNutrition(): Boolean = listOf(caloriesKcal, proteinG, carbsG, fatG).all { it.isFinite() && it >= 0 }
 
 private fun Long.toSafeEditDate(): LocalDate =
     runCatching { LocalDate.ofEpochDay(this) }.getOrDefault(LocalDate.now())
 
-private fun nutritionProgress(value: Double, target: Float): Float =
+internal fun nutritionProgress(value: Double, target: Float): Float =
     if (!value.isFinite() || !target.isFinite() || target <= 0f) {
         0f
     } else {
         (value / target).toFloat().coerceIn(0f, 1f)
     }
 
-private fun Double.formatEditNumber(): String =
+internal fun Double.formatEditNumber(): String =
     if (this % 1.0 == 0.0) toInt().toString() else "%.1f".format(Locale.ROOT, this)
