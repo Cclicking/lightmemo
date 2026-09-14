@@ -21,6 +21,8 @@ fun localProp(key: String): String? =
     localProperties.getProperty(key)?.takeIf { it.isNotBlank() }
         ?: System.getenv(key)?.takeIf { it.isNotBlank() }
 
+val appVersionName = "1.3.1"
+
 android {
     namespace = "com.click.lightmemo"
     compileSdk = 37
@@ -30,7 +32,7 @@ android {
         minSdk = 31
         targetSdk = 37
         versionCode = 22
-        versionName = "1.3.1"
+        versionName = appVersionName
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
     }
@@ -76,6 +78,14 @@ android {
     }
     kotlin {
         jvmToolchain(21)
+    }
+}
+
+androidComponents {
+    onVariants(selector().withBuildType("release")) { variant ->
+        variant.outputs.forEach { output ->
+            output.outputFileName.set("Lightmemo-v${appVersionName}.apk")
+        }
     }
 }
 
