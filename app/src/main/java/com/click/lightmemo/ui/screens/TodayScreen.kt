@@ -1,5 +1,6 @@
 package com.click.lightmemo.ui.screens
 
+import android.content.Intent
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -30,6 +31,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
@@ -91,7 +93,7 @@ fun TodayScreen(
     val busy by viewModel.busy.collectAsState()
     val operationError by viewModel.operationError.collectAsState()
     val readError by viewModel.readError.collectAsState()
-    var editingEntry by remember { mutableStateOf<FoodLog?>(null) }
+    val context = LocalContext.current
     var selectedEntry by remember { mutableStateOf<FoodLog?>(null) }
     var deleteEntry by remember { mutableStateOf<FoodLog?>(null) }
     var showDetail by remember { mutableStateOf(false) }
@@ -116,15 +118,14 @@ fun TodayScreen(
             palette = palette,
             onEdit = {
                 showDetail = false
-                editingEntry = entry
+                selectedEntry = null
                 viewModel.operationError.value = null
+                context.startActivity(
+                    Intent(context, com.click.lightmemo.ui.secondary.EditFoodActivity::class.java)
+                        .putExtra(com.click.lightmemo.ui.secondary.EditFoodActivity.EXTRA_ENTRY_ID, entry.id),
+                )
             },
         )
-    }
-    editingEntry?.let { entry ->
-        EditFoodOverlay(entry, busy, operationError, onDismiss = { editingEntry = null }) { updated ->
-            viewModel.update(updated) { editingEntry = null }
-        }
     }
     deleteEntry?.let { entry ->
         DeleteFoodOverlay(
@@ -577,7 +578,6 @@ private fun FoodDetailOverlay(
                     CompactMacroRing("脂肪", entry.nutrition.fatG, targets.fatTarget, palette.fat, Modifier.weight(1f))
                 }
             }
-            Button(onClick = onEdit, modifier = Modifier.fillMaxWidth()) { Text("编辑记录") }
             SmallTitle(
                 text = "组成部分",
                 insideMargin = PaddingValues(start = 0.dp, top = 8.dp, end = 0.dp, bottom = 0.dp),
@@ -602,7 +602,20 @@ private fun FoodDetailOverlay(
                     }
                 }
             }
-            Button(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) { Text("完成") }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Button(
+                    onClick = onEdit,
+                    modifier = Modifier.weight(1f),
+                ) { Text("编辑") }
+                Button(
+                    onClick = onDismiss,
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColorsPrimary(),
+                ) { Text("完成") }
+            }
         }
     }
 }

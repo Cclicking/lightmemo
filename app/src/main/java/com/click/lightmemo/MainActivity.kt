@@ -204,7 +204,10 @@ fun FoodAppRoot() {
             val settingsReadError by settingsVm.readError.collectAsState()
             // Android 12（API 31–32）：玻璃降级为高斯模糊（RenderEffect），渐变模糊降级为软渐变
             val fullLiquidGlassSupported = isRuntimeShaderSupported()
-            val blurGlassSupported = isRenderEffectSupported()
+            // Do not install RenderEffect backdrop layers when the user has disabled glass
+            // effects. On some API 35 GPU implementations that otherwise leaves the first cold
+            // frame black even though the Compose hierarchy has been laid out successfully.
+            val blurGlassSupported = isRenderEffectSupported() && appSettings.glassEffectsEnabled
             val progressiveBlurEnabled = fullLiquidGlassSupported && appSettings.glassEffectsEnabled
             val softGradientBlurEnabled =
                 !fullLiquidGlassSupported && blurGlassSupported &&

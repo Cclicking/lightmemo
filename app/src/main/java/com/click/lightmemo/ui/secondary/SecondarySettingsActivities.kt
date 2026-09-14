@@ -12,6 +12,8 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -32,14 +34,17 @@ import com.click.lightmemo.ui.screens.AppearanceSettingsScreen
 import com.click.lightmemo.ui.screens.CalorieTargetScreen
 import com.click.lightmemo.ui.screens.DataManagementScreen
 import com.click.lightmemo.ui.screens.FoodDatabaseScreen
+import com.click.lightmemo.ui.screens.EditFoodScreen
 import com.click.lightmemo.ui.screens.PersonalInfoScreen
 import com.click.lightmemo.ui.screens.PermissionManagementScreen
 import com.click.lightmemo.ui.theme.FoodTheme
+import com.click.lightmemo.ui.theme.toComposeColors
 import com.click.lightmemo.ui.utils.LocalOverScrollState
 import com.click.lightmemo.ui.utils.OverScrollState
 import com.click.lightmemo.viewmodel.BackupViewModel
 import com.click.lightmemo.viewmodel.AppUpdateViewModel
 import com.click.lightmemo.viewmodel.SettingsViewModel
+import com.click.lightmemo.viewmodel.EditFoodViewModel
 import com.kyant.backdrop.Backdrop
 import com.kyant.backdrop.isRenderEffectSupported
 import top.yukonga.miuix.kmp.icon.MiuixIcons
@@ -315,6 +320,41 @@ class PermissionManagementActivity : SecondarySettingsActivity() {
             contentPadding = contentPadding,
             scrollBehavior = scrollBehavior,
             listState = rememberLazyListState(),
+        )
+    }
+}
+
+class EditFoodActivity : SecondarySettingsActivity() {
+    override val pageTitle = "编辑记录"
+
+    companion object {
+        const val EXTRA_ENTRY_ID = "entry_id"
+    }
+
+    @Composable
+    override fun PageContent(
+        settingsVm: SettingsViewModel,
+        backupVm: BackupViewModel,
+        contentPadding: PaddingValues,
+        scrollBehavior: SharedScrollBehavior,
+    ) {
+        val editVm: EditFoodViewModel = viewModel()
+        val settings by settingsVm.settings.collectAsState()
+        val entryId = intent.getLongExtra(EXTRA_ENTRY_ID, -1L)
+        LaunchedEffect(entryId) {
+            editVm.load(entryId)
+        }
+        EditFoodScreen(
+            viewModel = editVm,
+            contentPadding = contentPadding,
+            scrollBehavior = scrollBehavior,
+            listState = rememberLazyListState(),
+            calorieTarget = settings.dailyCalorieTarget,
+            proteinTarget = settings.effectiveProteinG.takeIf { it > 0f } ?: 120f,
+            carbsTarget = settings.effectiveCarbsG.takeIf { it > 0f } ?: 250f,
+            fatTarget = settings.effectiveFatG.takeIf { it > 0f } ?: 60f,
+            palette = settings.colorPalette.toComposeColors(),
+            onSaved = { finish() },
         )
     }
 }

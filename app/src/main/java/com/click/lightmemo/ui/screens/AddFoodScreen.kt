@@ -963,7 +963,7 @@ private fun NutritionArrowRow(
 }
 
 @Composable
-private fun NumberInputDialog(
+fun NumberInputDialog(
     show: Boolean,
     title: String,
     summary: String? = null,
@@ -1008,7 +1008,7 @@ private fun NumberInputDialog(
 }
 
 @Composable
-private fun MealDatePickerOverlay(
+fun MealDatePickerOverlay(
     show: Boolean,
     date: LocalDate,
     onDismiss: () -> Unit,
@@ -1067,11 +1067,12 @@ private fun MealDatePickerOverlay(
 }
 
 @Composable
-private fun MealTimePickerOverlay(
+fun MealTimePickerOverlay(
     show: Boolean,
     minuteOfDay: Int,
     onDismiss: () -> Unit,
     onConfirm: (Int) -> Unit,
+    onClear: (() -> Unit)? = null,
 ) {
     var hour by remember(minuteOfDay) { mutableStateOf(minuteOfDay / 60) }
     var minute by remember(minuteOfDay) { mutableStateOf(minuteOfDay % 60) }
@@ -1099,6 +1100,11 @@ private fun MealTimePickerOverlay(
                 )
             }
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                onClear?.let {
+                    Button(onClick = it, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors()) {
+                        Text("清除")
+                    }
+                }
                 Button(onClick = onDismiss, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors()) {
                     Text("取消")
                 }
@@ -1678,7 +1684,7 @@ private fun DishResultCard(
 }
 
 @Composable
-private fun ComponentResultRow(
+fun ComponentResultRow(
     component: FoodComponent,
     onWeightChange: (String, Double) -> Unit,
     onRemove: (String) -> Unit,
@@ -1698,21 +1704,22 @@ private fun ComponentResultRow(
             Text(component.name, style = MiuixTheme.textStyles.body1)
             val ref = component.nutritionReference
             Text(
-                text = ref?.let { "来自 USDA #${it.sourceId}" } ?: "未匹配到营养数据",
+                text = ref?.let {
+                    val source = if (it.dataType.contains("中国")) "中国食物成分表" else "USDA"
+                    "来自 $source #${it.sourceId}"
+                } ?: "未匹配到营养数据",
                 style = MiuixTheme.textStyles.footnote2,
                 color = if (ref == null) MiuixTheme.colorScheme.error
                 else MiuixTheme.colorScheme.onSurfaceVariantSummary,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            if (ref == null) {
-                Text(
-                    text = "手动匹配数据库",
-                    style = MiuixTheme.textStyles.footnote1,
-                    color = MiuixTheme.colorScheme.primary,
-                    modifier = Modifier.clickable { onMatch(component) },
-                )
-            }
+            Text(
+                text = if (ref == null) "手动匹配数据库" else "更换数据库匹配",
+                style = MiuixTheme.textStyles.footnote1,
+                color = MiuixTheme.colorScheme.primary,
+                modifier = Modifier.clickable { onMatch(component) },
+            )
         }
 
         // 克重
