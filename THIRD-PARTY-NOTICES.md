@@ -1,3 +1,13 @@
+# 第三方许可与来源说明
+
+本文件汇总本项目使用或随源码分发的第三方代码、软件依赖和数据来源说明。
+不同组件仍适用各自的原始许可证；本文件不会把它们重新许可为同一个许可证。
+
+## NexioSchedule 相关代码
+
+部分页面结构和交互实现参考/衍生自 [NexioSchedule](https://github.com/HaoZai000/NexioSchedule)。
+其许可证为 GNU Affero General Public License v3.0；完整许可证文本如下。
+
                     GNU AFFERO GENERAL PUBLIC LICENSE
                        Version 3, 19 November 2007
 
@@ -659,3 +669,59 @@ specific requirements.
 if any, to sign a "copyright disclaimer" for the program, if necessary.
 For more information on this, and how to apply and follow the GNU AGPL, see
 <https://www.gnu.org/licenses/>.
+
+---
+
+# USDA FoodData Central 数据说明
+
+本项目内置的 `fdc_sr_legacy_macros.tsv.gz` 由 FoodData Central 的 SR Legacy 2018-04 CSV 生成，
+仅保留应用计算需要的 FDC ID、食物描述以及每 100g 的能量、蛋白质、碳水化合物和脂肪。
+
+- 来源：U.S. Department of Agriculture, Agricultural Research Service, FoodData Central
+- 下载页：https://fdc.nal.usda.gov/download-datasets/
+- 数据版本：SR Legacy, 2018-04（最终版）
+- 许可：CC0 1.0 / public domain
+
+生成方式见 `tools/generate_fdc_asset.py`。视觉模型不生成营养值；所有展示值都由数据库每 100g
+数据乘以可食用重量后计算，并由程序逐级汇总。
+
+## 中国食物成分回退库
+
+`china_food_composition.tsv.gz` 由
+[`Sanotsu/china-food-composition-data`](https://github.com/Sanotsu/china-food-composition-data)
+的 `json_data_v3_20260825_qwen38max_kimi_k3_fixed_en/food_composition_full.csv` 生成：
+
+- 上游提交：`d15675c27582748307023b7ee7aca2a63fc52756`
+- 原始条目：1,677；保留四项宏量营养完整的 1,635 条（`Tr` 按 0、带 `*` 脚注数值按其数值解析）
+- 字段：食物编码、中英文名称、每 100g 热量/蛋白质/碳水/脂肪
+- 查询优先级：USDA 离线库 → 可选 USDA API → 本回退库
+
+上游仓库没有提供开源许可证，并在 README 中声明版权归原作者、脚本仅用于个人学习研究。
+因此该数据不能视为 CC0，也不应在未取得相应授权时用于公开分发或商业发布。
+
+---
+
+## 随应用使用的第三方软件
+
+以下是 `app` 的 release 运行时直接依赖及其主要传递依赖。除特别说明外，均为 Apache License 2.0：
+
+- [Miuix](https://github.com/compose-miuix-ui/miuix)：`miuix-ui-android`、`miuix-preference-android`、`miuix-icons-android`、`miuix-blur-android`、`miuix-glass-android`、`miuix-nav-android` `0.9.4-rclocal`。
+- [AndroidX / Jetpack Compose](https://github.com/androidx/androidx)：Compose、Activity、Core、Lifecycle、Navigation、NavigationEvent、DataStore 等组件。
+- [Kotlin](https://github.com/JetBrains/kotlin)：Kotlin standard library `2.4.10`。
+- [kotlinx.coroutines](https://github.com/Kotlin/kotlinx.coroutines)：`1.10.2`。
+- [kotlinx.serialization](https://github.com/Kotlin/kotlinx.serialization)：`1.9.0`（解析时按依赖约束解析到兼容版本）。
+- [OkHttp / Okio](https://github.com/square/okhttp)：OkHttp `4.12.0` 及其传递依赖。
+- [Coil](https://github.com/coil-kt/coil)：`coil-compose` `3.3.0`。
+- [Accompanist](https://github.com/google/accompanist)：`accompanist-drawablepainter` `0.37.3`（Coil 的传递依赖）。
+- [Kyant0/AndroidLiquidGlass](https://github.com/Kyant0/AndroidLiquidGlass)：仓库内 `com.kyant.backdrop.*` 和 `com.kyant.shapes.*` 的 vendored/forked 源码，Apache License 2.0；相关源文件保留了上游署名和许可证头。
+
+Apache License 2.0：<https://www.apache.org/licenses/LICENSE-2.0>
+
+## 仅用于测试的依赖
+
+以下依赖只用于构建和测试，不会打包进 release APK：
+
+- [JUnit 4](https://github.com/junit-team/junit4) `4.13.2`：Eclipse Public License 1.0。
+- [JSON-java](https://github.com/stleary/JSON-java) `20240303`：Public Domain。
+- `kotlinx-coroutines-test`：Apache License 2.0。
+- AndroidX Test Runner / AndroidX Test Ext JUnit：Apache License 2.0。

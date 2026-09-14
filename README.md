@@ -113,4 +113,4 @@ python tools/generate_fdc_asset.py <CSV解压目录> app/src/main/assets/fdc_sr_
 python tools/generate_china_food_asset.py <food_composition_full.csv> app/src/main/assets/china_food_composition.tsv.gz
 ```
 
-数据来源与许可见 [`docs/USDA-FoodData-Central-NOTICE.md`](docs/USDA-FoodData-Central-NOTICE.md)。
+第三方许可与数据来源见 [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md)。
