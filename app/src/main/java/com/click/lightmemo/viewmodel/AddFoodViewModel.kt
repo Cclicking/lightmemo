@@ -99,6 +99,16 @@ data class AddFoodUiState(
     val secondaryHasContent: Boolean = false,
     val showLeaveConfirm: Boolean = false,
     val showDeletePresetConfirm: Boolean = false,
+    /** 手动录入页当前草稿（供顶栏 pin/unpin 预设） */
+    val manualDraftSnapshot: ManualDraftSnapshot? = null,
+)
+
+/** 手动录入页草稿快照，用于顶栏加入/取消预设。 */
+data class ManualDraftSnapshot(
+    val name: String,
+    val grams: Double,
+    val nutrition: Nutrition,
+    val components: List<FoodComponent>,
 )
 
 data class DatabaseSearchState(
@@ -579,6 +589,89 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** 识别结果卡片：是否已按名称加入预设 */
+    fun isDishPinned(name: String): Boolean {
+        val trimmed = name.trim()
+        if (trimmed.isEmpty()) return false
+        return _uiState.value.presets.any { it.name == trimmed }
+    }
+
+    /** 手动录入页草稿同步到 ViewModel，供顶栏 pin 使用 */
+    fun syncManualDraft(snapshot: ManualDraftSnapshot?) {
+        if (_uiState.value.manualDraftSnapshot == snapshot) return
+        _uiState.value = _uiState.value.copy(manualDraftSnapshot = snapshot)
+    }
+
+    /** 编辑页顶栏：把当前草稿加入预设 */
+    fun pinManualDraftAsPreset() {
+        val draft = _uiState.value.manualDraftSnapshot ?: return
+        val name = draft.name.trim()
+        if (name.isEmpty()) {
+            notify("请先填写食物名称")
+            return
+        }
+        if (isDishPinned(name)) return
+        val grams = draft.grams.takeIf { it.isFinite() && it > 0.0 } ?: 100.0
+        val nutrition = draft.nutrition
+        val preset = PresetFood(
+            id = java.util.UUID.randomUUID().toString(),
+            name = name,
+            defaultGrams = grams,
+            portionLabel = "",
+            nutrition = nutrition.takeIf {
+                it.caloriesKcal > 0.0 || it.proteinG > 0.0 || it.carbsG > 0.0 || it.fatG > 0.0
+            },
+            components = draft.components,
+        )
+        save({
+            notify("已加入预设「$name」")
+        }) {
+            settingsRepo.updateFoodPreset(preset)
+        }
+    }
+
+    /** 编辑页顶栏：按名称取消预设 */
+    fun unpinManualDraftPreset() {
+        unpinDishPreset(_uiState.value.manualDraftSnapshot?.name.orEmpty())
+    }
+
+    /** 将已识别菜品加入预设（含成分与营养） */
+    fun pinDishAsPreset(dish: RecognizedDish) {
+        val name = dish.name.trim()
+        if (name.isEmpty()) {
+            notify("菜品名称为空，无法加入预设")
+            return
+        }
+        if (isDishPinned(name)) return
+        val grams = dish.grams.takeIf { it.isFinite() && it > 0.0 } ?: 100.0
+        val nutrition = dish.nutrition
+        val preset = PresetFood(
+            id = java.util.UUID.randomUUID().toString(),
+            name = name,
+            defaultGrams = grams,
+            portionLabel = "",
+            nutrition = nutrition.takeIf { it.caloriesKcal > 0.0 || it.proteinG > 0.0 || it.carbsG > 0.0 || it.fatG > 0.0 },
+            components = dish.allComponents,
+        )
+        save({
+            notify("已加入预设「$name」")
+        }) {
+            settingsRepo.updateFoodPreset(preset)
+        }
+    }
+
+    /** 从预设中移除同名菜品 */
+    fun unpinDishPreset(name: String) {
+        val trimmed = name.trim()
+        if (trimmed.isEmpty()) return
+        val target = _uiState.value.presets.firstOrNull { it.name == trimmed } ?: return
+        save({
+            notify("已从预设移除「${target.name}」")
+        }) {
+            settingsRepo.deleteFoodPreset(target.id)
+        }
+    }
+
     fun applyPreset(preset: PresetFood) {
         // 已有营养/成分时直接进手动录入编辑页，避免再走识别
         val nutrition = preset.nutrition
@@ -634,6 +727,7 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
             secondaryHasContent = false,
             showLeaveConfirm = false,
             showDeletePresetConfirm = false,
+            manualDraftSnapshot = null,
         )
     }
 

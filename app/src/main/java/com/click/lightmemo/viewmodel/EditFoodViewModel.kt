@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.click.lightmemo.FoodApp
 import com.click.lightmemo.data.AppSettings
 import com.click.lightmemo.data.FoodLogRepository
+import com.click.lightmemo.data.PresetFood
 import com.click.lightmemo.domain.FoodComponent
 import com.click.lightmemo.domain.FoodLog
 import com.click.lightmemo.domain.NutritionReference
@@ -25,6 +26,8 @@ data class EditFoodUiState(
     val saving: Boolean = false,
     val error: String? = null,
     val databaseSearch: DatabaseSearchState? = null,
+    val pinnedNames: Set<String> = emptySet(),
+    val pinMessage: String? = null,
 )
 
 /** State holder for the full-screen food-log editor. */
@@ -44,6 +47,67 @@ class EditFoodViewModel(app: Application) : AndroidViewModel(app) {
 
     private var loadedEntryId: Long? = null
     private var databaseSearchJob: Job? = null
+
+    init {
+        viewModelScope.launch {
+            settingsRepo.foodPresets.collect { presets ->
+                _uiState.value = _uiState.value.copy(pinnedNames = presets.map { it.name }.toSet())
+            }
+        }
+    }
+
+    fun isPinned(name: String): Boolean {
+        val trimmed = name.trim()
+        return trimmed.isNotEmpty() && _uiState.value.pinnedNames.contains(trimmed)
+    }
+
+    /** 编辑记录页顶栏：把当前记录加入预设 */
+    fun pinEntryAsPreset(entry: FoodLog) {
+        val name = entry.name.trim()
+        if (name.isEmpty()) return
+        if (isPinned(name)) return
+        val preset = PresetFood(
+            id = java.util.UUID.randomUUID().toString(),
+            name = name,
+            defaultGrams = entry.grams.takeIf { it.isFinite() && it > 0.0 } ?: 100.0,
+            portionLabel = "",
+            nutrition = entry.nutrition.takeIf {
+                it.caloriesKcal > 0.0 || it.proteinG > 0.0 || it.carbsG > 0.0 || it.fatG > 0.0
+            },
+            components = entry.components,
+        )
+        viewModelScope.launch {
+            try {
+                settingsRepo.updateFoodPreset(preset)
+                _uiState.value = _uiState.value.copy(pinMessage = "已加入预设「$name」")
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(error = e.message ?: "加入预设失败")
+            }
+        }
+    }
+
+    /** 编辑记录页顶栏：按名称取消预设 */
+    fun unpinEntryPreset(name: String) {
+        val trimmed = name.trim()
+        if (trimmed.isEmpty()) return
+        viewModelScope.launch {
+            try {
+                val target = settingsRepo.foodPresets.first().firstOrNull { it.name == trimmed } ?: return@launch
+                settingsRepo.deleteFoodPreset(target.id)
+                _uiState.value = _uiState.value.copy(pinMessage = "已从预设移除「$trimmed」")
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(error = e.message ?: "取消预设失败")
+            }
+        }
+    }
+
+    fun consumePinMessage() {
+        _uiState.value = _uiState.value.copy(pinMessage = null)
+    }
 
     fun load(entryId: Long) {
         if (loadedEntryId == entryId) return

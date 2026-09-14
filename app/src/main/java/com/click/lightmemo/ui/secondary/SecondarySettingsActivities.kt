@@ -8,6 +8,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -18,6 +19,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigationevent.OnBackInvokedDefaultInput
 import androidx.navigationevent.compose.LocalNavigationEventDispatcherOwner
@@ -50,6 +53,8 @@ import com.kyant.backdrop.isRenderEffectSupported
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.basic.Close
 import top.yukonga.miuix.kmp.icon.basic.Search
+import top.yukonga.miuix.kmp.icon.os4.Pin
+import top.yukonga.miuix.kmp.icon.os4.Unpin
 
 /**
  * Real Activity host for a settings page. The system window transition applies
@@ -326,9 +331,39 @@ class PermissionManagementActivity : SecondarySettingsActivity() {
 
 class EditFoodActivity : SecondarySettingsActivity() {
     override val pageTitle = "编辑记录"
+    override val hasPageEndAction: Boolean = true
+
+    // 必须用 Compose 状态持有 VM，否则顶栏 endAction 首帧后不会因 holder 赋值而重组
+    private val editVmState = mutableStateOf<EditFoodViewModel?>(null)
 
     companion object {
         const val EXTRA_ENTRY_ID = "entry_id"
+    }
+
+    @Composable
+    override fun PageEndAction(
+        backdrop: Backdrop,
+        backdropAlpha: Float,
+        shadowAlpha: Float,
+    ) {
+        val editVm = editVmState.value ?: return
+        val state by editVm.uiState.collectAsState()
+        val name = state.entry?.name?.trim().orEmpty()
+        val pinned = name.isNotEmpty() && state.pinnedNames.contains(name)
+        LiquidTopBarButton(
+            onClick = {
+                val entry = state.entry ?: return@LiquidTopBarButton
+                if (pinned) editVm.unpinEntryPreset(entry.name)
+                else editVm.pinEntryAsPreset(entry)
+            },
+            backdrop = backdrop,
+            icon = if (pinned) MiuixIcons.Os4.Unpin else MiuixIcons.Os4.Pin,
+            contentDescription = if (pinned) "取消预设" else "加入预设",
+            modifier = Modifier.padding(end = 18.dp),
+            iconSize = 24.dp,
+            backdropAlpha = backdropAlpha,
+            shadowAlpha = shadowAlpha,
+        )
     }
 
     @Composable
@@ -339,6 +374,7 @@ class EditFoodActivity : SecondarySettingsActivity() {
         scrollBehavior: SharedScrollBehavior,
     ) {
         val editVm: EditFoodViewModel = viewModel()
+        editVmState.value = editVm
         val settings by settingsVm.settings.collectAsState()
         val entryId = intent.getLongExtra(EXTRA_ENTRY_ID, -1L)
         LaunchedEffect(entryId) {

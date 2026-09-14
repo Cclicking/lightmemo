@@ -291,6 +291,7 @@ fun CalorieTargetScreen(
     listState: LazyListState,
 ) {
     val settings by viewModel.settings.collectAsState()
+    val context = LocalContext.current
     val kcal = settings.dailyCalorieTarget.toInt()
     val protein = settings.effectiveProteinG
     val fat = settings.effectiveFatG
@@ -427,9 +428,24 @@ fun CalorieTargetScreen(
                     )
                 }
 
+                Spacer(Modifier.height(16.dp))
+                Button(
+                    onClick = {
+                        context.startActivity(
+                            android.content.Intent(
+                                context,
+                                com.click.lightmemo.ui.secondary.PersonalInfoActivity::class.java,
+                            ),
+                        )
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColorsPrimary(),
+                ) {
+                    Text("填写个人信息")
+                }
                 Spacer(Modifier.height(12.dp))
                 Text(
-                    text = "未手动设置时，营养素目标根据身高体重与运动强度自动推荐",
+                    text = "填写个人信息，自动推荐摄入",
                     style = MiuixTheme.textStyles.footnote2,
                     color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                     modifier = Modifier.padding(horizontal = FootnoteHorizontalPadding),

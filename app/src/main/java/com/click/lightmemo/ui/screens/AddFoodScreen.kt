@@ -90,6 +90,7 @@ import com.click.lightmemo.ui.utils.overScrollVertical
 import com.click.lightmemo.viewmodel.AddFoodViewModel
 import com.click.lightmemo.viewmodel.AddStep
 import com.click.lightmemo.viewmodel.DefaultMealTags
+import com.click.lightmemo.viewmodel.ManualDraftSnapshot
 import com.click.lightmemo.data.PresetFood
 import com.click.lightmemo.viewmodel.QuantityMode
 import java.io.File
@@ -120,6 +121,8 @@ import top.yukonga.miuix.kmp.icon.os4.Edit
 import top.yukonga.miuix.kmp.icon.os4.FavoritesFill
 import top.yukonga.miuix.kmp.icon.os4.Image
 import top.yukonga.miuix.kmp.icon.os4.Photos
+import top.yukonga.miuix.kmp.icon.os4.Pin
+import top.yukonga.miuix.kmp.icon.os4.Unpin
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.theme.LocalContentColor
 import top.yukonga.miuix.kmp.theme.MiuixTheme
@@ -394,6 +397,7 @@ fun AddFoodRoute(
                         onCloseComponentSearch = viewModel::closeDraftComponentSearch,
                         onSave = { draft -> viewModel.saveManualDraft(draft, onDone) },
                         onHasContentChange = viewModel::setSecondaryHasContent,
+                        onDraftSync = viewModel::syncManualDraft,
                     )
                 }
 
@@ -455,6 +459,7 @@ fun AddFoodRoute(
                             )
                         },
                         onHasContentChange = viewModel::setSecondaryHasContent,
+                        onDraftSync = viewModel::syncManualDraft,
                     )
 
                     AnimatedOverlayDialog(
@@ -1067,6 +1072,7 @@ private fun ManualEditContent(
     onCloseComponentSearch: () -> Unit,
     onSave: (FoodLog) -> Unit,
     onHasContentChange: (Boolean) -> Unit,
+    onDraftSync: (ManualDraftSnapshot) -> Unit,
 ) {
     val initialEpochDay = defaultDateEpochDay
     val componentGrams = initialComponents.sumOf { it.estimatedWeightG }
@@ -1106,6 +1112,14 @@ private fun ManualEditContent(
             draft.nutrition != emptyNutrition ||
             !draft.note.isNullOrBlank()
         onHasContentChange(has)
+        onDraftSync(
+            ManualDraftSnapshot(
+                name = draft.name,
+                grams = draft.grams,
+                nutrition = draft.nutrition,
+                components = draft.components,
+            ),
+        )
     }
     var dateInput by remember { mutableStateOf(LocalDate.ofEpochDay(initialEpochDay).toString()) }
     var timeInput by remember {
