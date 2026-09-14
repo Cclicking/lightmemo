@@ -276,11 +276,6 @@ fun FoodAppRoot() {
                 }
             }
 
-            // Check once for every app-process startup. Network failures are kept silent here;
-            // the About page still exposes the error and a manual retry action.
-            LaunchedEffect(Unit) {
-                appUpdateVm.checkForUpdate()
-            }
             LaunchedEffect(appUpdateState.available) {
                 showUpdateDialog = appUpdateState.available != null
             }
@@ -537,16 +532,13 @@ fun FoodAppRoot() {
                         )
                     }
                             TopProgressiveBlur()
+                            AppUpdateDialog(
+                                show = showUpdateDialog,
+                                state = appUpdateState,
+                                onDismiss = { showUpdateDialog = false },
+                            )
                         }
                     },
-                )
-
-                AppUpdateDialog(
-                    show = showUpdateDialog,
-                    state = appUpdateState,
-                    onDismiss = { showUpdateDialog = false },
-                    onDownload = appUpdateVm::downloadUpdate,
-                    onInstall = { appUpdateVm.installDownloadedApk(context) },
                 )
 
             }

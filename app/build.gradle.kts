@@ -29,8 +29,8 @@ android {
         applicationId = "com.click.lightmemo"
         minSdk = 31
         targetSdk = 37
-        versionCode = 21
-        versionName = "1.3"
+        versionCode = 22
+        versionName = "1.3.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
     }

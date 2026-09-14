@@ -95,7 +95,7 @@ APK：`app/build/outputs/apk/debug/app-debug.apk`
 
 ### 应用更新
 
-应用每次冷启动会检查 GitHub 仓库的最新 Release。发现新版本后，用户可以在弹窗中下载 APK 并交给系统安装器完成更新；
+应用启动时会检查 GitHub 仓库的最新 Release。发现新版本后，用户可以在弹窗中打开 Release 页面并下载 APK；
 
 ### 使用前配置
 

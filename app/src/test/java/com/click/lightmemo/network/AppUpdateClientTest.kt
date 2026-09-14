@@ -17,6 +17,13 @@ class AppUpdateClientTest {
         assertEquals(0, compareVersions("v1.2.0", "1.2"))
     }
 
+    @Test fun releaseBodyFiltersMarkdownHeadings() {
+        assertEquals(
+            "新增：功能一。\n\n修复：问题二。",
+            extractReleaseBody("# 更新日志\n\n## 1.3\n\n新增：功能一。\n\n修复：问题二。"),
+        )
+    }
+
     @Test fun latestReleaseIsParsedAndCompared() = runBlocking {
         val client = AppUpdateClient(
             httpClient = OkHttpClient.Builder()
@@ -33,11 +40,7 @@ class AppUpdateClientTest {
                               "name": "LightMemo 1.3",
                               "body": "修复问题",
                               "html_url": "https://github.com/Cclicking/lightmemo/releases/tag/v1.3",
-                              "assets": [{
-                                "name": "LightMemo-v1.3-release.apk",
-                                "browser_download_url": "https://example.com/LightMemo-v1.3-release.apk",
-                                "size": 2048
-                              }]
+                              "assets": []
                             }
                             """.trimIndent().toResponseBody()
                         )
@@ -49,8 +52,9 @@ class AppUpdateClientTest {
 
         val update = client.checkLatest("1.2")
         assertEquals("1.3", update?.versionName)
-        assertEquals("LightMemo-v1.3-release.apk", update?.apkFileName)
-        assertEquals(2048L, update?.apkSizeBytes)
+        assertEquals("LightMemo 1.3", update?.releaseName)
+        assertEquals("修复问题", update?.releaseNotes)
+        assertEquals("https://github.com/Cclicking/lightmemo/releases/tag/v1.3", update?.releaseUrl)
     }
 
     @Test fun olderReleaseIsIgnored() = runBlocking {

@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
@@ -18,6 +19,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -68,7 +71,6 @@ import com.click.lightmemo.viewmodel.SettingsViewModel
 import top.yukonga.miuix.kmp.basic.Button
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
-import top.yukonga.miuix.kmp.basic.LinearProgressIndicator
 import top.yukonga.miuix.kmp.basic.NumberPicker
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.TabRow
@@ -1346,8 +1348,6 @@ fun AboutScreen(
         show = showUpdateDialog,
         state = updateState,
         onDismiss = { showUpdateDialog = false },
-        onDownload = updateViewModel::downloadUpdate,
-        onInstall = { updateViewModel.installDownloadedApk(context) },
     )
 }
 
@@ -1356,41 +1356,29 @@ fun AppUpdateDialog(
     show: Boolean,
     state: AppUpdateUiState,
     onDismiss: () -> Unit,
-    onDownload: () -> Unit,
-    onInstall: () -> Unit,
 ) {
     val update = state.available ?: return
+    val context = LocalContext.current
     val title = update.releaseName.takeIf { it.isNotBlank() } ?: "发现新版本 ${update.versionName}"
     AnimatedOverlayDialog(
         show = show,
         title = title,
         summary = "当前版本 ${state.currentVersionName} → ${update.versionName}",
-        onDismissRequest = { if (!state.downloading) onDismiss() },
+        onDismissRequest = onDismiss,
     ) {
         Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             if (update.releaseNotes.isNotBlank()) {
-                Text(
-                    text = update.releaseNotes,
-                    style = MiuixTheme.textStyles.body2,
-                    maxLines = 8,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            Text(
-                text = "安装包：${update.apkFileName} · ${formatUpdateSize(update.apkSizeBytes)}",
-                style = MiuixTheme.textStyles.footnote2,
-                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-            )
-            if (state.downloading) {
-                LinearProgressIndicator(
-                    progress = state.downloadProgress?.div(100f),
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Text(
-                    text = state.downloadProgress?.let { "正在下载 $it%" } ?: "正在下载…",
-                    style = MiuixTheme.textStyles.footnote2,
-                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                )
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 240.dp)
+                        .verticalScroll(rememberScrollState()),
+                ) {
+                    Text(
+                        text = update.releaseNotes,
+                        style = MiuixTheme.textStyles.body2,
+                    )
+                }
             }
             state.error?.let {
                 Text(
@@ -1409,29 +1397,32 @@ fun AppUpdateDialog(
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Button(
                     onClick = onDismiss,
-                    enabled = !state.downloading,
                     modifier = Modifier.weight(1f),
                     colors = ButtonDefaults.buttonColors(),
                 ) {
                     Text("稍后")
                 }
                 Button(
-                    onClick = if (state.downloadedApkPath != null) onInstall else onDownload,
-                    enabled = !state.downloading,
+                    onClick = {
+                        runCatching {
+                            context.startActivity(
+                                Intent(Intent.ACTION_VIEW, Uri.parse(update.releaseUrl)),
+                            )
+                        }.onSuccess {
+                            onDismiss()
+                        }.onFailure {
+                            Toast.makeText(context, "无法打开 Release 页面", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    enabled = update.releaseUrl.isNotBlank(),
                     modifier = Modifier.weight(1f),
                     colors = ButtonDefaults.buttonColorsPrimary(),
                 ) {
-                    Text(if (state.downloadedApkPath != null) "安装更新" else "下载更新")
+                    Text("前往下载")
                 }
             }
         }
     }
-}
-
-private fun formatUpdateSize(bytes: Long): String = when {
-    bytes <= 0L -> "大小未知"
-    bytes >= 1024L * 1024L -> "%.1f MB".format(bytes / (1024f * 1024f))
-    else -> "%.0f KB".format(bytes / 1024f)
 }
 
 private data class Acknowledgement(
