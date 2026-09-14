@@ -42,9 +42,9 @@ class AppUpdateClient internal constructor(
             AppUpdate(
                 versionName = versionName,
                 releaseName = release.name.orEmpty(),
-                // The update dialog intentionally shows only the Release body,
-                // without Markdown heading lines such as "# 更新日志" or "## 1.3".
-                releaseNotes = extractReleaseBody(release.body.orEmpty()),
+                // The update dialog intentionally shows only the notes for this
+                // Release's target version, without Markdown heading lines.
+                releaseNotes = extractReleaseNotes(release.body.orEmpty(), versionName),
                 releaseUrl = release.htmlUrl,
             )
         }
@@ -81,6 +81,9 @@ internal fun compareVersions(left: String, right: String): Int {
 }
 
 private val MarkdownHeading = Regex("^\\s{0,3}#{1,6}(?:\\s+.*)?\\s*$")
+private val MarkdownVersionHeading = Regex(
+    "^\\s{0,3}#{1,6}\\s+\\[?[vV]?([0-9]+(?:\\.[0-9]+)*)\\]?(?:\\s*(?:[-–—|].*|\\(.*\\)|（.*）)?)?\\s*$",
+)
 
 internal fun extractReleaseBody(markdown: String): String = markdown
     .lineSequence()
@@ -88,6 +91,36 @@ internal fun extractReleaseBody(markdown: String): String = markdown
     .joinToString("\n")
     .replace(Regex("\\n{3,}"), "\\n\\n")
     .trim()
+
+internal fun extractReleaseNotes(markdown: String, targetVersion: String): String {
+    val normalizedTarget = parseVersion(targetVersion) ?: return extractReleaseBody(markdown)
+    val lines = markdown.lines()
+    val versionSectionIndexes = lines.mapIndexedNotNull { index, line ->
+        versionFromMarkdownHeading(line)?.let { index to it }
+    }
+    val targetSectionIndex = versionSectionIndexes
+        .firstOrNull { (_, version) -> compareVersions(version, normalizedTarget) == 0 }
+        ?.first
+
+    // A release body without version headings is treated as the notes for the
+    // current release. If version sections exist but the target is absent, do
+    // not leak notes from another version into the update dialog.
+    if (targetSectionIndex == null) {
+        return if (versionSectionIndexes.isEmpty()) extractReleaseBody(markdown) else ""
+    }
+
+    val nextSectionIndex = versionSectionIndexes
+        .firstOrNull { (index, _) -> index > targetSectionIndex }
+        ?.first
+        ?: lines.size
+
+    return extractReleaseBody(
+        lines.subList(targetSectionIndex + 1, nextSectionIndex).joinToString("\n"),
+    )
+}
+
+private fun versionFromMarkdownHeading(line: String): String? =
+    MarkdownVersionHeading.matchEntire(line)?.groupValues?.get(1)
 
 @Serializable
 private data class GithubRelease(

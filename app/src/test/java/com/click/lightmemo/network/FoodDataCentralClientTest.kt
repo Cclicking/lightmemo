@@ -27,6 +27,23 @@ class FoodDataCentralClientTest {
         assertTrue(result.isNotEmpty())
     }
 
+    @Test fun commonEnglishSearchShowsUsdaResultsBeforeFallbackResults() = runBlocking {
+        val result = client().searchCandidates("beef", "")
+
+        assertTrue(result.isNotEmpty())
+        assertTrue(result.first().dataType.contains("USDA") || result.first().dataType.contains("SR Legacy"))
+    }
+
+    @Test fun offlineUsdaSearchIsNotHiddenByOtherSources() = runBlocking {
+        val result = client().browseOffline(
+            query = "beef",
+            source = FoodDataCentralClient.DatabaseSource.USDA,
+        )
+
+        assertTrue(result.isNotEmpty())
+        assertTrue(result.all { !it.dataType.contains("中国") })
+    }
+
     @Test fun bundledDatabasesAreReadable() = runBlocking {
         val database = client()
         assertTrue(database.browseOffline(source = FoodDataCentralClient.DatabaseSource.USDA).isNotEmpty())

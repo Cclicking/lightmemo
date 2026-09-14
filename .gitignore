@@ -1,8 +1,11 @@
 # Android
 *.iml
+*.iws
+*.ipr
 .gradle/
 local.properties
 .idea/
+.fleet/
 .DS_Store
 build/
 captures/
@@ -13,12 +16,26 @@ captures/
 *.ap_
 *.dex
 *.class
+*.log
+*.hprof
+*.dump
 
 # Kotlin
 .kotlin/
 
+# Local worktrees
+.worktrees/
+
+# Local signing / secret material
+*.jks
+*.keystore
+*.p12
+
 # App
 app/build/
+
+# Local screenshot exports in the repository root. App resources under app/src remain trackable.
+/lightmemo*.png
 
 # Build logs
 *-log.txt

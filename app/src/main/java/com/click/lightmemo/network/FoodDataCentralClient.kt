@@ -92,12 +92,16 @@ class FoodDataCentralClient internal constructor(
         if (trimmed.isBlank()) return@withContext emptyList()
 
         val localUsda = findUsdaCandidates(trimmed, limit)
-        val localChina = findChinaCandidates(trimmed, trimmed, limit)
         val online = apiKey.takeIf { it.isNotBlank() }
             ?.let { searchOnline(trimmed, it, limit) }
             .orEmpty()
+        val localChina = findChinaCandidates(trimmed, trimmed, limit)
 
-        (localChina + localUsda + online)
+        // Keep the source priority consistent with lookup(): USDA local data,
+        // USDA API data, then the Chinese fallback. China results can be very
+        // broad for common English words (for example, "beef"), so putting
+        // them first would consume the limit before USDA results are shown.
+        (localUsda + online + localChina)
             .distinctBy { "${it.dataType}:${it.sourceId}" }
             .take(limit.coerceAtLeast(1))
     }
@@ -122,14 +126,12 @@ class FoodDataCentralClient internal constructor(
                 .distinctBy { "${it.dataType}:${it.sourceId}" }
                 .take(limit.coerceAtLeast(1))
         } else {
-            searchCandidates(normalized, "", limit)
-                .filter { candidate ->
-                    source == DatabaseSource.ALL || when (source) {
-                        DatabaseSource.CHINA -> candidate.dataType.contains("中国")
-                        DatabaseSource.USDA -> !candidate.dataType.contains("中国")
-                        DatabaseSource.ALL -> true
-                    }
-                }
+            when (source) {
+                DatabaseSource.CHINA -> findChinaCandidates(normalized, normalized, limit)
+                DatabaseSource.USDA -> findUsdaCandidates(normalized, limit)
+                DatabaseSource.ALL -> searchCandidates(normalized, "", limit)
+            }.distinctBy { "${it.dataType}:${it.sourceId}" }
+                .take(limit.coerceAtLeast(1))
         }
     }
 

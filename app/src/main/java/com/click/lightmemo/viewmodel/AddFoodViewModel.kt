@@ -85,6 +85,8 @@ data class DatabaseSearchState(
     val loading: Boolean = false,
     val results: List<NutritionReference> = emptyList(),
     val error: String? = null,
+    val replaceComponentName: Boolean = false,
+    val initialLookupQuery: String? = null,
 )
 
 fun defaultMealType(): MealType {
@@ -201,25 +203,72 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
         _uiState.value = _uiState.value.copy(showPresetSheet = false)
     }
 
-    fun openComponentSearch(component: FoodComponent) {
+    fun openComponentSearch(component: FoodComponent, replaceComponentName: Boolean = false) {
+        // The component name is user-facing (usually Chinese), while the
+        // bundled USDA descriptions and the USDA API are searched in English.
+        val initialLookupQuery = component.databaseQuery.trim().ifBlank { component.name }
         _uiState.value = _uiState.value.copy(
             databaseSearch = DatabaseSearchState(
                 componentId = component.id,
                 query = component.name,
                 loading = true,
+                replaceComponentName = replaceComponentName,
+                initialLookupQuery = initialLookupQuery,
             ),
         )
-        searchComponentDatabase(component.id, component.name)
+        searchComponentDatabaseInternal(
+            componentId = component.id,
+            displayQuery = component.name,
+            lookupQuery = initialLookupQuery,
+            keepInitialLookupQuery = true,
+        )
     }
 
     fun searchComponentDatabase(componentId: String, query: String) {
+        val current = _uiState.value.databaseSearch
+        val useInitialLookupQuery = current?.componentId == componentId &&
+            current.query.trim() == query.trim()
+        val lookupQuery = if (useInitialLookupQuery) {
+            current.initialLookupQuery ?: query
+        } else {
+            query
+        }
+        searchComponentDatabaseInternal(
+            componentId = componentId,
+            displayQuery = query,
+            lookupQuery = lookupQuery,
+            keepInitialLookupQuery = false,
+        )
+    }
+
+    private fun searchComponentDatabaseInternal(
+        componentId: String,
+        displayQuery: String,
+        lookupQuery: String,
+        keepInitialLookupQuery: Boolean,
+    ) {
         databaseSearchJob?.cancel()
-        val trimmed = query.trim()
+        val trimmed = lookupQuery.trim()
         if (trimmed.isBlank()) {
-            _uiState.updateDatabaseSearch(componentId) { it.copy(query = query, loading = false, results = emptyList(), error = "请输入食物名称") }
+            _uiState.updateDatabaseSearch(componentId) {
+                it.copy(
+                    query = displayQuery,
+                    loading = false,
+                    results = emptyList(),
+                    error = "请输入食物名称",
+                    initialLookupQuery = if (keepInitialLookupQuery) it.initialLookupQuery else null,
+                )
+            }
             return
         }
-        _uiState.updateDatabaseSearch(componentId) { it.copy(query = query, loading = true, error = null) }
+        _uiState.updateDatabaseSearch(componentId) {
+            it.copy(
+                query = displayQuery,
+                loading = true,
+                error = null,
+                initialLookupQuery = if (keepInitialLookupQuery) it.initialLookupQuery else null,
+            )
+        }
         databaseSearchJob = viewModelScope.launch {
             try {
                 val results = nutritionDatabase.searchCandidates(
@@ -228,7 +277,11 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
                     limit = 20,
                 )
                 _uiState.updateDatabaseSearch(componentId) {
-                    it.copy(loading = false, results = results, error = if (results.isEmpty()) "没有找到相近的食物" else null)
+                    it.copy(
+                        loading = false,
+                        results = results,
+                        error = if (results.isEmpty()) "没有找到相近的食物" else null,
+                    )
                 }
             } catch (e: CancellationException) {
                 throw e
@@ -240,15 +293,21 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun selectComponentReference(componentId: String, reference: NutritionReference) {
+    fun selectComponentReference(componentId: String, query: String, reference: NutritionReference) {
         val step = _uiState.value.step as? AddStep.Review ?: return
+        val search = _uiState.value.databaseSearch
+        val replacementName = query.trim().takeIf {
+            search?.replaceComponentName == true && it.isNotBlank()
+        }
         _uiState.value = _uiState.value.copy(
             step = step.copy(result = step.result.copy(
-                dishes = step.result.dishes.map { it.withReference(componentId, reference) },
+                dishes = step.result.dishes.map {
+                    it.withReference(componentId, reference, replacementName)
+                },
             )),
             databaseSearch = null,
         )
-        notify("已匹配：${reference.description}")
+        notify(if (replacementName == null) "已匹配：${reference.description}" else "已更换食物：$replacementName")
     }
 
     fun closeComponentSearch() {
@@ -773,11 +832,27 @@ private fun FoodComponent.withWeight(grams: Double): FoodComponent {
 private fun RecognizedDish.withReference(
     componentId: String,
     reference: NutritionReference,
+    replacementName: String? = null,
 ): RecognizedDish = copy(
     components = components.map { component ->
-        if (component.id == componentId) component.copy(nutritionReference = reference) else component
+        if (component.id == componentId) {
+            val nextName = replacementName ?: component.name
+            val isChinaReference = reference.dataType.contains("中国")
+            component.copy(
+                name = nextName,
+                databaseQuery = when {
+                    replacementName == null -> component.databaseQuery
+                    isChinaReference -> nextName
+                    else -> reference.description
+                },
+                chinaDatabaseQuery = replacementName ?: component.chinaDatabaseQuery,
+                nutritionReference = reference,
+            )
+        } else {
+            component
+        }
     },
-    children = children.map { it.withReference(componentId, reference) },
+    children = children.map { it.withReference(componentId, reference, replacementName) },
 )
 
 private fun RecognizedDish.withFreshIds(): RecognizedDish = copy(

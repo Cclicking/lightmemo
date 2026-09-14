@@ -70,6 +70,7 @@ import com.click.lightmemo.viewmodel.AppUpdateViewModel
 import com.click.lightmemo.viewmodel.SettingsViewModel
 import top.yukonga.miuix.kmp.basic.Button
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
+import top.yukonga.miuix.kmp.basic.BasicComponent
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.NumberPicker
 import top.yukonga.miuix.kmp.basic.SmallTitle
@@ -813,7 +814,7 @@ private fun StatusRow(
             },
         )
     } else {
-        ArrowPreference(
+        BasicComponent(
             title = title,
             summary = summary,
             endActions = {
@@ -1162,6 +1163,7 @@ fun AboutScreen(
     val versionName = packageInfo?.versionName ?: "—"
     val versionCode = packageInfo?.longVersionCode?.toString() ?: "—"
     val githubUrl = "https://github.com/Cclicking/lightmemo"
+    val feedbackUrl = "https://f.wps.cn/g/VMFqSZv8/"
     val acknowledgements = remember {
         listOf(
             Acknowledgement(
@@ -1270,11 +1272,6 @@ fun AboutScreen(
                                 }
                             },
                         )
-                        StatusRow(
-                            title = "包名",
-                            summary = "applicationId",
-                            status = context.packageName,
-                        )
                     }
                 }
 
@@ -1302,6 +1299,35 @@ fun AboutScreen(
                                             android.net.Uri.parse(githubUrl),
                                         )
                                     )
+                                }
+                            },
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(FieldToTitleSpacing))
+                SmallTitle(
+                    text = "支持",
+                    modifier = Modifier.offset(x = (-16).dp),
+                )
+                Spacer(Modifier.height(TitleToFieldSpacing))
+                Card(
+                    cornerRadius = 20.dp,
+                    modifier = Modifier.fillMaxWidth(),
+                    insideMargin = PaddingValues(0.dp),
+                ) {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        StatusRow(
+                            title = "意见与反馈",
+                            summary = "反馈问题或提出建议",
+                            status = "打开",
+                            onClick = {
+                                runCatching {
+                                    context.startActivity(
+                                        Intent(Intent.ACTION_VIEW, Uri.parse(feedbackUrl)),
+                                    )
+                                }.onFailure {
+                                    Toast.makeText(context, "无法打开反馈页面", Toast.LENGTH_SHORT).show()
                                 }
                             },
                         )

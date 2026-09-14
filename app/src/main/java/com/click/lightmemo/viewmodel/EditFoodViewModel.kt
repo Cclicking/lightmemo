@@ -65,14 +65,23 @@ class EditFoodViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun openComponentSearch(component: FoodComponent) {
+        // The component name is user-facing (usually Chinese), while the
+        // bundled USDA descriptions and the USDA API are searched in English.
+        val initialLookupQuery = component.databaseQuery.trim().ifBlank { component.name }
         _uiState.value = _uiState.value.copy(
             databaseSearch = DatabaseSearchState(
                 componentId = component.id,
                 query = component.name,
                 loading = true,
+                initialLookupQuery = initialLookupQuery,
             ),
         )
-        searchComponentDatabase(component.id, component.name)
+        searchComponentDatabaseInternal(
+            componentId = component.id,
+            displayQuery = component.name,
+            lookupQuery = initialLookupQuery,
+            keepInitialLookupQuery = true,
+        )
     }
 
     fun openNewComponentSearch() {
@@ -86,15 +95,50 @@ class EditFoodViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun searchComponentDatabase(componentId: String, query: String) {
+        val current = _uiState.value.databaseSearch
+        val useInitialLookupQuery = current?.componentId == componentId &&
+            current.query.trim() == query.trim()
+        val lookupQuery = if (useInitialLookupQuery) {
+            current.initialLookupQuery ?: query
+        } else {
+            query
+        }
+        searchComponentDatabaseInternal(
+            componentId = componentId,
+            displayQuery = query,
+            lookupQuery = lookupQuery,
+            keepInitialLookupQuery = false,
+        )
+    }
+
+    private fun searchComponentDatabaseInternal(
+        componentId: String,
+        displayQuery: String,
+        lookupQuery: String,
+        keepInitialLookupQuery: Boolean,
+    ) {
         databaseSearchJob?.cancel()
-        val trimmed = query.trim()
+        val trimmed = lookupQuery.trim()
         if (trimmed.isBlank()) {
             updateDatabaseSearch(componentId) {
-                it.copy(query = query, loading = false, results = emptyList(), error = "请输入食物名称")
+                it.copy(
+                    query = displayQuery,
+                    loading = false,
+                    results = emptyList(),
+                    error = "请输入食物名称",
+                    initialLookupQuery = if (keepInitialLookupQuery) it.initialLookupQuery else null,
+                )
             }
             return
         }
-        updateDatabaseSearch(componentId) { it.copy(query = query, loading = true, error = null) }
+        updateDatabaseSearch(componentId) {
+            it.copy(
+                query = displayQuery,
+                loading = true,
+                error = null,
+                initialLookupQuery = if (keepInitialLookupQuery) it.initialLookupQuery else null,
+            )
+        }
         databaseSearchJob = viewModelScope.launch {
             try {
                 val results = nutritionDatabase.searchCandidates(
@@ -159,11 +203,13 @@ class EditFoodViewModel(app: Application) : AndroidViewModel(app) {
 
 /** Create a user-entered component from a selected database row. */
 fun newFoodComponent(query: String, grams: Double, reference: NutritionReference): FoodComponent {
+    val name = query.trim()
+    val databaseQuery = if (reference.dataType.contains("中国")) name else reference.description
     return FoodComponent(
         id = java.util.UUID.randomUUID().toString(),
-        name = query.trim(),
-        databaseQuery = query.trim(),
-        chinaDatabaseQuery = query.trim(),
+        name = name,
+        databaseQuery = databaseQuery,
+        chinaDatabaseQuery = name,
         source = com.click.lightmemo.domain.ComponentSource.USER_PROVIDED,
         estimatedWeightG = grams,
         weightMinG = grams,

@@ -41,12 +41,11 @@ import com.click.lightmemo.domain.FoodComponent
 import com.click.lightmemo.domain.FoodLog
 import com.click.lightmemo.domain.MealType
 import com.click.lightmemo.domain.Nutrition
-import com.click.lightmemo.domain.NutritionReference
 import com.click.lightmemo.ui.basic.SharedScrollBehavior
 import com.click.lightmemo.ui.components.AnimatedOverlayDialog
+import com.click.lightmemo.ui.components.ComponentDatabaseOverlay
 import com.click.lightmemo.ui.theme.FoodPaletteColors
 import com.click.lightmemo.ui.utils.overScrollVertical
-import com.click.lightmemo.viewmodel.DatabaseSearchState
 import com.click.lightmemo.viewmodel.EditFoodViewModel
 import com.click.lightmemo.viewmodel.newFoodComponent
 import java.time.LocalDate
@@ -247,7 +246,20 @@ fun EditFoodScreen(
                 }
             } else {
                 val next = draft.components.map { component ->
-                    if (component.id == componentId) component.copy(nutritionReference = reference) else component
+                    if (component.id == componentId) {
+                        val selectedQuery = query.trim()
+                        component.copy(
+                            nutritionReference = reference,
+                            databaseQuery = if (reference.dataType.contains("中国")) {
+                                selectedQuery
+                            } else {
+                                reference.description
+                            },
+                            chinaDatabaseQuery = selectedQuery,
+                        )
+                    } else {
+                        component
+                    }
                 }
                 draft = draft.copy(
                     components = next,
@@ -637,96 +649,6 @@ private fun TextInputDialog(
                     modifier = Modifier.weight(1f),
                     colors = ButtonDefaults.buttonColorsPrimary(),
                 ) { Text("确定") }
-            }
-        }
-    }
-}
-
-@Composable
-private fun ComponentDatabaseOverlay(
-    searchState: DatabaseSearchState?,
-    adding: Boolean,
-    showAdd: Boolean,
-    onDismiss: () -> Unit,
-    onSearch: (String, String) -> Unit,
-    onSelect: (String, String, String, NutritionReference) -> Unit,
-) {
-    val current = searchState ?: return
-    val show = if (adding) showAdd else true
-    var query by remember(current.componentId) { mutableStateOf(current.query) }
-    var grams by remember(current.componentId) { mutableStateOf("100") }
-
-    AnimatedOverlayDialog(
-        show = show,
-        title = if (adding) "添加食物成分" else "匹配食物成分",
-        summary = if (adding) "输入名称并从数据库选择营养数据" else "选择正确的食物后会立即回填营养数据",
-        onDismissRequest = onDismiss,
-        onDismissFinished = onDismiss,
-    ) {
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            TextField(
-                value = query,
-                onValueChange = { query = it },
-                label = "搜索食物名称",
-                singleLine = true,
-                enabled = !current.loading,
-                modifier = Modifier.fillMaxWidth(),
-                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = KeyboardType.Text),
-            )
-            if (adding) {
-                TextField(
-                    value = grams,
-                    onValueChange = { grams = it },
-                    label = "重量 g",
-                    singleLine = true,
-                    enabled = !current.loading,
-                    modifier = Modifier.fillMaxWidth(),
-                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                )
-            }
-            Button(
-                onClick = { onSearch(current.componentId, query) },
-                enabled = !current.loading && query.isNotBlank(),
-                modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColorsPrimary(),
-            ) { Text(if (current.loading) "查询中…" else "查询数据库") }
-            if (current.loading) LinearProgressIndicator(progress = null, modifier = Modifier.fillMaxWidth())
-            current.error?.let { message ->
-                Text(message, style = MiuixTheme.textStyles.footnote2, color = MiuixTheme.colorScheme.error)
-            }
-            LazyColumn(
-                modifier = Modifier.heightIn(max = 340.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                items(current.results, key = { "${it.dataType}:${it.sourceId}" }) { reference ->
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        cornerRadius = 14.dp,
-                        insideMargin = PaddingValues(12.dp),
-                        onClick = {
-                            onSelect(current.componentId, query, grams, reference)
-                        },
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(reference.description, style = MiuixTheme.textStyles.body1)
-                                Text(
-                                    "每 100g · ${reference.dataType}",
-                                    style = MiuixTheme.textStyles.footnote2,
-                                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                            }
-                            Spacer(Modifier.width(8.dp))
-                            Text("${reference.per100g.caloriesKcal.toInt()} kcal", style = MiuixTheme.textStyles.title4, fontWeight = FontWeight.SemiBold)
-                        }
-                    }
-                }
             }
         }
     }

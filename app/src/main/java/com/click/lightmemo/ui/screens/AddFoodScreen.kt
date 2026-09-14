@@ -76,13 +76,13 @@ import com.click.lightmemo.domain.RecognizedDish
 import com.click.lightmemo.domain.RecognitionStage
 import com.click.lightmemo.ui.basic.SharedScrollBehavior as ScrollBehavior
 import com.click.lightmemo.ui.components.AnimatedOverlayDialog
+import com.click.lightmemo.ui.components.ComponentDatabaseOverlay
 import com.click.lightmemo.ui.components.DropdownPref
 import com.click.lightmemo.ui.overlay.BlurBottomSheet
 import com.click.lightmemo.ui.theme.FoodPaletteColors
 import com.click.lightmemo.ui.utils.overScrollVertical
 import com.click.lightmemo.viewmodel.AddFoodViewModel
 import com.click.lightmemo.viewmodel.AddStep
-import com.click.lightmemo.viewmodel.DatabaseSearchState
 import com.click.lightmemo.viewmodel.DefaultMealTags
 import com.click.lightmemo.data.PresetFood
 import com.click.lightmemo.viewmodel.QuantityMode
@@ -246,11 +246,14 @@ fun AddFoodRoute(
         onUpdate = viewModel::updatePreset,
     )
 
-    DatabaseMatchOverlay(
+    ComponentDatabaseOverlay(
         searchState = state.databaseSearch,
+        adding = false,
         onDismiss = viewModel::closeComponentSearch,
         onSearch = viewModel::searchComponentDatabase,
-        onSelect = viewModel::selectComponentReference,
+        onSelect = { componentId, query, _, reference ->
+            viewModel.selectComponentReference(componentId, query, reference)
+        },
     )
 
     Box(modifier = Modifier.fillMaxWidth()) {
@@ -351,12 +354,16 @@ fun AddFoodRoute(
                     recognizing = state.recognizing || state.saving,
                     recognitionStage = state.recognitionStage,
                     replacingDishId = state.replacingDishId,
+                    selectedComponentId = state.databaseSearch?.componentId,
                     mealType = state.mealType,
                     onMealType = viewModel::setMealType,
                     onWeightChange = viewModel::updateComponentWeight,
                     onRemoveComponent = viewModel::removeComponent,
                     onRemoveDish = viewModel::removeDish,
-                    onDatabaseSearch = viewModel::openComponentSearch,
+                    onDatabaseSearch = { component -> viewModel.openComponentSearch(component) },
+                    onReplaceComponent = { component ->
+                        viewModel.openComponentSearch(component, replaceComponentName = true)
+                    },
                     onReplaceDish = viewModel::replaceDish,
                     error = state.error,
                     onSave = {
@@ -1324,12 +1331,14 @@ private fun ReviewContent(
     recognizing: Boolean,
     recognitionStage: RecognitionStage?,
     replacingDishId: String?,
+    selectedComponentId: String?,
     mealType: MealType,
     onMealType: (MealType) -> Unit,
     onWeightChange: (String, Double) -> Unit,
     onRemoveComponent: (String) -> Unit,
     onRemoveDish: (String) -> Unit,
     onDatabaseSearch: (FoodComponent) -> Unit,
+    onReplaceComponent: (FoodComponent) -> Unit,
     onReplaceDish: (String, String) -> Unit,
     error: String?,
     onSave: () -> Unit,
@@ -1439,10 +1448,13 @@ private fun ReviewContent(
             DishResultCard(
                 dish = dish,
                 replacing = dish.id == replacingDishId,
+                selectedComponentId = selectedComponentId,
+                selected = replacingDish?.id == dish.id,
                 onWeightChange = onWeightChange,
                 onRemoveComponent = onRemoveComponent,
                 onRemoveDish = onRemoveDish,
                 onDatabaseSearch = onDatabaseSearch,
+                onReplaceComponent = onReplaceComponent,
                 onReplaceDish = {
                     replacingDish = it
                     replacementName = it.name
@@ -1552,10 +1564,13 @@ private fun MacroRing(label: String, value: Double, target: Float, color: Color,
 private fun DishResultCard(
     dish: RecognizedDish,
     replacing: Boolean,
+    selectedComponentId: String?,
+    selected: Boolean,
     onWeightChange: (String, Double) -> Unit,
     onRemoveComponent: (String) -> Unit,
     onRemoveDish: (String) -> Unit,
     onDatabaseSearch: (FoodComponent) -> Unit,
+    onReplaceComponent: (FoodComponent) -> Unit,
     onReplaceDish: (RecognizedDish) -> Unit,
     enabled: Boolean,
 ) {
@@ -1584,8 +1599,16 @@ private fun DishResultCard(
                     Text(
                         dish.name,
                         style = MiuixTheme.textStyles.title4,
+                        color = if (selected) MiuixTheme.colorScheme.onSurfaceVariantSummary
+                        else MiuixTheme.colorScheme.onSurface,
                         fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.clickable(enabled = enabled, onClickLabel = "更换菜品") { onReplaceDish(dish) },
+                        modifier = Modifier.clickable(
+                            interactionSource = null,
+                            indication = null,
+                            enabled = enabled,
+                            onClickLabel = "更换菜品",
+                            onClick = { onReplaceDish(dish) },
+                        ),
                     )
                     Text(
                         text = "约 ${dish.nutrition.caloriesKcal.toInt()} kcal · ${dish.grams.toInt()}g",
@@ -1648,6 +1671,9 @@ private fun DishResultCard(
                             onWeightChange = onWeightChange,
                             onRemove = onRemoveComponent,
                             onMatch = onDatabaseSearch,
+                            onNameClick = onReplaceComponent,
+                            selected = selectedComponentId == component.id,
+                            enabled = enabled,
                         )
                     }
                     dish.children.forEach { child ->
@@ -1666,6 +1692,9 @@ private fun DishResultCard(
                                 onWeightChange = onWeightChange,
                                 onRemove = onRemoveComponent,
                                 onMatch = onDatabaseSearch,
+                                onNameClick = onReplaceComponent,
+                                selected = selectedComponentId == component.id,
+                                enabled = enabled,
                             )
                         }
                     }
@@ -1689,6 +1718,9 @@ fun ComponentResultRow(
     onWeightChange: (String, Double) -> Unit,
     onRemove: (String) -> Unit,
     onMatch: (FoodComponent) -> Unit,
+    onNameClick: ((FoodComponent) -> Unit)? = null,
+    selected: Boolean = false,
+    enabled: Boolean = true,
 ) {
     var input by remember(component.id) { mutableStateOf(component.estimatedWeightG.formatInput()) }
     var showEdit by remember { mutableStateOf(false) }
@@ -1701,7 +1733,21 @@ fun ComponentResultRow(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            Text(component.name, style = MiuixTheme.textStyles.body1)
+            Text(
+                component.name,
+                style = MiuixTheme.textStyles.body1,
+                color = if (selected) MiuixTheme.colorScheme.onSurfaceVariantSummary
+                else MiuixTheme.colorScheme.onSurface,
+                modifier = onNameClick?.let {
+                    Modifier.clickable(
+                        interactionSource = null,
+                        indication = null,
+                        enabled = enabled,
+                        onClickLabel = "更换食物",
+                        onClick = { it(component) },
+                    )
+                } ?: Modifier,
+            )
             val ref = component.nutritionReference
             Text(
                 text = ref?.let {
@@ -1714,12 +1760,19 @@ fun ComponentResultRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            Text(
-                text = if (ref == null) "手动匹配数据库" else "更换数据库匹配",
-                style = MiuixTheme.textStyles.footnote1,
-                color = MiuixTheme.colorScheme.primary,
-                modifier = Modifier.clickable { onMatch(component) },
-            )
+            if (ref == null) {
+                Text(
+                    text = "手动匹配数据库",
+                    style = MiuixTheme.textStyles.footnote1,
+                    color = MiuixTheme.colorScheme.primary,
+                    modifier = Modifier.clickable(
+                        interactionSource = null,
+                        indication = null,
+                        enabled = enabled,
+                        onClick = { onMatch(component) },
+                    ),
+                )
+            }
         }
 
         // 克重
@@ -1765,99 +1818,6 @@ fun ComponentResultRow(
             showEdit = false
         },
     )
-}
-
-@Composable
-private fun DatabaseMatchOverlay(
-    searchState: DatabaseSearchState?,
-    onDismiss: () -> Unit,
-    onSearch: (String, String) -> Unit,
-    onSelect: (String, com.click.lightmemo.domain.NutritionReference) -> Unit,
-) {
-    var displayedState by remember { mutableStateOf<DatabaseSearchState?>(null) }
-    LaunchedEffect(searchState) {
-        if (searchState != null) displayedState = searchState
-    }
-    var query by remember(displayedState?.componentId) {
-        mutableStateOf(displayedState?.query.orEmpty())
-    }
-
-    val current = displayedState
-    if (current != null) {
-        AnimatedOverlayDialog(
-            show = searchState != null,
-            title = "手动匹配数据库",
-            summary = "选择正确的食物后会立即回填营养数据",
-            onDismissRequest = onDismiss,
-            onDismissFinished = { displayedState = null },
-        ) {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                TextField(
-                    value = query,
-                    onValueChange = { query = it },
-                    label = "搜索食物名称",
-                    singleLine = true,
-                    colors = dialogFieldColors(),
-                    modifier = Modifier.fillMaxWidth(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
-                )
-                Button(
-                    onClick = { onSearch(current.componentId, query) },
-                    enabled = !current.loading && query.isNotBlank(),
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColorsPrimary(),
-                ) {
-                    Text(if (current.loading) "查询中…" else "查询数据库")
-                }
-                if (current.loading) {
-                    LinearProgressIndicator(progress = null, modifier = Modifier.fillMaxWidth())
-                }
-                current.error?.let {
-                    Text(
-                        text = it,
-                        style = MiuixTheme.textStyles.footnote2,
-                        color = MiuixTheme.colorScheme.error,
-                    )
-                }
-                LazyColumn(
-                    modifier = Modifier.heightIn(max = 320.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    items(current.results, key = { "${it.dataType}:${it.sourceId}" }) { reference ->
-                        Card(
-                            modifier = Modifier.fillMaxWidth(),
-                            cornerRadius = 14.dp,
-                            insideMargin = PaddingValues(12.dp),
-                            onClick = { onSelect(current.componentId, reference) },
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(reference.description, style = MiuixTheme.textStyles.body1)
-                                    Text(
-                                        text = "每 100g · ${reference.dataType}",
-                                        style = MiuixTheme.textStyles.footnote2,
-                                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                }
-                                Spacer(Modifier.width(8.dp))
-                                Text(
-                                    text = "${reference.per100g.caloriesKcal.toInt()} kcal",
-                                    style = MiuixTheme.textStyles.title4,
-                                    fontWeight = FontWeight.SemiBold,
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
 }
 
 @Composable

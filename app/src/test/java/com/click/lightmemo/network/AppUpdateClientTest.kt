@@ -24,6 +24,38 @@ class AppUpdateClientTest {
         )
     }
 
+    @Test fun releaseNotesOnlyIncludeTargetVersion() {
+        assertEquals(
+            "新增：功能一。\n\n修复：问题二。",
+            extractReleaseNotes(
+                """
+                # 更新日志
+
+                ## 1.3.2
+
+                新增：功能一。
+
+                修复：问题二。
+
+                ## 1.3
+
+                新增：旧功能。
+                """.trimIndent(),
+                "v1.3.2",
+            ),
+        )
+    }
+
+    @Test fun releaseNotesDoNotIncludeOtherVersionsWhenTargetIsAbsent() {
+        assertEquals(
+            "",
+            extractReleaseNotes(
+                "## 1.3\n\n新增：旧功能。\n\n## 1.2\n\n修复：旧问题。",
+                "1.3.2",
+            ),
+        )
+    }
+
     @Test fun latestReleaseIsParsedAndCompared() = runBlocking {
         val client = AppUpdateClient(
             httpClient = OkHttpClient.Builder()
@@ -38,7 +70,7 @@ class AppUpdateClientTest {
                             {
                               "tag_name": "v1.3",
                               "name": "LightMemo 1.3",
-                              "body": "修复问题",
+                              "body": "## 1.3\n\n修复问题",
                               "html_url": "https://github.com/Cclicking/lightmemo/releases/tag/v1.3",
                               "assets": []
                             }
