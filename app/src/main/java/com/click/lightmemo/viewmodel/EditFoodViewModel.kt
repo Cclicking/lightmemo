@@ -114,7 +114,7 @@ class EditFoodViewModel(app: Application) : AndroidViewModel(app) {
         loadedEntryId = entryId
         viewModelScope.launch {
             try {
-                val entry = repo.logs.first().firstOrNull { it.id == entryId }
+                val entry = repo.getById(entryId)
                 _uiState.value = if (entry == null) {
                     EditFoodUiState(loading = false, error = "找不到这条食物记录，可能已被删除")
                 } else {

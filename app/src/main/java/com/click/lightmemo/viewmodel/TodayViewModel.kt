@@ -9,14 +9,17 @@ import com.click.lightmemo.domain.FoodLog
 import com.click.lightmemo.domain.MealType
 import com.click.lightmemo.domain.Nutrition
 import java.time.LocalDate
+import java.time.YearMonth
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -35,6 +38,7 @@ data class TodayUiState(
         get() = if (target <= 0f) 0f else (total.caloriesKcal / target).toFloat().coerceIn(0f, 1.2f)
 }
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class TodayViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = (app as FoodApp).foodLogRepository
     val readError: StateFlow<String?> = repo.readError
@@ -56,8 +60,19 @@ class TodayViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Window covering day-swipe neighbors and adjacent calendar pages (±1 month). */
+    private val logWindow = combine(_date, currentDateFlow()) { date, today ->
+        val monthStart = YearMonth.from(date).minusMonths(1).atDay(1)
+        val from = monthStart.toEpochDay()
+        val to = minOf(
+            today.toEpochDay(),
+            YearMonth.from(date).plusMonths(1).atEndOfMonth().toEpochDay(),
+        )
+        from to to
+    }.distinctUntilChanged()
+
     val uiState: StateFlow<TodayUiState> = combine(
-        repo.logs,
+        logWindow.flatMapLatest { (from, to) -> repo.logsInRange(from, to) },
         settingsRepo.settings,
         _date,
     ) { logs, settings, date ->
@@ -121,6 +136,7 @@ class TodayViewModel(app: Application) : AndroidViewModel(app) {
     }
 }
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class StatsViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = (app as FoodApp).foodLogRepository
     val readError: StateFlow<String?> = repo.readError
@@ -148,14 +164,37 @@ class StatsViewModel(app: Application) : AndroidViewModel(app) {
         val hasData: Boolean get() = loggedDays > 0
     }
 
-    val uiState: StateFlow<StatsUiState> = combine(
-        repo.logs,
-        period,
-        settingsRepo.settings,
-        currentDateFlow(),
-    ) { logs, selectedPeriod, settings, today ->
+    private data class StatsWindow(
+        val from: Long,
+        val to: Long,
+        val periodStart: LocalDate,
+        val periodEnd: LocalDate,
+        val today: LocalDate,
+    )
+
+    private val window = combine(period, currentDateFlow()) { selectedPeriod, today ->
         val start = selectedPeriod?.first ?: today.minusDays(today.dayOfWeek.value.toLong() - 1)
         val end = selectedPeriod?.second ?: start.plusDays(6)
+        // Adjacent periods so calendar rings are populated while dragging.
+        val previewFrom = start.minusMonths(1).minusWeeks(1)
+        val previewTo = minOf(end.plusMonths(1).plusWeeks(1), today)
+        StatsWindow(
+            from = previewFrom.toEpochDay(),
+            to = previewTo.toEpochDay(),
+            periodStart = start,
+            periodEnd = end,
+            today = today,
+        )
+    }.distinctUntilChanged()
+
+    val uiState: StateFlow<StatsUiState> = combine(
+        window.flatMapLatest { w -> repo.logsInRange(w.from, w.to) },
+        window,
+        settingsRepo.settings,
+    ) { logs, w, settings ->
+        val start = w.periodStart
+        val end = w.periodEnd
+        val today = w.today
         val from = start.toEpochDay()
         val to = end.toEpochDay()
         val days = (to - from + 1).toInt()
@@ -173,10 +212,7 @@ class StatsViewModel(app: Application) : AndroidViewModel(app) {
                 total = grouped[day].orEmpty().fold(Nutrition()) { acc, i -> acc + i.nutrition },
             )
         }
-        // Include adjacent periods so their rings are already populated while dragging.
-        val previewFrom = start.minusMonths(1).minusWeeks(1).toEpochDay()
-        val previewTo = minOf(end.plusMonths(1).plusWeeks(1).toEpochDay(), today.toEpochDay())
-        val calendarDays = logs.filter { it.dateEpochDay in previewFrom..previewTo }
+        val calendarDays = logs.filter { it.dateEpochDay in w.from..w.to }
             .groupBy { it.dateEpochDay }
             .map { (epochDay, entries) ->
                 DayNutritionSummary(epochDay, entries.fold(Nutrition()) { total, entry -> total + entry.nutrition })
