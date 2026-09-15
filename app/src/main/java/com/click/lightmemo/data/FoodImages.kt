@@ -97,6 +97,41 @@ internal object FoodImages {
         FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
     }
 
+    /**
+     * Snapshot of clearable photo cache: temporary camera captures and app-private meal
+     * photos. Gallery copies are untouched.
+     */
+    data class PhotoCacheStats(
+        val cameraBytes: Long,
+        val internalImageBytes: Long,
+    ) {
+        val totalBytes: Long get() = cameraBytes + internalImageBytes
+    }
+
+    suspend fun photoCacheStats(context: Context): PhotoCacheStats = withContext(Dispatchers.IO) {
+        PhotoCacheStats(
+            cameraBytes = directoryBytes(cameraCacheDir(context)),
+            internalImageBytes = directoryBytes(internalImagesDir(context)),
+        )
+    }
+
+    /** Deletes temporary camera captures and app-private meal photos. */
+    suspend fun clearPhotoCache(context: Context): PhotoCacheStats = withContext(Dispatchers.IO) {
+        val stats = photoCacheStats(context)
+        cameraCacheDir(context).listFiles()?.forEach { it.delete() }
+        internalImagesDir(context).listFiles()?.forEach { it.delete() }
+        stats
+    }
+
+    private fun cameraCacheDir(context: Context): File =
+        File(context.cacheDir, CAMERA_DIRECTORY).apply { mkdirs() }
+
+    private fun internalImagesDir(context: Context): File =
+        File(context.filesDir, INTERNAL_DIRECTORY).apply { mkdirs() }
+
+    private fun directoryBytes(dir: File): Long =
+        dir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
+
     private fun isStored(context: Context, uri: Uri): Boolean =
         uri.scheme == "content" &&
             uri.authority == "${context.packageName}.fileprovider" &&
@@ -104,4 +139,5 @@ internal object FoodImages {
 
     private const val INTERNAL_DIRECTORY = "images"
     private const val INTERNAL_PATH_NAME = "internal_images"
+    private const val CAMERA_DIRECTORY = "camera"
 }

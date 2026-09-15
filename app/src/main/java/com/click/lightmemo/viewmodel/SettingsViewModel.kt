@@ -26,6 +26,7 @@ import android.os.SystemClock
 
 class SettingsViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = (app as FoodApp).settingsRepository
+    private val appContext = app.applicationContext
 
     val error = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
     val readError = repo.readError
@@ -35,6 +36,8 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
     val testingPrompt = MutableStateFlow(false)
     val promptTestResult = MutableStateFlow<String?>(null)
     val promptTestResponse = MutableStateFlow<String?>(null)
+    val photoCacheBytes = MutableStateFlow<Long?>(null)
+    val clearingPhotoCache = MutableStateFlow(false)
 
     private fun saveSetting(block: suspend () -> Unit) = viewModelScope.launch {
         try {
@@ -181,6 +184,41 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setGallerySaveLocation(value: GallerySaveLocation) = saveSetting {
         repo.updateGallerySaveLocation(value)
+    }
+
+    fun refreshPhotoCacheSize() {
+        viewModelScope.launch {
+            try {
+                photoCacheBytes.value = FoodImages.photoCacheStats(appContext).totalBytes
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                photoCacheBytes.value = null
+            }
+        }
+    }
+
+    /**
+     * Clears temporary camera captures and app-private meal photos.
+     * Does not touch photos already copied into the system gallery.
+     */
+    fun clearPhotoCache(onDone: (Long) -> Unit = {}) {
+        if (clearingPhotoCache.value) return
+        clearingPhotoCache.value = true
+        viewModelScope.launch {
+            try {
+                error.value = null
+                val freed = FoodImages.clearPhotoCache(appContext).totalBytes
+                photoCacheBytes.value = 0L
+                onDone(freed)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                error.value = e.message ?: "清理失败，请重试"
+            } finally {
+                clearingPhotoCache.value = false
+            }
+        }
     }
 
     /** 将推荐热量与营养素写入目标。 */

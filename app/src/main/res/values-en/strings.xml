@@ -6,4 +6,10 @@
     <string name="nav_mine">Me</string>
     <string name="nav_settings">Settings</string>
     <string name="recognition_notification_channel">Food recognition</string>
+    <string name="shortcut_camera">Camera</string>
+    <string name="shortcut_camera_long">Snap food and recognize calories</string>
+    <string name="shortcut_gallery">Gallery</string>
+    <string name="shortcut_gallery_long">Pick a photo to recognize</string>
+    <string name="shortcut_manual">Text entry</string>
+    <string name="shortcut_manual_long">Manually enter food and grams</string>
 </resources>

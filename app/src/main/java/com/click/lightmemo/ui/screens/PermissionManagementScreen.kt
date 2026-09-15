@@ -7,9 +7,12 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -20,9 +23,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -36,16 +41,19 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.click.lightmemo.data.GallerySaveLocation
 import com.click.lightmemo.ui.basic.SharedScrollBehavior as ScrollBehavior
+import com.click.lightmemo.ui.components.AnimatedOverlayDialog
 import com.click.lightmemo.ui.components.DropdownPref
 import com.click.lightmemo.ui.utils.overScrollVertical
 import com.click.lightmemo.viewmodel.SettingsViewModel
 import top.yukonga.miuix.kmp.basic.Button
+import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import java.util.Locale
 
 @Composable
 fun PermissionManagementScreen(
@@ -58,6 +66,9 @@ fun PermissionManagementScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
     val settings by viewModel.settings.collectAsState()
     var refreshToken by remember { mutableIntStateOf(0) }
+    val photoCacheBytes by viewModel.photoCacheBytes.collectAsState()
+    val clearingPhotoCache by viewModel.clearingPhotoCache.collectAsState()
+    var showClearPhotoCacheConfirm by remember { mutableStateOf(false) }
 
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -65,6 +76,10 @@ fun PermissionManagementScreen(
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    LaunchedEffect(refreshToken) {
+        viewModel.refreshPhotoCacheSize()
     }
 
     val cameraGranted = remember(refreshToken) {
@@ -91,6 +106,43 @@ fun PermissionManagementScreen(
 
     fun requestPermission(permission: String) {
         requestPermissionLauncher.launch(permission)
+    }
+
+    AnimatedOverlayDialog(
+        show = showClearPhotoCacheConfirm,
+        title = "清理照片缓存？",
+        summary = "将删除应用内的临时拍摄文件和本地照片。饮食记录数据与系统相册不受影响。",
+        onDismissRequest = { showClearPhotoCacheConfirm = false },
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Button(
+                onClick = { showClearPhotoCacheConfirm = false },
+                modifier = Modifier.weight(1f),
+                colors = ButtonDefaults.buttonColors(),
+            ) {
+                Text("取消")
+            }
+            Button(
+                onClick = {
+                    showClearPhotoCacheConfirm = false
+                    viewModel.clearPhotoCache { freedBytes ->
+                        Toast.makeText(
+                            context,
+                            "已清理 ${formatPhotoCacheBytes(freedBytes)} 照片缓存",
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                    }
+                },
+                enabled = !clearingPhotoCache,
+                modifier = Modifier.weight(1f),
+                colors = ButtonDefaults.buttonColorsPrimary(),
+            ) {
+                Text("清理")
+            }
+        }
     }
 
     LazyColumn(
@@ -143,9 +195,15 @@ fun PermissionManagementScreen(
                     },
                     enabled = settings.savePhotosToGallery,
                 )
+                ArrowPreference(
+                    title = "清理照片缓存",
+                    summary = photoCacheSummary(photoCacheBytes, clearingPhotoCache),
+                    enabled = !clearingPhotoCache,
+                    onClick = { showClearPhotoCacheConfirm = true },
+                )
             }
             Text(
-                text = "位置选择只影响之后拍摄的照片，已有照片不会移动。",
+                text = "位置选择只影响之后拍摄的照片，已有照片不会移动。清理缓存会删除应用内的临时拍摄文件和本地照片，不影响系统相册。",
                 style = MiuixTheme.textStyles.footnote2,
                 color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
@@ -212,6 +270,22 @@ fun PermissionManagementScreen(
             }
         }
     }
+}
+
+private fun photoCacheSummary(bytes: Long?, clearing: Boolean): String = when {
+    clearing -> "正在清理…"
+    bytes == null -> "统计临时拍摄与应用内本地照片"
+    bytes <= 0L -> "暂无可清理缓存 · 点击重新统计"
+    else -> "当前约 ${formatPhotoCacheBytes(bytes)} · 点击清理应用内照片缓存"
+}
+
+private fun formatPhotoCacheBytes(bytes: Long): String {
+    if (bytes < 1024L) return "${bytes} B"
+    val kb = bytes / 1024.0
+    if (kb < 1024.0) return String.format(Locale.US, "%.1f KB", kb)
+    val mb = kb / 1024.0
+    if (mb < 1024.0) return String.format(Locale.US, "%.1f MB", mb)
+    return String.format(Locale.US, "%.2f GB", mb / 1024.0)
 }
 
 @Composable

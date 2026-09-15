@@ -79,6 +79,8 @@ data class AddFoodUiState(
     val replacingDishId: String? = null,
     val saving: Boolean = false,
     val error: String? = null,
+    /** 上次识别失败后是否允许一键重试 */
+    val canRetryRecognition: Boolean = false,
     val mealType: MealType = defaultMealType(),
     val manualNutrition: Nutrition? = null,
     val plateSize: String = "",
@@ -954,6 +956,7 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
             RecognitionService.cancel(foodApp, previous.request.id)
         }
         recognitionTaskStore.begin(request)
+        _uiState.value = _uiState.value.copy(canRetryRecognition = false, error = null)
         notify(startMessage)
         try {
             RecognitionService.start(foodApp, request)
@@ -962,6 +965,61 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
             recognitionTaskStore.fail(request.id, message)
             notify(message)
         }
+    }
+
+    /** 失败后用原请求重新发起识别（新 id，避免与旧任务冲突）。 */
+    fun retryRecognition() {
+        val record = recognitionTaskStore.state.value
+        if (record?.status != RecognitionTaskStatus.FAILED) return
+        val request = record.request
+        val state = _uiState.value
+        when (request.type) {
+            RecognitionRequestType.MANUAL_GRAMS,
+            RecognitionRequestType.MANUAL_PORTIONS,
+            -> {
+                val name = request.foodName.orEmpty()
+                val grams = record.estimatedPortionGrams ?: request.grams ?: 0.0
+                _uiState.value = state.copy(
+                    step = AddStep.Review(
+                        imageUri = null,
+                        result = buildManualMealRecognition(name, grams, Nutrition()),
+                    ),
+                    recognizing = true,
+                    recognitionStage = RecognitionStage.PREPARING,
+                    quantityMode = if (request.type == RecognitionRequestType.MANUAL_PORTIONS) {
+                        QuantityMode.PORTIONS
+                    } else {
+                        state.quantityMode
+                    },
+                    portionCount = request.portions ?: state.portionCount,
+                )
+            }
+
+            RecognitionRequestType.REPLACE_DISH -> {
+                val base = request.baseResult ?: return
+                _uiState.value = state.copy(
+                    step = AddStep.Review(request.imageUri, base),
+                    recognizing = true,
+                    recognitionStage = RecognitionStage.PREPARING,
+                    replacingDishId = request.replaceDishId,
+                )
+            }
+
+            RecognitionRequestType.TEXT,
+            RecognitionRequestType.IMAGE,
+            -> {
+                _uiState.value = state.copy(
+                    step = AddStep.PickSource,
+                    quickInput = request.text ?: state.quickInput,
+                    recognizing = true,
+                    recognitionStage = RecognitionStage.PREPARING,
+                )
+            }
+        }
+        startRecognition(
+            request.copy(id = java.util.UUID.randomUUID().toString()),
+            "正在重试识别…",
+        )
     }
 
     private fun syncRecognitionTask(record: RecognitionTaskRecord?) {
@@ -1102,6 +1160,7 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
                     recognitionStage = null,
                     replacingDishId = null,
                     error = record.error ?: "识别失败",
+                    canRetryRecognition = true,
                 )
                 if (shouldNotify) notify(record.error ?: "识别失败")
             }

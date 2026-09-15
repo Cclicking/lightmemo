@@ -151,6 +151,8 @@ fun AddFoodRoute(
     listState: LazyListState,
     onDone: () -> Unit,
     palette: FoodPaletteColors = FoodPaletteColors.Default,
+    pendingAddAction: com.click.lightmemo.ShortcutAddAction? = null,
+    onPendingAddActionConsumed: () -> Unit = {},
 ) {
     val state by viewModel.uiState.collectAsState()
     val settings by viewModel.settings.collectAsState()
@@ -258,6 +260,23 @@ fun AddFoodRoute(
         }
     }
 
+    fun onGalleryClick() {
+        galleryLauncher.launch(
+            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+        )
+    }
+
+    // Launcher shortcuts: once the sheet is composed, fire the matching entry path.
+    LaunchedEffect(pendingAddAction) {
+        when (pendingAddAction) {
+            com.click.lightmemo.ShortcutAddAction.CAMERA -> withNotificationPermission(::onCameraClick)
+            com.click.lightmemo.ShortcutAddAction.GALLERY -> withNotificationPermission(::onGalleryClick)
+            com.click.lightmemo.ShortcutAddAction.MANUAL -> viewModel.openManual()
+            null -> return@LaunchedEffect
+        }
+        onPendingAddActionConsumed()
+    }
+
     ComponentDatabaseOverlay(
         searchState = state.databaseSearch,
         adding = false,
@@ -322,15 +341,13 @@ fun AddFoodRoute(
                         null
                     },
                     onGallery = {
-                        withNotificationPermission {
-                            galleryLauncher.launch(
-                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
-                            )
-                        }
+                        withNotificationPermission(::onGalleryClick)
                     },
                     onCamera = { withNotificationPermission(::onCameraClick) },
                     onManual = { viewModel.openManual() },
                     onPreset = viewModel::openPresetList,
+                    canRetryRecognition = state.canRetryRecognition,
+                    onRetryRecognition = viewModel::retryRecognition,
                 )
 
                 is AddStep.Manual -> ManualEntryContent(
@@ -362,6 +379,8 @@ fun AddFoodRoute(
                         )
                     },
                     onHasContentChange = viewModel::setSecondaryHasContent,
+                    canRetryRecognition = state.canRetryRecognition,
+                    onRetryRecognition = viewModel::retryRecognition,
                 )
 
                 is AddStep.ManualEdit -> {
@@ -520,6 +539,8 @@ fun AddFoodRoute(
                         },
                         listState = listState,
                         palette = palette,
+                        canRetryRecognition = state.canRetryRecognition,
+                        onRetryRecognition = viewModel::retryRecognition,
                     )
                 }
             }
@@ -552,6 +573,8 @@ private fun PickSourceContent(
     onCamera: () -> Unit,
     onManual: () -> Unit,
     onPreset: () -> Unit,
+    canRetryRecognition: Boolean = false,
+    onRetryRecognition: () -> Unit = {},
 ) {
     var showDatePicker by remember { mutableStateOf(false) }
     var showTimePicker by remember { mutableStateOf(false) }
@@ -700,13 +723,11 @@ private fun PickSourceContent(
             )
         }
 
-        if (error != null) {
-            Text(
-                text = error,
-                color = MiuixTheme.colorScheme.error,
-                style = MiuixTheme.textStyles.subtitle,
-            )
-        }
+        RecognitionErrorRow(
+            error = error,
+            canRetry = canRetryRecognition,
+            onRetry = onRetryRecognition,
+        )
     }
 }
 
@@ -867,6 +888,8 @@ private fun ManualEntryContent(
     onRecognizePortions: (String, Double) -> Unit,
     onOpenManualEdit: (name: String, grams: Double?) -> Unit,
     onHasContentChange: (Boolean) -> Unit,
+    canRetryRecognition: Boolean = false,
+    onRetryRecognition: () -> Unit = {},
 ) {
     var name by rememberSaveable { mutableStateOf(initialName) }
     var grams by rememberSaveable { mutableStateOf(initialGrams?.formatInput() ?: "100") }
@@ -1008,13 +1031,11 @@ private fun ManualEntryContent(
                 color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
             )
         }
-        if (error != null) {
-            Text(
-                text = error,
-                color = MiuixTheme.colorScheme.error,
-                style = MiuixTheme.textStyles.subtitle,
-            )
-        }
+        RecognitionErrorRow(
+            error = error,
+            canRetry = canRetryRecognition,
+            onRetry = onRetryRecognition,
+        )
     }
 
     NumberInputDialog(
@@ -1767,6 +1788,8 @@ private fun ReviewContent(
     onSave: () -> Unit,
     listState: LazyListState,
     palette: FoodPaletteColors,
+    canRetryRecognition: Boolean = false,
+    onRetryRecognition: () -> Unit = {},
 ) {
     val total = result.nutrition
     val calorieColor = if (total.caloriesKcal > 1800.0) palette.overTarget else palette.calorie
@@ -1908,7 +1931,11 @@ private fun ReviewContent(
         }
 
         item {
-            error?.let { Text(it, color = MiuixTheme.colorScheme.error) }
+            RecognitionErrorRow(
+                error = error,
+                canRetry = canRetryRecognition,
+                onRetry = onRetryRecognition,
+            )
             Button(
                 onClick = onSave,
                 enabled = !recognizing && result.dishes.isNotEmpty() && result.dishes.all { dish ->
@@ -1918,6 +1945,31 @@ private fun ReviewContent(
                 colors = ButtonDefaults.buttonColorsPrimary(),
             ) {
                 Text("保存 ${result.dishes.size} 道菜")
+            }
+        }
+    }
+}
+
+@Composable
+private fun RecognitionErrorRow(
+    error: String?,
+    canRetry: Boolean,
+    onRetry: () -> Unit,
+) {
+    if (error == null) return
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            text = error,
+            color = MiuixTheme.colorScheme.error,
+            style = MiuixTheme.textStyles.subtitle,
+        )
+        if (canRetry) {
+            Button(
+                onClick = onRetry,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColorsPrimary(),
+            ) {
+                Text("重试识别")
             }
         }
     }

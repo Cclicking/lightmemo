@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Launcher app shortcuts (long-press on the home icon).
+    Static shortcuts: always available, ranked by document order.
+    Intents land in MainActivity with EXTRA_SHORTCUT set.
+-->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="camera"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_camera"
+        android:shortcutShortLabel="@string/shortcut_camera"
+        android:shortcutLongLabel="@string/shortcut_camera_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.click.lightmemo"
+            android:targetClass="com.click.lightmemo.MainActivity">
+            <extra
+                android:name="com.click.lightmemo.extra.SHORTCUT"
+                android:value="camera" />
+        </intent>
+    </shortcut>
+    <shortcut
+        android:shortcutId="gallery"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_gallery"
+        android:shortcutShortLabel="@string/shortcut_gallery"
+        android:shortcutLongLabel="@string/shortcut_gallery_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.click.lightmemo"
+            android:targetClass="com.click.lightmemo.MainActivity">
+            <extra
+                android:name="com.click.lightmemo.extra.SHORTCUT"
+                android:value="gallery" />
+        </intent>
+    </shortcut>
+    <shortcut
+        android:shortcutId="manual"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_text"
+        android:shortcutShortLabel="@string/shortcut_manual"
+        android:shortcutLongLabel="@string/shortcut_manual_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.click.lightmemo"
+            android:targetClass="com.click.lightmemo.MainActivity">
+            <extra
+                android:name="com.click.lightmemo.extra.SHORTCUT"
+                android:value="manual" />
+        </intent>
+    </shortcut>
+</shortcuts>

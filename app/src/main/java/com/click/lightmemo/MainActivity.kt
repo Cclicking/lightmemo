@@ -107,12 +107,23 @@ import kotlinx.coroutines.flow.MutableStateFlow
 
 val LocalGlassSupported = staticCompositionLocalOf { true }
 
+/** Launcher shortcut extras — see res/xml/shortcuts.xml. */
+const val EXTRA_SHORTCUT = "com.click.lightmemo.extra.SHORTCUT"
+
+/** One-shot add-sheet action requested by a launcher shortcut. */
+enum class ShortcutAddAction {
+    CAMERA,
+    GALLERY,
+    MANUAL,
+}
+
 class MainActivity : ComponentActivity() {
     private val openRecognition = MutableStateFlow(false)
+    private val openShortcutAddAction = MutableStateFlow<ShortcutAddAction?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        handleRecognitionIntent(intent)
+        handleShortcutIntent(intent)
         setContent {
             val dark = isSystemInDarkTheme()
             DisposableEffect(dark) {
@@ -159,13 +170,21 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        handleRecognitionIntent(intent)
+        handleShortcutIntent(intent)
     }
 
-    private fun handleRecognitionIntent(intent: Intent?) {
+    private fun handleShortcutIntent(intent: Intent?) {
         if (intent?.getBooleanExtra(com.click.lightmemo.recognition.EXTRA_OPEN_RECOGNITION, false) == true) {
             openRecognition.value = true
         }
+        when (intent?.getStringExtra(EXTRA_SHORTCUT)) {
+            SHORTCUT_CAMERA -> openShortcutAddAction.value = ShortcutAddAction.CAMERA
+            SHORTCUT_GALLERY -> openShortcutAddAction.value = ShortcutAddAction.GALLERY
+            SHORTCUT_MANUAL -> openShortcutAddAction.value = ShortcutAddAction.MANUAL
+        }
+        // Drop extras so a config change does not re-open the same destination.
+        intent?.removeExtra(EXTRA_SHORTCUT)
+        intent?.removeExtra(com.click.lightmemo.recognition.EXTRA_OPEN_RECOGNITION)
     }
 
     internal fun consumeOpenRecognition() {
@@ -173,6 +192,18 @@ class MainActivity : ComponentActivity() {
     }
 
     internal fun openRecognitionState() = openRecognition
+
+    internal fun consumeShortcutAddAction() {
+        openShortcutAddAction.value = null
+    }
+
+    internal fun shortcutAddActionState() = openShortcutAddAction
+
+    companion object {
+        private const val SHORTCUT_CAMERA = "camera"
+        private const val SHORTCUT_GALLERY = "gallery"
+        private const val SHORTCUT_MANUAL = "manual"
+    }
 }
 
 private enum class AppTab(val title: String) {
@@ -233,6 +264,18 @@ fun FoodAppRoot() {
                     selectedTab = 0
                     showAdd = true
                     activity?.consumeOpenRecognition()
+                }
+            }
+            val pendingShortcutAdd = if (activity != null) {
+                activity.shortcutAddActionState().collectAsState().value
+            } else {
+                null
+            }
+            LaunchedEffect(pendingShortcutAdd) {
+                if (pendingShortcutAdd != null) {
+                    selectedTab = 0
+                    addVm.setTargetDate(selectedDate)
+                    showAdd = true
                 }
             }
             LaunchedEffect(settingsError, settingsReadError) {
@@ -538,6 +581,8 @@ fun FoodAppRoot() {
                             listState = addList,
                             onDone = { showAdd = false },
                             palette = palette,
+                            pendingAddAction = pendingShortcutAdd,
+                            onPendingAddActionConsumed = { activity?.consumeShortcutAddAction() },
                         )
                     }
                             TopProgressiveBlur()

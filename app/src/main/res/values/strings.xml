@@ -6,4 +6,10 @@
     <string name="nav_mine">我的</string>
     <string name="nav_settings">设置</string>
     <string name="recognition_notification_channel">食物识别</string>
+    <string name="shortcut_camera">拍照识别</string>
+    <string name="shortcut_camera_long">拍摄食物并识别热量</string>
+    <string name="shortcut_gallery">相册识别</string>
+    <string name="shortcut_gallery_long">从相册选择照片识别</string>
+    <string name="shortcut_manual">文字录入</string>
+    <string name="shortcut_manual_long">手动填写食物与克重</string>
 </resources>
