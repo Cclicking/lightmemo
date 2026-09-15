@@ -8,7 +8,6 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -19,7 +18,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigationevent.OnBackInvokedDefaultInput
@@ -359,7 +357,6 @@ class EditFoodActivity : SecondarySettingsActivity() {
             backdrop = backdrop,
             icon = if (pinned) MiuixIcons.Os4.Unpin else MiuixIcons.Os4.Pin,
             contentDescription = if (pinned) "取消预设" else "加入预设",
-            modifier = Modifier.padding(end = 18.dp),
             iconSize = 24.dp,
             backdropAlpha = backdropAlpha,
             shadowAlpha = shadowAlpha,
