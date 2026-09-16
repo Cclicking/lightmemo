@@ -13,7 +13,6 @@ import com.click.lightmemo.ui.components.LiquidAddButton
 import com.click.lightmemo.ui.components.ScheduleBottomBar
 import com.click.lightmemo.ui.overlay.BlurBottomSheet
 import com.click.lightmemo.ui.overlay.LocalSheetTopBarMaterial
-import com.click.lightmemo.ui.platform.NativeTextContextMenuHost
 import com.click.lightmemo.ui.utils.LocalOverScrollState
 import com.click.lightmemo.ui.utils.OverScrollState
 import top.yukonga.miuix.kmp.basic.Text
@@ -224,7 +223,6 @@ fun FoodAppRoot() {
     val appUpdateVm: AppUpdateViewModel = viewModel()
 
     FoodTheme {
-        NativeTextContextMenuHost {
             val context = LocalContext.current
             val addState by addVm.uiState.collectAsState()
             val appUpdateState by appUpdateVm.uiState.collectAsState()
@@ -598,6 +596,4 @@ fun FoodAppRoot() {
             }
         }
     }
-}
-
 }
