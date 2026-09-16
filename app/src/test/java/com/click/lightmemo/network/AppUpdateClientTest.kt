@@ -71,7 +71,6 @@ class AppUpdateClientTest {
                               "tag_name": "v1.3",
                               "name": "LightMemo 1.3",
                               "body": "## 1.3\n\n修复问题",
-                              "html_url": "https://github.com/Cclicking/lightmemo/releases/tag/v1.3",
                               "assets": []
                             }
                             """.trimIndent().toResponseBody()
@@ -86,7 +85,36 @@ class AppUpdateClientTest {
         assertEquals("1.3", update?.versionName)
         assertEquals("LightMemo 1.3", update?.releaseName)
         assertEquals("修复问题", update?.releaseNotes)
-        assertEquals("https://github.com/Cclicking/lightmemo/releases/tag/v1.3", update?.releaseUrl)
+        assertEquals("https://gitee.com/clicking/lightmemo/releases/v1.3", update?.releaseUrl)
+    }
+
+    @Test fun giteeHtmlUrlIsPreferredWhenPresent() = runBlocking {
+        val client = AppUpdateClient(
+            httpClient = OkHttpClient.Builder()
+                .addInterceptor {
+                    Response.Builder()
+                        .request(it.request())
+                        .protocol(okhttp3.Protocol.HTTP_1_1)
+                        .code(200)
+                        .message("OK")
+                        .body(
+                            """
+                            {
+                              "tag_name": "v1.4",
+                              "name": "LightMemo 1.4",
+                              "body": "修复",
+                              "html_url": "https://gitee.com/clicking/lightmemo/releases/1.4"
+                            }
+                            """.trimIndent().toResponseBody()
+                        )
+                        .build()
+                }
+                .build(),
+            latestReleaseUrl = "https://example.test/latest",
+        )
+
+        val update = client.checkLatest("1.3")
+        assertEquals("https://gitee.com/clicking/lightmemo/releases/1.4", update?.releaseUrl)
     }
 
     @Test fun olderReleaseIsIgnored() = runBlocking {

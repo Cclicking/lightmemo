@@ -11,7 +11,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Protocol
 import okhttp3.Request
 
-/** Checks the metadata published in the project's latest GitHub Release. */
+/** Checks the metadata published in the project's latest Gitee Release. */
 class AppUpdateClient internal constructor(
     private val httpClient: OkHttpClient = OkHttpClient.Builder()
         // Some networks/proxies advertise HTTP/2 but return an HTTP/1.1 response,
@@ -26,7 +26,7 @@ class AppUpdateClient internal constructor(
     suspend fun checkLatest(currentVersionName: String): AppUpdate? = withContext(Dispatchers.IO) {
         val request = Request.Builder()
             .url(latestReleaseUrl)
-            .header("Accept", "application/vnd.github+json")
+            .header("Accept", "application/json")
             .header("User-Agent", "LightMemo/$currentVersionName")
             .build()
 
@@ -34,7 +34,7 @@ class AppUpdateClient internal constructor(
             if (!response.isSuccessful) {
                 throw IOException("检查更新失败：HTTP ${response.code}")
             }
-            val release = json.decodeFromString<GithubRelease>(response.body?.string().orEmpty())
+            val release = json.decodeFromString<GiteeRelease>(response.body?.string().orEmpty())
             val versionName = parseVersion(release.tagName)
                 ?: throw IOException("最新版本号格式不支持：${release.tagName}")
             if (compareVersions(versionName, currentVersionName) <= 0) return@withContext null
@@ -45,14 +45,19 @@ class AppUpdateClient internal constructor(
                 // The update dialog intentionally shows only the notes for this
                 // Release's target version, without Markdown heading lines.
                 releaseNotes = extractReleaseNotes(release.body.orEmpty(), versionName),
-                releaseUrl = release.htmlUrl,
+                // Gitee's latest-release payload does not include html_url.
+                releaseUrl = release.htmlUrl?.takeIf { it.isNotBlank() }
+                    ?: ReleasePageUrlPrefix + release.tagName,
             )
         }
     }
 
     companion object {
         const val LatestReleaseUrl =
-            "https://api.github.com/repos/Cclicking/lightmemo/releases/latest"
+            "https://gitee.com/api/v5/repos/clicking/lightmemo/releases/latest"
+
+        const val ReleasePageUrlPrefix =
+            "https://gitee.com/clicking/lightmemo/releases/"
     }
 }
 
@@ -123,9 +128,9 @@ private fun versionFromMarkdownHeading(line: String): String? =
     MarkdownVersionHeading.matchEntire(line)?.groupValues?.get(1)
 
 @Serializable
-private data class GithubRelease(
+private data class GiteeRelease(
     @SerialName("tag_name") val tagName: String = "",
     val name: String? = null,
     val body: String? = null,
-    @SerialName("html_url") val htmlUrl: String = "",
+    @SerialName("html_url") val htmlUrl: String? = null,
 )
