@@ -3,7 +3,9 @@ package com.click.lightmemo.ui.screens
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -18,9 +20,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.border
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -30,16 +34,21 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.foundation.background
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
@@ -47,12 +56,17 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import top.yukonga.miuix.kmp.anim.folmeSpring
+import top.yukonga.miuix.kmp.basic.CircularProgressIndicator
+import top.yukonga.miuix.kmp.basic.LinearProgressIndicator
+import top.yukonga.miuix.kmp.basic.ProgressIndicatorDefaults
+import androidx.core.graphics.drawable.toBitmap
 import com.click.lightmemo.data.ActivityLevel
 import com.click.lightmemo.data.ColorThemePreset
-import com.click.lightmemo.data.FoodColorPalette
 import com.click.lightmemo.data.FoodPaletteGenerator
 import com.click.lightmemo.data.HsvColor
 import com.click.lightmemo.data.Gender
@@ -844,6 +858,25 @@ private fun StatusRow(
     }
 }
 
+/** 配色预览用的固定样例数据，保证切换主题时所有图表色相都可见。 */
+private object AppearancePreview {
+    const val calories = 281
+    const val calorieTarget = 2200
+    const val protein = 19
+    const val proteinTarget = 161
+    const val carbs = 28
+    const val carbsTarget = 399
+    const val fat = 9
+    const val fatTarget = 77
+    const val structureKcal = 1172
+    val structure = listOf(
+        "早餐" to 24,
+        "午餐" to 34,
+        "晚餐" to 36,
+        "加餐" to 4,
+    )
+}
+
 @Composable
 fun AppearanceSettingsScreen(
     viewModel: SettingsViewModel,
@@ -852,6 +885,7 @@ fun AppearanceSettingsScreen(
     listState: LazyListState,
 ) {
     val settings by viewModel.settings.collectAsState()
+    val palette = settings.colorPalette.toComposeColors()
     var showColorPicker by remember { mutableStateOf(false) }
 
     LazyColumn(
@@ -869,61 +903,25 @@ fun AppearanceSettingsScreen(
         contentPadding = PaddingValues(
             start = 16.dp,
             end = 16.dp,
-            top = contentPadding.calculateTopPadding(),
+            top = contentPadding.calculateTopPadding() + 12.dp,
             bottom = contentPadding.calculateBottomPadding() + 12.dp,
         ),
     ) {
         item {
             Column {
-                SmallTitle(
-                    text = "颜色主题",
-                    modifier = Modifier.offset(x = (-16).dp),
-                )
-                Spacer(Modifier.height(TitleToFieldSpacing))
-                Card(
-                    cornerRadius = 20.dp,
-                    modifier = Modifier.fillMaxWidth(),
-                    insideMargin = PaddingValues(0.dp),
-                ) {
-                    Column(modifier = Modifier.fillMaxWidth()) {
-                        ColorThemePreset.entries
-                            .filter { it != ColorThemePreset.CUSTOM }
-                            .forEach { preset ->
-                                val selected = settings.colorTheme == preset
-                                val palette = FoodColorPalette.forPreset(preset).toComposeColors()
-                                ArrowPreference(
-                                    title = preset.label,
-                                    summary = if (selected) "当前使用 · 热量、营养素和饮食结构图统一配色" else "应用这套配色",
-                                    endActions = {
-                                        PaletteStrip(colors = palette.previewColors, selected = selected)
-                                    },
-                                    onClick = { viewModel.setColorTheme(preset) },
-                                )
-                            }
-                        ArrowPreference(
-                            title = "自定义颜色",
-                            summary = if (settings.colorTheme == ColorThemePreset.CUSTOM) {
-                                "已根据主色自动生成整套配色"
-                            } else {
-                                "选择一个主色，自动生成协调的配色"
-                            },
-                            endActions = {
-                                PaletteStrip(
-                                    colors = settings.colorPalette.toComposeColors().previewColors,
-                                    selected = settings.colorTheme == ColorThemePreset.CUSTOM,
-                                )
-                            },
-                            onClick = { showColorPicker = true },
-                        )
-                    }
-                }
-
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    text = "配色会同步应用到今日页、统计页、识别结果和卡片详情中的热量/营养素进度，以及饮食结构图。",
-                    style = MiuixTheme.textStyles.footnote2,
-                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                    modifier = Modifier.padding(horizontal = FootnoteHorizontalPadding),
+                AppearanceCaloriePreviewCard(palette)
+                Spacer(Modifier.height(12.dp))
+                AppearanceStructurePreviewCard(palette)
+                Spacer(Modifier.height(16.dp))
+                ThemeChipRow(
+                    selected = settings.colorTheme,
+                    onSelect = { preset ->
+                        if (preset == ColorThemePreset.CUSTOM) {
+                            showColorPicker = true
+                        } else {
+                            viewModel.setColorTheme(preset)
+                        }
+                    },
                 )
 
                 Spacer(Modifier.height(FieldToTitleSpacing))
@@ -970,6 +968,278 @@ fun AppearanceSettingsScreen(
         onSelect = viewModel::setCustomColorTheme,
         onDismiss = { showColorPicker = false },
     )
+}
+
+@Composable
+private fun AppearanceCaloriePreviewCard(palette: FoodPaletteColors) {
+    val progress by animateFloatAsState(
+        targetValue = (AppearancePreview.calories / AppearancePreview.calorieTarget.toFloat()).coerceIn(0f, 1f),
+        animationSpec = folmeSpring(damping = 1f, response = 0.6f),
+        label = "appearanceCalorieProgress",
+    )
+    Card(
+        cornerRadius = 20.dp,
+        modifier = Modifier.fillMaxWidth(),
+        insideMargin = PaddingValues(16.dp),
+    ) {
+        Text("热量", style = MiuixTheme.textStyles.subtitle)
+        Spacer(Modifier.height(4.dp))
+        Row(verticalAlignment = Alignment.Bottom) {
+            Text(
+                AppearancePreview.calories.toString(),
+                fontSize = 40.sp,
+                fontWeight = FontWeight.Bold,
+            )
+            Text(
+                " / ${AppearancePreview.calorieTarget} kcal",
+                style = MiuixTheme.textStyles.subtitle,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                modifier = Modifier.padding(start = 4.dp, bottom = 8.dp),
+            )
+        }
+        Spacer(Modifier.height(10.dp))
+        LinearProgressIndicator(
+            progress = progress,
+            modifier = Modifier.fillMaxWidth(),
+            height = 10.dp,
+            colors = ProgressIndicatorDefaults.progressIndicatorColors(foregroundColor = palette.calorie),
+        )
+        Spacer(Modifier.height(16.dp))
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            AppearanceMacroRing(
+                label = "蛋白质",
+                value = AppearancePreview.protein,
+                target = AppearancePreview.proteinTarget,
+                color = palette.protein,
+                modifier = Modifier.weight(1f),
+            )
+            AppearanceMacroRing(
+                label = "碳水",
+                value = AppearancePreview.carbs,
+                target = AppearancePreview.carbsTarget,
+                color = palette.carbs,
+                modifier = Modifier.weight(1f),
+            )
+            AppearanceMacroRing(
+                label = "脂肪",
+                value = AppearancePreview.fat,
+                target = AppearancePreview.fatTarget,
+                color = palette.fat,
+                modifier = Modifier.weight(1f),
+            )
+        }
+    }
+}
+
+@Composable
+private fun AppearanceMacroRing(
+    label: String,
+    value: Int,
+    target: Int,
+    color: Color,
+    modifier: Modifier = Modifier,
+) {
+    Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
+        CircularProgressIndicator(
+            progress = (value / target.toFloat()).coerceIn(0f, 1f),
+            colors = ProgressIndicatorDefaults.progressIndicatorColors(foregroundColor = color),
+            size = 50.dp,
+            strokeWidth = 6.dp,
+        )
+        Spacer(Modifier.width(7.dp))
+        Column {
+            Text(label, style = MiuixTheme.textStyles.footnote1, maxLines = 1)
+            Text(
+                "${value}g",
+                style = MiuixTheme.textStyles.body1,
+                fontWeight = FontWeight.Bold,
+            )
+            Text(
+                "/${target}g",
+                style = MiuixTheme.textStyles.footnote2,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+            )
+        }
+    }
+}
+
+@Composable
+private fun AppearanceStructurePreviewCard(palette: FoodPaletteColors) {
+    val colors = palette.structure.take(4)
+    val slices = AppearancePreview.structure.mapIndexed { index, (label, percent) ->
+        label to (percent.toDouble() to colors.getOrElse(index) { colors.lastOrNull() ?: palette.calorie })
+    }
+    val total = slices.sumOf { it.second.first }
+
+    Card(
+        cornerRadius = 20.dp,
+        modifier = Modifier.fillMaxWidth(),
+        insideMargin = PaddingValues(16.dp),
+    ) {
+        Text("饮食结构", style = MiuixTheme.textStyles.subtitle)
+        Spacer(Modifier.height(14.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier.size(96.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                AppearanceNutritionDonut(
+                    slices = slices,
+                    total = total,
+                    modifier = Modifier.fillMaxSize(),
+                )
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        text = AppearancePreview.structureKcal.toString(),
+                        style = MiuixTheme.textStyles.body1,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        "kcal",
+                        style = MiuixTheme.textStyles.footnote1,
+                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    )
+                }
+            }
+            Spacer(Modifier.width(24.dp))
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                AppearancePreview.structure.forEachIndexed { index, (label, percent) ->
+                    val color = colors.getOrElse(index) { colors.lastOrNull() ?: palette.calorie }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Box(Modifier.size(6.dp).clip(CircleShape).background(color))
+                        Text(
+                            label,
+                            style = MiuixTheme.textStyles.body2,
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(start = 54.dp),
+                        )
+                        Text(
+                            "$percent%",
+                            style = MiuixTheme.textStyles.footnote1,
+                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AppearanceNutritionDonut(
+    slices: List<Pair<String, Pair<Double, Color>>>,
+    total: Double,
+    modifier: Modifier,
+) {
+    val emptyColor = MiuixTheme.colorScheme.onSurfaceVariantSummary.copy(alpha = 0.12f)
+    Canvas(modifier.padding(2.dp)) {
+        val stroke = 11.dp.toPx()
+        var startAngle = -90f
+        if (total <= 0.0) {
+            drawArc(
+                color = emptyColor,
+                startAngle = 0f,
+                sweepAngle = 360f,
+                useCenter = false,
+                style = Stroke(stroke),
+            )
+        } else {
+            slices.forEach { (_, valueAndColor) ->
+                val sweep = (valueAndColor.first / total * 360.0).toFloat()
+                drawArc(valueAndColor.second, startAngle, sweep, false, style = Stroke(stroke))
+                startAngle += sweep
+            }
+        }
+    }
+}
+
+@Composable
+private fun ThemeChipRow(
+    selected: ColorThemePreset,
+    onSelect: (ColorThemePreset) -> Unit,
+) {
+    val options = listOf(
+        ColorThemePreset.BLUE,
+        ColorThemePreset.ORANGE,
+        ColorThemePreset.MULTICOLOR,
+        ColorThemePreset.CUSTOM,
+    )
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val spacing = 8.dp
+        val chipWidth = ((maxWidth - spacing * (options.size - 1)) / options.size).coerceAtLeast(64.dp)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(spacing),
+        ) {
+            options.forEach { preset ->
+                ThemeChip(
+                    label = preset.label,
+                    selected = selected == preset,
+                    onClick = { onSelect(preset) },
+                    modifier = Modifier
+                        .width(chipWidth)
+                        .heightIn(min = 40.dp),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ThemeChip(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val shape = RoundedCornerShape(12.dp)
+    val background = if (selected) {
+        Color.Transparent
+    } else {
+        MiuixTheme.colorScheme.onSurfaceVariantSummary.copy(alpha = 0.10f)
+    }
+    val borderColor = MiuixTheme.colorScheme.primary
+    val textColor = if (selected) {
+        MiuixTheme.colorScheme.primary
+    } else {
+        MiuixTheme.colorScheme.onSurface
+    }
+    Box(
+        modifier = modifier
+            .clip(shape)
+            .background(background)
+            .then(
+                if (selected) {
+                    Modifier.border(width = 1.5.dp, color = borderColor, shape = shape)
+                } else {
+                    Modifier
+                },
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = label,
+            style = MiuixTheme.textStyles.body2,
+            color = textColor,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+            maxLines = 1,
+        )
+    }
 }
 
 @Composable
@@ -1177,9 +1447,16 @@ fun AboutScreen(
         }.getOrNull()
     }
     val versionName = packageInfo?.versionName ?: "—"
-    val versionCode = packageInfo?.longVersionCode?.toString() ?: "—"
     val githubUrl = "https://github.com/Cclicking/lightmemo"
     val feedbackUrl = "https://f.wps.cn/g/VMFqSZv8/"
+    val appIcon = remember(context) {
+        runCatching {
+            context.packageManager
+                .getApplicationIcon(context.packageName)
+                .toBitmap(width = 192, height = 192)
+                .asImageBitmap()
+        }.getOrNull()
+    }
     val acknowledgements = remember {
         listOf(
             Acknowledgement(
@@ -1246,52 +1523,38 @@ fun AboutScreen(
     ) {
         item {
             Column {
-                SmallTitle(
-                    text = "应用信息",
-                    modifier = Modifier.offset(x = (-16).dp),
-                )
-                Spacer(Modifier.height(TitleToFieldSpacing))
-                Card(
-                    cornerRadius = 20.dp,
-                    modifier = Modifier.fillMaxWidth(),
-                    insideMargin = PaddingValues(0.dp),
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 12.dp, bottom = 8.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    Column(modifier = Modifier.fillMaxWidth()) {
-                        StatusRow(
-                            title = "应用名称",
-                            summary = "热量记录与营养识别",
-                            status = "LightMemo · 轻食记",
-                        )
-                        StatusRow(
-                            title = "版本",
-                            summary = "versionName / versionCode",
-                            status = "$versionName ($versionCode)",
-                        )
-                        StatusRow(
-                            title = "检查更新",
-                            summary = when {
-                                updateState.checking -> "正在检查 GitHub 最新版本"
-                                updateState.error != null -> updateState.error.orEmpty()
-                                updateState.available != null -> "发现新版本 ${updateState.available?.versionName}"
-                                else -> updateState.message ?: "从 GitHub 检查最新版本"
-                            },
-                            status = when {
-                                updateState.checking -> "检查中…"
-                                updateState.available != null -> "有更新"
-                                else -> "检查"
-                            },
-                            onClick = {
-                                if (updateState.available != null) {
-                                    showUpdateDialog = true
-                                } else {
-                                    updateViewModel.checkForUpdate()
-                                }
-                            },
+                    appIcon?.let { icon ->
+                        Image(
+                            bitmap = icon,
+                            contentDescription = "轻食记",
+                            modifier = Modifier
+                                .size(72.dp)
+                                .clip(RoundedCornerShape(16.dp)),
                         )
                     }
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        text = "轻食记",
+                        style = MiuixTheme.textStyles.title3,
+                        color = MiuixTheme.colorScheme.onSurface,
+                        fontWeight = FontWeight.Medium,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = "v$versionName",
+                        style = MiuixTheme.textStyles.body2,
+                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                        textAlign = TextAlign.Center,
+                    )
                 }
 
-                Spacer(Modifier.height(FieldToTitleSpacing))
+                Spacer(Modifier.height(20.dp))
                 SmallTitle(
                     text = "开源",
                     modifier = Modifier.offset(x = (-16).dp),
@@ -1310,11 +1573,29 @@ fun AboutScreen(
                             onClick = {
                                 runCatching {
                                     context.startActivity(
-                                        android.content.Intent(
-                                            android.content.Intent.ACTION_VIEW,
-                                            android.net.Uri.parse(githubUrl),
-                                        )
+                                        Intent(Intent.ACTION_VIEW, Uri.parse(githubUrl)),
                                     )
+                                }
+                            },
+                        )
+                        StatusRow(
+                            title = "检查更新",
+                            summary = when {
+                                updateState.checking -> "正在检查最新版本"
+                                updateState.error != null -> updateState.error.orEmpty()
+                                updateState.available != null -> "发现新版本 ${updateState.available?.versionName}"
+                                else -> updateState.message ?: "从 Gitee 检查最新版本"
+                            },
+                            status = when {
+                                updateState.checking -> "检查中…"
+                                updateState.available != null -> "有更新"
+                                else -> "检查"
+                            },
+                            onClick = {
+                                if (updateState.available != null) {
+                                    showUpdateDialog = true
+                                } else {
+                                    updateViewModel.checkForUpdate()
                                 }
                             },
                         )

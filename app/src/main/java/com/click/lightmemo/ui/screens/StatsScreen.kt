@@ -327,7 +327,13 @@ private fun StructureLegend(label: String, percentage: Int, color: Color) {
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Box(Modifier.size(6.dp).clip(CircleShape).background(color))
-        Text(label, style = MiuixTheme.textStyles.body2, modifier = Modifier.weight(1f))
+        Text(
+            label,
+            style = MiuixTheme.textStyles.body2,
+            modifier = Modifier
+                .weight(1f)
+                .padding(start = 54.dp),
+        )
         Text(
             "$percentage%",
             style = MiuixTheme.textStyles.footnote1,
