@@ -13,7 +13,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -32,13 +34,18 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -48,6 +55,7 @@ import com.click.lightmemo.domain.Nutrition
 import com.click.lightmemo.ui.basic.SharedScrollBehavior as ScrollBehavior
 import com.click.lightmemo.ui.theme.FoodPaletteColors
 import com.click.lightmemo.ui.utils.overScrollVertical
+import com.click.lightmemo.viewmodel.MealTimingDay
 import com.click.lightmemo.viewmodel.StatsViewModel
 import java.time.LocalDate
 import java.time.YearMonth
@@ -56,9 +64,15 @@ import java.util.Locale
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.basic.CircularProgressIndicator
+import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.LinearProgressIndicator
 import top.yukonga.miuix.kmp.basic.ProgressIndicatorDefaults
 import top.yukonga.miuix.kmp.basic.Text
+import top.yukonga.miuix.kmp.icon.MiuixIcons
+import top.yukonga.miuix.kmp.icon.os4.Add
+import top.yukonga.miuix.kmp.icon.os4.Back
+import top.yukonga.miuix.kmp.icon.os4.Info
+import top.yukonga.miuix.kmp.icon.os4.Ok
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 private val DetailDateFormatter = DateTimeFormatter.ofPattern("M月d日", Locale.SIMPLIFIED_CHINESE)
@@ -156,7 +170,16 @@ fun StatsScreen(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
             )
         }
-        item { InsightsCard(state, Modifier.fillMaxWidth().padding(horizontal = 16.dp)) }
+        item {
+            MealTimingCard(
+                state = state,
+                structureColors = palette.structure,
+                selectedEpochDay = selectedDay?.dateEpochDay,
+                onSelect = { selectedEpochDay = it },
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+            )
+        }
+        item { AdviceSection(state, Modifier.fillMaxWidth()) }
         item {
             Box(Modifier.padding(horizontal = 16.dp)) {
                 NutritionIntakeCard(
@@ -280,7 +303,7 @@ private fun MealStructureCard(
                     )
                 }
             }
-            Spacer(Modifier.width(24.dp))
+            Spacer(Modifier.width(74.dp))
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 slices.forEach { (label, valueAndColor) ->
                     val percentage = if (total <= 0.0) 0 else (valueAndColor.first / total * 100).toInt()
@@ -289,6 +312,248 @@ private fun MealStructureCard(
             }
         }
     }
+}
+
+@Composable
+private fun MealTimingCard(
+    state: StatsViewModel.StatsUiState,
+    structureColors: List<Color>,
+    selectedEpochDay: Long?,
+    onSelect: (Long) -> Unit,
+    modifier: Modifier,
+) {
+    val mealColors = structureColors.take(4).ifEmpty {
+        listOf(MiuixTheme.colorScheme.primary, MiuixTheme.colorScheme.secondary)
+    }
+    val selectedTiming = state.mealTiming.firstOrNull { it.dateEpochDay == selectedEpochDay }
+    val hasTiming = state.mealTiming.any { it.points.isNotEmpty() }
+
+    Card(
+        modifier = modifier,
+        cornerRadius = CardDefaults.CornerRadius,
+        insideMargin = PaddingValues(horizontal = 24.dp, vertical = 20.dp),
+    ) {
+        Text("饮食规律", style = MiuixTheme.textStyles.headline1)
+        Spacer(Modifier.height(16.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            TimingMetric(
+                label = "规律度",
+                value = state.regularityScore?.let { "$it%" } ?: "—",
+                detail = if (state.timedDays >= 2) "时间稳定性" else "至少记录 2 天",
+                modifier = Modifier.weight(1f),
+            )
+            TimingMetric(
+                label = "日均摄入",
+                value = if (state.averageIntakesPerDay > 0.0) {
+                    state.averageIntakesPerDay.formatCount()
+                } else "—",
+                detail = "次 / 有时间记录日",
+                modifier = Modifier.weight(1f),
+            )
+            TimingMetric(
+                label = "进食窗口",
+                value = state.averageEatingWindowMinutes?.formatDuration() ?: "—",
+                detail = if (state.averageFirstMealMinute != null && state.averageLastMealMinute != null) {
+                    "${state.averageFirstMealMinute.formatMinuteOfDay()}–${state.averageLastMealMinute.formatMinuteOfDay()}"
+                } else "首餐至末餐",
+                modifier = Modifier.weight(1f),
+            )
+        }
+        if (!hasTiming) {
+            Spacer(Modifier.height(18.dp))
+            Text(
+                if (state.hasData) "已有食物记录，但没有可用的用餐时间。编辑记录补充时间后，这里会显示规律性。"
+                else "记录用餐时间后，这里会显示每天的摄入时间段。",
+                style = MiuixTheme.textStyles.body2,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+            )
+        } else {
+            Spacer(Modifier.height(18.dp))
+            MealTimingChart(
+                days = state.mealTiming,
+                structureColors = mealColors,
+                selectedEpochDay = selectedEpochDay,
+                onSelect = onSelect,
+            )
+            selectedTiming?.takeIf { it.points.isNotEmpty() }?.let { day ->
+                MealTimingDayDetail(day)
+            }
+        }
+    }
+}
+
+@Composable
+private fun TimingMetric(
+    label: String,
+    value: String,
+    detail: String,
+    modifier: Modifier,
+) {
+    Column(modifier = modifier) {
+        Text(
+            label,
+            style = MiuixTheme.textStyles.footnote1,
+            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+        )
+        Spacer(Modifier.height(3.dp))
+        Text(value, style = MiuixTheme.textStyles.title4, fontWeight = FontWeight.SemiBold)
+        Text(
+            detail,
+            style = MiuixTheme.textStyles.footnote2,
+            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+            maxLines = 2,
+        )
+    }
+}
+
+@Composable
+private fun MealTimingChart(
+    days: List<MealTimingDay>,
+    structureColors: List<Color>,
+    selectedEpochDay: Long?,
+    onSelect: (Long) -> Unit,
+) {
+    val scrollState = rememberScrollState()
+    val plotHeight = 99.dp
+    val labelStyle = MiuixTheme.textStyles.footnote2
+    val labelColor = MiuixTheme.colorScheme.onSurfaceVariantSummary
+
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val chartViewportWidth = maxWidth.coerceAtLeast(1.dp)
+        val itemWidth = if (days.size <= 7) {
+            chartViewportWidth / days.size.coerceAtLeast(1)
+        } else {
+            maxOf(42.dp, chartViewportWidth / days.size.coerceAtLeast(1))
+        }
+        val chartWidth = itemWidth * days.size.coerceAtLeast(1)
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(scrollState),
+        ) {
+            Column(Modifier.width(chartWidth)) {
+                Box(Modifier.fillMaxWidth().height(plotHeight)) {
+                    Canvas(Modifier.fillMaxSize()) {
+                        val itemWidthPx = itemWidth.toPx()
+                        days.forEachIndexed { index, day ->
+                            if (day.points.isEmpty()) return@forEachIndexed
+                            val x = itemWidthPx * (index + 0.5f)
+                            fun yFor(minuteOfDay: Int): Float =
+                                size.height * (minuteOfDay / 1440f).coerceIn(0f, 1f)
+                            val firstY = yFor(day.firstMinute ?: 0)
+                            val lastY = yFor(day.lastMinute ?: 0)
+                            val selected = day.dateEpochDay == selectedEpochDay
+                            val barStartY = minOf(firstY, lastY)
+                            val barEndY = maxOf(lastY, barStartY + 1f)
+                            val barAlpha = if (selected) 0.92f else 0.48f
+                            val recordedColors = day.points
+                                .sortedBy { it.minuteOfDay }
+                                .map { point -> mealChartColor(point.mealType, structureColors) }
+                            val gradientColors = if (recordedColors.size == 1) {
+                                recordedColors + recordedColors
+                            } else {
+                                recordedColors
+                            }
+                            drawLine(
+                                brush = Brush.verticalGradient(
+                                    colors = gradientColors.map { it.copy(alpha = barAlpha) },
+                                    startY = barStartY,
+                                    endY = barEndY,
+                                ),
+                                start = Offset(x, firstY),
+                                end = Offset(x, lastY),
+                                strokeWidth = 6.dp.toPx(),
+                                cap = StrokeCap.Round,
+                            )
+                            day.points.forEach { point ->
+                                drawCircle(
+                                    color = mealChartColor(point.mealType, structureColors)
+                                        .copy(alpha = if (selected) 1f else 0.86f),
+                                    radius = 3.dp.toPx(),
+                                    center = Offset(x, yFor(point.minuteOfDay)),
+                                )
+                            }
+                        }
+                    }
+                    Row(Modifier.fillMaxSize()) {
+                        days.forEach { day ->
+                            Box(
+                                modifier = Modifier
+                                    .width(itemWidth)
+                                    .fillMaxHeight()
+                                    .clickable(
+                                        interactionSource = null,
+                                        indication = null,
+                                        role = Role.Button,
+                                    ) { onSelect(day.dateEpochDay) }
+                                    .semantics {
+                                        contentDescription = timingDescription(day)
+                                    },
+                            )
+                        }
+                    }
+                }
+                Row(Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                    days.forEach { day ->
+                        Text(
+                            text = if (days.size <= 7) {
+                                day.dateEpochDay.toLocalDate().format(DateTimeFormatter.ofPattern("M/d"))
+                            } else {
+                                day.dateEpochDay.toLocalDate().dayOfMonth.toString()
+                            },
+                            style = labelStyle,
+                            color = labelColor,
+                            textAlign = TextAlign.Center,
+                            maxLines = 1,
+                            modifier = Modifier.width(itemWidth),
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MealTimingDayDetail(day: MealTimingDay) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 12.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(MiuixTheme.colorScheme.primary.copy(alpha = 0.07f))
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text(
+                day.dateEpochDay.toLocalDate().format(DetailDateFormatter),
+                style = MiuixTheme.textStyles.footnote1,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text("${day.points.size} 次摄入", style = MiuixTheme.textStyles.footnote1)
+        }
+        Text(
+            day.points.joinToString(" · ") { "${it.minuteOfDay.formatMinuteOfDay()} ${it.mealType.label}" },
+            style = MiuixTheme.textStyles.body2,
+            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+        )
+    }
+}
+
+private fun mealChartColor(mealType: MealType, colors: List<Color>): Color =
+    colors.getOrElse(mealType.ordinal) { colors.lastOrNull() ?: Color.Gray }
+
+private fun timingDescription(day: MealTimingDay): String = if (day.points.isEmpty()) {
+    "${day.dateEpochDay.toLocalDate().format(DetailDateFormatter)}，没有时间记录"
+} else {
+    "${day.dateEpochDay.toLocalDate().format(DetailDateFormatter)}，${day.points.size} 次摄入，${day.firstMinute?.formatMinuteOfDay()} 至 ${day.lastMinute?.formatMinuteOfDay()}"
 }
 
 @Composable
@@ -330,9 +595,7 @@ private fun StructureLegend(label: String, percentage: Int, color: Color) {
         Text(
             label,
             style = MiuixTheme.textStyles.body2,
-            modifier = Modifier
-                .weight(1f)
-                .padding(start = 54.dp),
+            modifier = Modifier.weight(1f),
         )
         Text(
             "$percentage%",
@@ -343,92 +606,217 @@ private fun StructureLegend(label: String, percentage: Int, color: Color) {
 }
 
 @Composable
-private fun InsightsCard(
+private fun AdviceSection(
     state: StatsViewModel.StatsUiState,
     modifier: Modifier,
 ) {
-    val insights = buildInsights(state)
-    Card(
+    val advice = buildAdvice(state)
+    BoxWithConstraints(
         modifier = modifier,
-        cornerRadius = CardDefaults.CornerRadius,
-        insideMargin = PaddingValues(horizontal = 24.dp, vertical = 20.dp),
     ) {
-        Text("统计与建议", style = MiuixTheme.textStyles.headline1)
-        Spacer(Modifier.height(16.dp))
-        insights.forEachIndexed { index, insight ->
-            InsightRow(insight)
-            if (index < insights.lastIndex) Spacer(Modifier.height(16.dp))
+        val contentWidth = (maxWidth - 32.dp).coerceAtLeast(0.dp)
+        val cardWidth = (contentWidth * 0.45f).coerceAtLeast(160.dp)
+        val cardEdgeSpacer = 6.dp
+        val scrollState = rememberScrollState()
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(IntrinsicSize.Max)
+            .horizontalScroll(scrollState),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Spacer(Modifier.width(cardEdgeSpacer))
+            advice.forEach { item ->
+                AdviceCard(item, Modifier.width(cardWidth).fillMaxHeight())
+            }
+            Spacer(Modifier.width(cardEdgeSpacer))
         }
     }
 }
 
-private data class Insight(
+private enum class AdviceGlyph {
+    ADD,
+    UP,
+    DOWN,
+    ALERT,
+    CHECK,
+    DOT,
+}
+
+private data class Advice(
     val title: String,
     val detail: String,
-    val mark: String,
+    val glyph: AdviceGlyph,
     val color: Color,
+    val priority: Int,
 )
 
 @Composable
-private fun buildInsights(state: StatsViewModel.StatsUiState): List<Insight> {
+private fun buildAdvice(state: StatsViewModel.StatsUiState): List<Advice> {
     val positive = MiuixTheme.colorScheme.primary
     val caution = MiuixTheme.colorScheme.error
     val neutral = MiuixTheme.colorScheme.onSurfaceVariantActions
     if (!state.hasData) {
-        return listOf(
-            Insight("开始记录", "先记录一餐，逐步了解饮食结构和营养摄入。", "＋", positive),
-        )
+        return listOf(Advice("开始记录", "先记录一餐，逐步了解饮食结构和营养摄入。", AdviceGlyph.ADD, positive, 0))
     }
 
-    val insights = buildList {
+    val advice = buildList {
         val missingDays = state.elapsedDays - state.loggedDays
         if (missingDays > 0) {
-            add(Insight("补充记录", "还有 $missingDays 天未记录，日均值仅按已记录日期计算。", "!", neutral))
+            add(Advice("补充记录", "还有 $missingDays 天未记录，日均值仅按已记录日期计算。", AdviceGlyph.ALERT, neutral, 1))
         }
         if (state.daysOverTarget > 0) {
-            add(Insight("热量偏高", "有 ${state.daysOverTarget} 天超过目标，建议查看每日记录，留意高热量食物的份量。", "↑", caution))
+            add(Advice("热量偏高", "有 ${state.daysOverTarget} 天超过目标，建议查看每日记录，留意高热量食物的份量。", AdviceGlyph.UP, caution, 0))
         } else if (state.daysHitTarget == state.loggedDays) {
-            add(Insight("热量记录", "已记录的 ${state.loggedDays} 天均未超过设定目标，可结合营养摄入一起查看。", "✓", positive))
+            add(Advice("热量记录稳定", "已记录的 ${state.loggedDays} 天均未超过设定目标，可继续保持当前节奏。", AdviceGlyph.CHECK, positive, 3))
         }
 
         val averageRatio = state.averageKcal / state.target.coerceAtLeast(1f)
         when {
-            averageRatio > 1.1 -> add(Insight("日均摄入偏高", "日均 ${state.averageKcal.toInt()} kcal，高于目标 ${state.target.toInt()} kcal。", "↑", caution))
-            averageRatio < 0.8 -> add(Insight("日均摄入偏低", "日均 ${state.averageKcal.toInt()} kcal，低于目标较多，请注意摄入充足。", "↓", neutral))
+            averageRatio > 1.1 -> add(Advice("日均摄入偏高", "日均 ${state.averageKcal.toInt()} kcal，高于目标 ${state.target.toInt()} kcal。", AdviceGlyph.UP, caution, 0))
+            averageRatio < 0.8 -> add(Advice("日均摄入偏低", "日均 ${state.averageKcal.toInt()} kcal，低于目标较多，请注意摄入充足。", AdviceGlyph.DOWN, neutral, 1))
         }
 
-        val proteinRatio = state.averageNutrition.proteinG / state.proteinTarget.coerceAtLeast(1f)
-        if (proteinRatio < 0.75) {
-            add(Insight("蛋白质偏低", "日均 ${state.averageNutrition.proteinG.toInt()}g，可增加蛋、奶、豆制品或瘦肉。", "↓", neutral))
+        val nutrition = state.averageNutrition
+        val proteinRatio = nutrition.proteinG / state.proteinTarget.coerceAtLeast(1f)
+        val carbsRatio = nutrition.carbsG / state.carbsTarget.coerceAtLeast(1f)
+        val fatRatio = nutrition.fatG / state.fatTarget.coerceAtLeast(1f)
+        when {
+            proteinRatio < 0.75 -> add(Advice("蛋白质不足", "日均约 ${nutrition.proteinG.toInt()}g，可增加蛋、奶、豆制品、鱼虾或瘦肉。", AdviceGlyph.DOWN, caution, 0))
+            proteinRatio > 1.2 -> add(Advice("蛋白质偏高", "日均约 ${nutrition.proteinG.toInt()}g，已经超过目标较多，注意整体热量平衡。", AdviceGlyph.UP, neutral, 1))
+        }
+        when {
+            carbsRatio < 0.75 -> add(Advice("碳水不足", "日均约 ${nutrition.carbsG.toInt()}g，可适量补充米饭、燕麦、玉米或薯类。", AdviceGlyph.DOWN, neutral, 1))
+            carbsRatio > 1.2 -> add(Advice("碳水偏高", "日均约 ${nutrition.carbsG.toInt()}g，可减少精制主食和含糖食物。", AdviceGlyph.UP, caution, 0))
+        }
+        when {
+            fatRatio < 0.75 -> add(Advice("脂肪不足", "日均约 ${nutrition.fatG.toInt()}g，可适量增加鱼类、坚果或牛油果。", AdviceGlyph.DOWN, neutral, 1))
+            fatRatio > 1.2 -> add(Advice("脂肪超量", "日均约 ${nutrition.fatG.toInt()}g，建议减少油炸、肥肉、奶油和高油烹饪。", AdviceGlyph.UP, caution, 0))
+        }
+
+        val structureTotal = state.mealCalories.values.sum()
+        if (structureTotal > 0.0) {
+            val breakfastRatio = (state.mealCalories[MealType.BREAKFAST] ?: 0.0) / structureTotal
+            val dinnerRatio = (state.mealCalories[MealType.DINNER] ?: 0.0) / structureTotal
+            if (breakfastRatio < 0.2) {
+                add(Advice("早餐偏少", "早餐约占总摄入 ${(breakfastRatio * 100).toInt()}%，建议把部分摄入提前到上午。", AdviceGlyph.DOT, neutral, 1))
+            }
+            if (dinnerRatio > 0.45) {
+                add(Advice("晚餐偏重", "晚餐约占总摄入 ${(dinnerRatio * 100).toInt()}%，建议将部分热量分配到早餐和午餐。", AdviceGlyph.UP, caution, 0))
+            }
+        }
+
+        if (state.timedDays == 0) {
+            add(Advice("补充用餐时间", "记录用餐时间后，才能判断进食窗口和饮食规律。", AdviceGlyph.ALERT, neutral, 1))
+        } else {
+            state.regularityScore?.takeIf { it < 60 }?.let { score ->
+                add(Advice("饮食不规律", "当前规律度 $score%，首餐、末餐或进食间隔波动较大。", AdviceGlyph.ALERT, caution, 0))
+            }
+            state.averageFirstMealMinute?.takeIf { it >= 10 * 60 }?.let {
+                add(Advice("首餐偏晚", "平均首餐时间为 ${it.formatMinuteOfDay()}，建议尽量保持稳定并适当提前。", AdviceGlyph.DOT, neutral, 1))
+            }
+            state.averageLastMealMinute?.takeIf { it >= 21 * 60 }?.let {
+                add(Advice("晚餐偏晚", "平均末餐时间为 ${it.formatMinuteOfDay()}，建议避免太晚进食。", AdviceGlyph.DOT, neutral, 1))
+            }
+            state.averageEatingWindowMinutes?.takeIf { it >= 14 * 60 }?.let {
+                add(Advice("进食窗口偏长", "一天的进食时间跨度约 ${it.formatDuration()}，建议减少无计划加餐。", AdviceGlyph.DOT, neutral, 1))
+            }
+        }
+
+        val proteinGap = (state.proteinTarget - nutrition.proteinG).coerceAtLeast(0.0)
+        val carbsGap = (state.carbsTarget - nutrition.carbsG).coerceAtLeast(0.0)
+        val fatGap = (state.fatTarget - nutrition.fatG).coerceAtLeast(0.0)
+        when {
+            proteinGap >= 20.0 -> add(Advice("补充蛋白质", "当前平均还缺约 ${proteinGap.toInt()}g，优先选择鸡蛋、牛奶、豆腐、鱼虾或瘦肉。", AdviceGlyph.ADD, positive, 2))
+            carbsGap >= 30.0 -> add(Advice("补充主食", "当前平均还缺约 ${carbsGap.toInt()}g碳水，可选择燕麦、玉米、红薯或全谷物。", AdviceGlyph.ADD, positive, 2))
+            fatGap >= 10.0 -> add(Advice("补充健康脂肪", "当前平均还缺约 ${fatGap.toInt()}g脂肪，可选择少量坚果、牛油果或鱼类。", AdviceGlyph.ADD, positive, 2))
         }
     }
-    return insights.ifEmpty {
-        listOf(Insight("保持节奏", "当前记录数据稳定，继续保持规律记录。", "✓", positive))
+
+    return advice
+        .ifEmpty { listOf(Advice("保持节奏", "当前记录数据稳定，继续保持规律记录。", AdviceGlyph.CHECK, positive, 3)) }
+        .sortedBy { it.priority }
+        .take(8)
+}
+
+@Composable
+private fun AdviceCard(advice: Advice, modifier: Modifier) {
+    Card(
+        modifier = modifier,
+        cornerRadius = CardDefaults.CornerRadius,
+        insideMargin = PaddingValues(16.dp),
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.Start,
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.Top,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    horizontalAlignment = Alignment.Start,
+                ) {
+                    Text(
+                        when (advice.priority) {
+                            0 -> "优先处理"
+                            1 -> "注意"
+                            2 -> "可执行"
+                            else -> "保持"
+                        },
+                        style = MiuixTheme.textStyles.footnote2,
+                        color = advice.color,
+                    )
+                    Spacer(Modifier.height(5.dp))
+                    Text(
+                        advice.title,
+                        style = MiuixTheme.textStyles.headline2,
+                        maxLines = 2,
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .size(32.dp)
+                        .clip(CircleShape)
+                        .background(advice.color.copy(alpha = 0.13f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    AdviceGlyphIcon(advice.glyph, advice.color)
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            Text(
+                advice.detail,
+                modifier = Modifier.fillMaxWidth(),
+                style = MiuixTheme.textStyles.body2,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                maxLines = 4,
+            )
+        }
     }
 }
 
 @Composable
-private fun InsightRow(insight: Insight) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Box(
-            modifier = Modifier
-                .size(32.dp)
-                .clip(CircleShape)
-                .background(insight.color.copy(alpha = 0.13f)),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(insight.mark, style = MiuixTheme.textStyles.footnote1, color = insight.color, fontWeight = FontWeight.SemiBold)
-        }
-        Column(modifier = Modifier.weight(1f)) {
-            Text(insight.title, style = MiuixTheme.textStyles.headline2)
-            Spacer(Modifier.height(4.dp))
-            Text(insight.detail, style = MiuixTheme.textStyles.body2, color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
-        }
+private fun AdviceGlyphIcon(glyph: AdviceGlyph, color: Color) {
+    val rotation = when (glyph) {
+        AdviceGlyph.UP -> 90f
+        AdviceGlyph.DOWN -> -90f
+        else -> 0f
     }
+    Icon(
+        imageVector = when (glyph) {
+            AdviceGlyph.ADD -> MiuixIcons.Os4.Add
+            AdviceGlyph.UP, AdviceGlyph.DOWN -> MiuixIcons.Os4.Back
+            AdviceGlyph.ALERT -> MiuixIcons.Os4.Info
+            AdviceGlyph.CHECK -> MiuixIcons.Os4.Ok
+            AdviceGlyph.DOT -> MiuixIcons.Os4.Info
+        },
+        contentDescription = null,
+        modifier = Modifier.size(18.dp).rotate(rotation),
+        tint = color,
+    )
 }
 
 @Composable
@@ -691,5 +1079,20 @@ private fun Double.formatMacro(): String =
 
 private fun Float.formatMacro(): String =
     if (this % 1f == 0f) toInt().toString() else "%.1f".format(Locale.US, this)
+
+private fun Double.formatCount(): String =
+    if (this % 1.0 == 0.0) toInt().toString() else "%.1f".format(Locale.US, this)
+
+private fun Int.formatDuration(): String {
+    val hours = this / 60
+    val minutes = this % 60
+    return when {
+        hours == 0 -> "${minutes}分"
+        minutes == 0 -> "${hours}小时"
+        else -> "${hours}小时${minutes}分"
+    }
+}
+
+private fun Int.formatMinuteOfDay(): String = "%02d:%02d".format(Locale.ROOT, this / 60, this % 60)
 
 private fun Long.toLocalDate(): LocalDate = LocalDate.ofEpochDay(this)
