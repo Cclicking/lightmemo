@@ -22,6 +22,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -64,6 +65,7 @@ import top.yukonga.miuix.kmp.basic.CircularProgressIndicator
 import top.yukonga.miuix.kmp.basic.LinearProgressIndicator
 import top.yukonga.miuix.kmp.basic.NumberPicker
 import top.yukonga.miuix.kmp.basic.ProgressIndicatorDefaults
+import top.yukonga.miuix.kmp.basic.Slider
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.theme.MiuixTheme
@@ -94,6 +96,9 @@ fun TodayScreen(
     showDeleteSelectionConfirm: Boolean = false,
     onDismissDeleteSelectionConfirm: () -> Unit = {},
     onConfirmDeleteSelection: () -> Unit = {},
+    managementDrafts: Map<Long, FoodLog> = emptyMap(),
+    onManagementDraftChange: (FoodLog) -> Unit = {},
+    cardCacheVersion: Int = 0,
 ) {
     val state by viewModel.uiState.collectAsState()
     val date by viewModel.date.collectAsState()
@@ -274,13 +279,6 @@ fun TodayScreen(
                                 modifier = Modifier.padding(horizontal = 12.dp),
                             )
                         }
-                    } else {
-                        Text(
-                            text = "点击卡片查看详情，点击删除按钮或长按卡片进行移除。",
-                            style = MiuixTheme.textStyles.subtitle,
-                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                            modifier = Modifier.padding(horizontal = 12.dp),
-                        )
                     }
 
                     val pendingForDate = addState.targetDateEpochDay == displayedDate.toEpochDay()
@@ -312,6 +310,9 @@ fun TodayScreen(
                                             FoodCard(
                                                 entry = row[0],
                                                 managementMode = managementMode,
+                                                portionChangeEnabled = !busy,
+                                                draftEntry = managementDrafts[row[0].id],
+                                                cardCacheVersion = cardCacheVersion,
                                                 selectionMode = selectionMode,
                                                 selected = row[0].id in selectedEntryIds,
                                                 onClick = {
@@ -326,6 +327,7 @@ fun TodayScreen(
                                                     deleteEntry = row[0]
                                                     showDelete = true
                                                 },
+                                                onPortionChange = onManagementDraftChange,
                                                 onLongPress = {
                                                     if (managementMode) {
                                                         deleteEntry = row[0]
@@ -342,6 +344,9 @@ fun TodayScreen(
                                                 FoodCard(
                                                     entry = entry,
                                                     managementMode = managementMode,
+                                                    portionChangeEnabled = !busy,
+                                                    draftEntry = managementDrafts[entry.id],
+                                                    cardCacheVersion = cardCacheVersion,
                                                     selectionMode = selectionMode,
                                                     selected = entry.id in selectedEntryIds,
                                                     onClick = {
@@ -356,6 +361,7 @@ fun TodayScreen(
                                                         deleteEntry = entry
                                                         showDelete = true
                                                     },
+                                                    onPortionChange = onManagementDraftChange,
                                                     onLongPress = {
                                                         if (managementMode) {
                                                             deleteEntry = entry
@@ -500,13 +506,23 @@ private fun FoodCardRow(left: @Composable () -> Unit, right: (@Composable () -> 
 private fun FoodCard(
     entry: FoodLog,
     managementMode: Boolean,
+    portionChangeEnabled: Boolean,
+    draftEntry: FoodLog?,
+    cardCacheVersion: Int,
     selectionMode: Boolean,
     selected: Boolean,
     onClick: () -> Unit,
     onDelete: () -> Unit,
+    onPortionChange: (FoodLog) -> Unit,
     onLongPress: () -> Unit,
     onToggleSelection: () -> Unit,
 ) {
+    val portionBaseEntry = remember(entry.id, cardCacheVersion) { entry }
+    val portionScaleState = remember(entry.id, cardCacheVersion) {
+        mutableFloatStateOf(draftEntry?.portionScaleFrom(entry) ?: 1f)
+    }
+    val displayedEntry = portionBaseEntry.scaledForPortion(portionScaleState.floatValue)
+
     Card(
         modifier = Modifier.fillMaxWidth().heightIn(min = 132.dp),
         cornerRadius = 20.dp,
@@ -532,11 +548,11 @@ private fun FoodCard(
         } else {
             Text(entry.name, style = MiuixTheme.textStyles.title4, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
-        Text("${entry.grams.toInt()}g", style = MiuixTheme.textStyles.footnote2, color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
+        Text("${displayedEntry.grams.toInt()}g", style = MiuixTheme.textStyles.footnote2, color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
         Spacer(Modifier.weight(1f))
-        Text("${entry.nutrition.caloriesKcal.toInt()} kcal", style = MiuixTheme.textStyles.title4)
+        Text("${displayedEntry.nutrition.caloriesKcal.toInt()} kcal", style = MiuixTheme.textStyles.title4)
         Text(
-            "蛋白 ${entry.nutrition.proteinG.toInt()}g · 碳水 ${entry.nutrition.carbsG.toInt()}g · 脂肪 ${entry.nutrition.fatG.toInt()}g",
+            "蛋白 ${displayedEntry.nutrition.proteinG.toInt()}g · 碳水 ${displayedEntry.nutrition.carbsG.toInt()}g · 脂肪 ${displayedEntry.nutrition.fatG.toInt()}g",
             style = MiuixTheme.textStyles.footnote2,
             color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
             maxLines = 2,
@@ -544,7 +560,31 @@ private fun FoodCard(
         )
         if (managementMode) {
             Spacer(Modifier.height(6.dp))
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Slider(
+                    value = portionScaleState.floatValue,
+                    onValueChange = {
+                        if (portionChangeEnabled) portionScaleState.floatValue = it
+                    },
+                    onValueChangeFinished = {
+                        if (portionChangeEnabled) {
+                            val finalScale = portionScaleState.floatValue
+                            if (finalScale != 1f || draftEntry != null) {
+                                onPortionChange(portionBaseEntry.scaledForPortion(finalScale))
+                            }
+                        }
+                    },
+                    // Keep the track rendered during the save transition. Changes are
+                    // ignored while saving, so the captured save batch remains stable.
+                    enabled = true,
+                    valueRange = PortionScaleRange,
+                    steps = PortionScaleSteps,
+                    modifier = Modifier.weight(1f),
+                )
                 Button(
                     onClick = onDelete,
                     minWidth = 48.dp,
@@ -571,6 +611,28 @@ private fun RecognitionCard(stage: RecognitionStage?) {
         Text(currentStage.detail, style = MiuixTheme.textStyles.footnote2, color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
     }
 }
+
+private const val PortionScaleSteps = 9
+// Keep the default 1.0x portion at 90% of this fixed range.
+private val PortionScaleRange = 0.1f..1.1f
+
+private fun FoodLog.scaledForPortion(scale: Float): FoodLog {
+    val factor = scale.toDouble()
+    return copy(
+        grams = grams * factor,
+        nutrition = nutrition * factor,
+        components = components.map { component ->
+            component.withEditWeight(component.estimatedWeightG * factor)
+        },
+    )
+}
+
+private fun FoodLog.portionScaleFrom(base: FoodLog): Float =
+    if (base.grams > 0.0) {
+        (grams / base.grams).toFloat().coerceIn(PortionScaleRange)
+    } else {
+        1f
+    }
 
 @Composable
 private fun PendingFoodCard(name: String, grams: Double, nutrition: Nutrition, onClick: () -> Unit) {

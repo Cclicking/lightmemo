@@ -101,6 +101,15 @@ class FoodLogRepository(
         require(updated > 0) { "该记录已删除，请刷新后重试" }
     }
 
+    suspend fun updateAll(logs: Collection<FoodLog>) = withContext(Dispatchers.IO) {
+        ensureMigrated()
+        logs.forEach { log ->
+            log.validate()
+            val updated = dao.update(log.toEntity())
+            require(updated > 0) { "该记录已删除，请刷新后重试" }
+        }
+    }
+
     suspend fun exportJson(): String {
         ensureMigrated()
         return JSONObject().apply {

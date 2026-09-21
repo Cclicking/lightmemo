@@ -23,6 +23,7 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.AnimatedContent
@@ -61,6 +62,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.unit.dp
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigationevent.OnBackInvokedDefaultInput
 import androidx.navigationevent.compose.LocalNavigationEventDispatcherOwner
@@ -226,6 +228,14 @@ fun FoodAppRoot() {
 
     FoodTheme {
             val context = LocalContext.current
+            var cardCacheVersion by rememberSaveable { mutableIntStateOf(0) }
+            val manageFoodCardsLauncher = rememberLauncherForActivityResult(
+                ActivityResultContracts.StartActivityForResult(),
+            ) { result ->
+                if (result.resultCode == android.app.Activity.RESULT_OK) {
+                    cardCacheVersion++
+                }
+            }
             val addState by addVm.uiState.collectAsState()
             val appUpdateState by appUpdateVm.uiState.collectAsState()
             val selectedDate by todayVm.date.collectAsState()
@@ -405,7 +415,7 @@ fun FoodAppRoot() {
                             ) {
                             LiquidTopBarButton(
                                 onClick = {
-                                    context.startActivity(
+                                    manageFoodCardsLauncher.launch(
                                         android.content.Intent(
                                             context,
                                             com.click.lightmemo.ui.secondary.ManageFoodCardsActivity::class.java,
@@ -575,6 +585,7 @@ fun FoodAppRoot() {
                                             addVm.setTargetDate(selectedDate)
                                             showAdd = true
                                         },
+                                        cardCacheVersion = cardCacheVersion,
                                     )
                                     1 -> StatsScreen(
                                         viewModel = statsVm,

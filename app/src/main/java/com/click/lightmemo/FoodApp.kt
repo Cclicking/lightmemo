@@ -14,7 +14,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 class FoodApp : Application() {
-    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    internal val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     lateinit var foodLogRepository: FoodLogRepository
         private set
     lateinit var settingsRepository: SettingsRepository

@@ -12,6 +12,7 @@ import java.time.LocalDate
 import java.time.LocalTime
 import java.time.YearMonth
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -28,6 +29,7 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlin.math.abs
 import kotlin.math.roundToInt
+import kotlinx.coroutines.withContext
 
 data class TodayUiState(
     val date: LocalDate = LocalDate.now(),
@@ -45,7 +47,8 @@ data class TodayUiState(
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class TodayViewModel(app: Application) : AndroidViewModel(app) {
-    private val repo = (app as FoodApp).foodLogRepository
+    private val foodApp = app as FoodApp
+    private val repo = foodApp.foodLogRepository
     val readError: StateFlow<String?> = repo.readError
     private val settingsRepo = (app as FoodApp).settingsRepository
 
@@ -154,9 +157,29 @@ class TodayViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun update(entry: FoodLog, onSaved: () -> Unit) {
-        perform {
-            repo.update(entry)
+        updateAll(listOf(entry), onSaved)
+    }
+
+    fun updateAll(entries: Collection<FoodLog>, onSaved: () -> Unit) {
+        val updates = entries.filter { it.id > 0L }.distinctBy { it.id }
+        if (updates.isEmpty()) {
             onSaved()
+            return
+        }
+        if (busy.value) return
+        busy.value = true
+        operationError.value = null
+        foodApp.appScope.launch {
+            try {
+                repo.updateAll(updates)
+                withContext(Dispatchers.Main.immediate) { onSaved() }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                operationError.value = e.message ?: "操作失败，请重试"
+            } finally {
+                withContext(Dispatchers.Main.immediate) { busy.value = false }
+            }
         }
     }
 
