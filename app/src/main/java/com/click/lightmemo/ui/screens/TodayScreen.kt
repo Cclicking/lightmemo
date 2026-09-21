@@ -34,6 +34,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -58,6 +59,7 @@ import top.yukonga.miuix.kmp.anim.folmeSpring
 import top.yukonga.miuix.kmp.basic.Button
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
+import top.yukonga.miuix.kmp.basic.Checkbox
 import top.yukonga.miuix.kmp.basic.CircularProgressIndicator
 import top.yukonga.miuix.kmp.basic.LinearProgressIndicator
 import top.yukonga.miuix.kmp.basic.NumberPicker
@@ -86,6 +88,12 @@ fun TodayScreen(
     onShowDatePicker: () -> Unit,
     onDismissDatePicker: () -> Unit,
     onAddClick: () -> Unit,
+    selectionMode: Boolean = false,
+    selectedEntryIds: Set<Long> = emptySet(),
+    onSelectionChange: (Set<Long>) -> Unit = {},
+    showDeleteSelectionConfirm: Boolean = false,
+    onDismissDeleteSelectionConfirm: () -> Unit = {},
+    onConfirmDeleteSelection: () -> Unit = {},
 ) {
     val state by viewModel.uiState.collectAsState()
     val date by viewModel.date.collectAsState()
@@ -98,6 +106,13 @@ fun TodayScreen(
     var deleteEntry by remember { mutableStateOf<FoodLog?>(null) }
     var showDetail by remember { mutableStateOf(false) }
     var showDelete by remember { mutableStateOf(false) }
+
+    fun toggleSelection(entry: FoodLog) {
+        onSelectionChange(
+            if (entry.id in selectedEntryIds) selectedEntryIds - entry.id
+            else selectedEntryIds + entry.id,
+        )
+    }
 
     DatePickerOverlay(
         show = showDatePicker,
@@ -139,6 +154,12 @@ fun TodayScreen(
             },
         )
     }
+    DeleteSelectedFoodOverlay(
+        count = selectedEntryIds.size,
+        show = showDeleteSelectionConfirm,
+        onDismiss = onDismissDeleteSelectionConfirm,
+        onDelete = onConfirmDeleteSelection,
+    )
 
     val swipe = rememberDaySwipeState(date to calendarExpanded)
     val progress = swipe.progress
@@ -224,7 +245,7 @@ fun TodayScreen(
         item(key = "dayCards") {
             DaySwipePages(
                 state = swipe,
-                enabled = !managementMode,
+                enabled = !managementMode && !selectionMode,
                 canMoveNext = date < LocalDate.now(),
                 onMove = { viewModel.selectDate(date.plusDays(it.toLong())) },
                 modifier = Modifier.heightIn(min = swipeMinHeight),
@@ -245,6 +266,14 @@ fun TodayScreen(
                             palette = palette,
                         )
                         Button(onClick = onAddClick, modifier = Modifier.fillMaxWidth()) { Text("记录食物") }
+                        if (selectionMode) {
+                            Text(
+                                text = "已选择 ${selectedEntryIds.size} 项，点击卡片可取消选择。",
+                                style = MiuixTheme.textStyles.subtitle,
+                                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                                modifier = Modifier.padding(horizontal = 12.dp),
+                            )
+                        }
                     } else {
                         Text(
                             text = "点击卡片查看详情，点击删除按钮或长按卡片进行移除。",
@@ -280,22 +309,64 @@ fun TodayScreen(
                                 androidx.compose.runtime.key("saved-${meal.name}-${row.first().id}") {
                                     FoodCardRow(
                                         left = {
-                                            FoodCard(row[0], managementMode, {
-                                                selectedEntry = row[0]
-                                                showDetail = true
-                                            }, {
-                                                deleteEntry = row[0]
-                                                showDelete = true
-                                            })
+                                            FoodCard(
+                                                entry = row[0],
+                                                managementMode = managementMode,
+                                                selectionMode = selectionMode,
+                                                selected = row[0].id in selectedEntryIds,
+                                                onClick = {
+                                                    if (selectionMode) {
+                                                        toggleSelection(row[0])
+                                                    } else {
+                                                        selectedEntry = row[0]
+                                                        showDetail = true
+                                                    }
+                                                },
+                                                onDelete = {
+                                                    deleteEntry = row[0]
+                                                    showDelete = true
+                                                },
+                                                onLongPress = {
+                                                    if (managementMode) {
+                                                        deleteEntry = row[0]
+                                                        showDelete = true
+                                                    } else if (!selectionMode) {
+                                                        onSelectionChange(selectedEntryIds + row[0].id)
+                                                    }
+                                                },
+                                                onToggleSelection = { toggleSelection(row[0]) },
+                                            )
                                         },
                                         right = row.getOrNull(1)?.let { entry ->
-                                            { FoodCard(entry, managementMode, {
-                                                selectedEntry = entry
-                                                showDetail = true
-                                            }, {
-                                                deleteEntry = entry
-                                                showDelete = true
-                                            }) }
+                                            {
+                                                FoodCard(
+                                                    entry = entry,
+                                                    managementMode = managementMode,
+                                                    selectionMode = selectionMode,
+                                                    selected = entry.id in selectedEntryIds,
+                                                    onClick = {
+                                                        if (selectionMode) {
+                                                            toggleSelection(entry)
+                                                        } else {
+                                                            selectedEntry = entry
+                                                            showDetail = true
+                                                        }
+                                                    },
+                                                    onDelete = {
+                                                        deleteEntry = entry
+                                                        showDelete = true
+                                                    },
+                                                    onLongPress = {
+                                                        if (managementMode) {
+                                                            deleteEntry = entry
+                                                            showDelete = true
+                                                        } else if (!selectionMode) {
+                                                            onSelectionChange(selectedEntryIds + entry.id)
+                                                        }
+                                                    },
+                                                    onToggleSelection = { toggleSelection(entry) },
+                                                )
+                                            }
                                         },
                                     )
                                 }
@@ -426,16 +497,41 @@ private fun FoodCardRow(left: @Composable () -> Unit, right: (@Composable () -> 
 }
 
 @Composable
-private fun FoodCard(entry: FoodLog, managementMode: Boolean, onClick: () -> Unit, onDelete: () -> Unit) {
+private fun FoodCard(
+    entry: FoodLog,
+    managementMode: Boolean,
+    selectionMode: Boolean,
+    selected: Boolean,
+    onClick: () -> Unit,
+    onDelete: () -> Unit,
+    onLongPress: () -> Unit,
+    onToggleSelection: () -> Unit,
+) {
     Card(
         modifier = Modifier.fillMaxWidth().heightIn(min = 132.dp),
         cornerRadius = 20.dp,
         insideMargin = PaddingValues(14.dp),
         pressFeedbackType = PressFeedbackType.Sink,
         onClick = onClick,
-        onLongPress = onDelete,
+        onLongPress = onLongPress,
     ) {
-        Text(entry.name, style = MiuixTheme.textStyles.title4, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        if (selectionMode) {
+            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+                Text(
+                    entry.name,
+                    style = MiuixTheme.textStyles.title4,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f).padding(end = 4.dp),
+                )
+                Checkbox(
+                    state = if (selected) ToggleableState.On else ToggleableState.Off,
+                    onClick = onToggleSelection,
+                )
+            }
+        } else {
+            Text(entry.name, style = MiuixTheme.textStyles.title4, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        }
         Text("${entry.grams.toInt()}g", style = MiuixTheme.textStyles.footnote2, color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
         Spacer(Modifier.weight(1f))
         Text("${entry.nutrition.caloriesKcal.toInt()} kcal", style = MiuixTheme.textStyles.title4)
@@ -642,6 +738,36 @@ private fun DeleteFoodOverlay(
                 colors = ButtonDefaults.buttonColorsPrimary(color = MiuixTheme.colorScheme.error),
             ) { Text("删除") }
             Button(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) { Text("取消") }
+        }
+    }
+}
+
+@Composable
+private fun DeleteSelectedFoodOverlay(
+    count: Int,
+    show: Boolean,
+    onDismiss: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    AnimatedOverlayDialog(
+        show = show,
+        title = "删除选中食物？",
+        summary = "将删除 $count 张食物卡片，删除后可使用撤销恢复。",
+        onDismissRequest = onDismiss,
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Button(
+                onClick = onDismiss,
+                modifier = Modifier.weight(1f),
+            ) { Text("取消") }
+            Button(
+                onClick = onDelete,
+                modifier = Modifier.weight(1f),
+                colors = ButtonDefaults.buttonColorsPrimary(color = MiuixTheme.colorScheme.error),
+            ) { Text("删除") }
         }
     }
 }

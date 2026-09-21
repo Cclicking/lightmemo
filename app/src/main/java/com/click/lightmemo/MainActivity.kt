@@ -98,7 +98,9 @@ import com.kyant.backdrop.isRenderEffectSupported
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.basic.Close
 import top.yukonga.miuix.kmp.icon.os4.ChevronBackward
+import top.yukonga.miuix.kmp.icon.os4.Delete
 import top.yukonga.miuix.kmp.icon.os4.GridView
+import top.yukonga.miuix.kmp.icon.os4.Import
 import top.yukonga.miuix.kmp.icon.os4.Months
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import java.time.LocalDate
@@ -247,6 +249,8 @@ fun FoodAppRoot() {
             ) {
             var selectedTab by rememberSaveable { mutableIntStateOf(0) }
             var showAdd by rememberSaveable { mutableStateOf(false) }
+            var selectedFoodIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
+            var showDeleteSelectedConfirm by remember { mutableStateOf(false) }
             var showUpdateDialog by rememberSaveable { mutableStateOf(false) }
             var todayCalendarExpanded by rememberSaveable { mutableStateOf(false) }
             var statsCalendarExpanded by rememberSaveable { mutableStateOf(false) }
@@ -298,6 +302,15 @@ fun FoodAppRoot() {
                 1 -> statsList
                 else -> mineList
             }
+            val foodSelectionMode = selectedTab == 0 && selectedFoodIds.isNotEmpty()
+
+            LaunchedEffect(selectedDate) {
+                selectedFoodIds = emptySet()
+                showDeleteSelectedConfirm = false
+            }
+            BackHandler(enabled = foodSelectionMode) {
+                selectedFoodIds = emptySet()
+            }
 
             // Each destination keeps its own LazyListState. Restore the app-bar state from that
             // destination instead of always expanding it when the bottom tab changes.
@@ -316,6 +329,11 @@ fun FoodAppRoot() {
 
             LaunchedEffect(Unit) {
                 addVm.events.collect { message ->
+                    Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                }
+            }
+            LaunchedEffect(Unit) {
+                todayVm.events.collect { message ->
                     Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
                 }
             }
@@ -347,7 +365,41 @@ fun FoodAppRoot() {
                     showGradientOverlay = true,
                     scrollBehavior = scrollBehavior,
                     endAction = when (selectedTab) {
-                        0 -> { { glassAlpha, shadowAlpha ->
+                        0 -> if (foodSelectionMode) {
+                            { glassAlpha, shadowAlpha ->
+                                androidx.compose.foundation.layout.Row(
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                ) {
+                                    LiquidTopBarButton(
+                                        onClick = {
+                                            val ids = selectedFoodIds
+                                            if (ids.isNotEmpty()) {
+                                                showDeleteSelectedConfirm = true
+                                            }
+                                        },
+                                        backdrop = backdrop,
+                                        icon = MiuixIcons.Os4.Delete,
+                                        contentDescription = "删除选中食物",
+                                        backdropAlpha = glassAlpha,
+                                        shadowAlpha = shadowAlpha,
+                                    )
+                                    LiquidTopBarButton(
+                                        onClick = {
+                                            val ids = selectedFoodIds
+                                            if (ids.isNotEmpty()) {
+                                                selectedFoodIds = emptySet()
+                                                todayVm.importSelected(ids)
+                                            }
+                                        },
+                                        backdrop = backdrop,
+                                        icon = MiuixIcons.Os4.Import,
+                                        contentDescription = "再记一次",
+                                        backdropAlpha = glassAlpha,
+                                        shadowAlpha = shadowAlpha,
+                                    )
+                                }
+                            }
+                        } else { { glassAlpha, shadowAlpha ->
                             androidx.compose.foundation.layout.Row(
                                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                             ) {
@@ -396,6 +448,10 @@ fun FoodAppRoot() {
                 ScheduleBottomBar(
                     selectedTab = selectedTab,
                     onTabSelected = {
+                        if (it != 0) {
+                            selectedFoodIds = emptySet()
+                            showDeleteSelectedConfirm = false
+                        }
                         selectedTab = it
                         showDatePicker = false
                     },
@@ -504,6 +560,17 @@ fun FoodAppRoot() {
                                         palette = palette,
                                         onShowDatePicker = { showDatePicker = true },
                                         onDismissDatePicker = { showDatePicker = false },
+                                        selectionMode = foodSelectionMode,
+                                        selectedEntryIds = selectedFoodIds,
+                                        onSelectionChange = { selectedFoodIds = it },
+                                        showDeleteSelectionConfirm = showDeleteSelectedConfirm,
+                                        onDismissDeleteSelectionConfirm = { showDeleteSelectedConfirm = false },
+                                        onConfirmDeleteSelection = {
+                                            val ids = selectedFoodIds
+                                            showDeleteSelectedConfirm = false
+                                            selectedFoodIds = emptySet()
+                                            todayVm.deleteSelected(ids)
+                                        },
                                         onAddClick = {
                                             addVm.setTargetDate(selectedDate)
                                             showAdd = true

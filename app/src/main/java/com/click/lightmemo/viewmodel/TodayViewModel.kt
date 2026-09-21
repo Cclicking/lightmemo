@@ -9,7 +9,9 @@ import com.click.lightmemo.domain.FoodLog
 import com.click.lightmemo.domain.MealType
 import com.click.lightmemo.domain.Nutrition
 import java.time.LocalDate
+import java.time.LocalTime
 import java.time.YearMonth
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -17,6 +19,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -51,6 +54,8 @@ class TodayViewModel(app: Application) : AndroidViewModel(app) {
     val deletedEntries = MutableStateFlow<List<FoodLog>>(emptyList())
     val operationError = MutableStateFlow<String?>(null)
     val busy = MutableStateFlow(false)
+    private val eventChannel = Channel<String>(Channel.BUFFERED)
+    val events = eventChannel.receiveAsFlow()
 
     init {
         viewModelScope.launch {
@@ -102,6 +107,41 @@ class TodayViewModel(app: Application) : AndroidViewModel(app) {
     fun delete(id: Long) {
         perform {
             repo.deleteById(id)?.let { deleted -> deletedEntries.update { it + deleted } }
+        }
+    }
+
+    fun deleteSelected(ids: Collection<Long>) {
+        val selectedIds = ids.toSet()
+        if (selectedIds.isEmpty()) return
+        perform {
+            selectedIds.forEach { id ->
+                repo.deleteById(id)?.let { deleted -> deletedEntries.update { it + deleted } }
+            }
+        }
+    }
+
+    fun importSelected(ids: Collection<Long>) {
+        val selectedIds = ids.distinct()
+        if (selectedIds.isEmpty()) return
+        perform {
+            val now = LocalTime.now()
+            val minuteOfDay = now.hour * 60 + now.minute
+            val mealType = mealTypeForMinuteOfDay(minuteOfDay)
+            val today = LocalDate.now().toEpochDay()
+            val createdAt = System.currentTimeMillis()
+            val copies = selectedIds.mapNotNull { repo.getById(it) }.map { entry ->
+                entry.copy(
+                    id = 0L,
+                    mealType = mealType,
+                    dateEpochDay = today,
+                    createdAtMillis = createdAt,
+                    mealMinuteOfDay = minuteOfDay,
+                )
+            }
+            if (copies.isNotEmpty()) {
+                repo.insertAll(copies)
+                eventChannel.trySend("已再记一次 ${copies.size} 项食物")
+            }
         }
     }
 

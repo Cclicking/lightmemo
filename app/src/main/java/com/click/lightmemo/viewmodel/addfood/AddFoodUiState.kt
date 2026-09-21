@@ -99,7 +99,12 @@ data class DatabaseSearchState(
 )
 
 fun defaultMealType(): MealType {
-    val hour = LocalTime.now().hour
+    val minuteOfDay = LocalTime.now().let { it.hour * 60 + it.minute }
+    return mealTypeForMinuteOfDay(minuteOfDay)
+}
+
+fun mealTypeForMinuteOfDay(minuteOfDay: Int): MealType {
+    val hour = minuteOfDay.coerceIn(0, 1439) / 60
     return when {
         hour < 10 -> MealType.BREAKFAST
         hour < 15 -> MealType.LUNCH
