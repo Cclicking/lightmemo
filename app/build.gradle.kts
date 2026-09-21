@@ -22,7 +22,7 @@ fun localProp(key: String): String? =
     localProperties.getProperty(key)?.takeIf { it.isNotBlank() }
         ?: System.getenv(key)?.takeIf { it.isNotBlank() }
 
-val appVersionName = "1.3.5"
+val appVersionName = "1.3.6"
 
 android {
     namespace = "com.click.lightmemo"
@@ -32,7 +32,7 @@ android {
         applicationId = "com.click.lightmemo"
         minSdk = 31
         targetSdk = 37
-        versionCode = 26
+        versionCode = 27
         versionName = appVersionName
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
