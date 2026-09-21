@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -23,7 +25,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
+import com.click.lightmemo.R
 import com.click.lightmemo.domain.MealType
 import com.click.lightmemo.domain.RecognitionStage
 import com.click.lightmemo.ui.utils.overScrollVertical
@@ -103,7 +107,7 @@ internal fun PickSourceContent(
                 top = padding.calculateTopPadding(),
                 bottom = padding.calculateBottomPadding() + 40.dp,
             ),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         MealTypeSelector(mealType, onMealType)
 
@@ -146,9 +150,17 @@ internal fun PickSourceContent(
             insideMargin = PaddingValues(0.dp),
         ) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     Text("本餐说明", style = MiuixTheme.textStyles.body1, fontWeight = FontWeight.Medium)
-                    MealTagRow(selectedTags = selectedTags, onToggle = onToggleTag)
+                    Spacer(Modifier.width(32.dp))
+                    MealTagRow(
+                        selectedTags = selectedTags,
+                        onToggle = onToggleTag,
+                        modifier = Modifier.weight(1f),
+                    )
                 }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -190,7 +202,13 @@ internal fun PickSourceContent(
         // 分隔后的录入方式：与备注更贴近
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             MethodButton(
-                icon = { Icon(MiuixIcons.Os4.Image, contentDescription = null) },
+                icon = {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_camera_from_camera_svg),
+                        contentDescription = null,
+                        modifier = Modifier.size(width = 24.dp, height = 28.dp),
+                    )
+                },
                 label = if (configured) "拍照识别" else "拍照识别（需先配置 API）",
                 enabled = configured && !recognizing,
                 onClick = onCamera,

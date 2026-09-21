@@ -12,10 +12,12 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -134,28 +136,27 @@ internal fun dialogFieldColors(): TextFieldColors {
 }
 
 @Composable
-internal fun MealTagRow(selectedTags: Set<String>, onToggle: (String) -> Unit) {
-    val chunked = DefaultMealTags.chunked(4)
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        chunked.forEach { rowTags ->
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                rowTags.forEach { tag ->
-                    MealTagChip(
-                        label = tag,
-                        selected = tag in selectedTags,
-                        onClick = { onToggle(tag) },
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-                if (rowTags.size < 4) {
-                    repeat(4 - rowTags.size) {
-                        Spacer(Modifier.weight(1f))
-                    }
-                }
-            }
+internal fun MealTagRow(
+    selectedTags: Set<String>,
+    onToggle: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        // Keep the three most common options visible first; the remaining options stay
+        // available by horizontal scrolling instead of being squeezed into tiny pills.
+        (listOf("少油", "少盐", "清淡") + DefaultMealTags.filterNot {
+            it == "少油" || it == "少盐" || it == "清淡"
+        }).forEach { tag ->
+            MealTagChip(
+                label = tag,
+                selected = tag in selectedTags,
+                onClick = { onToggle(tag) },
+                modifier = Modifier.width(72.dp),
+            )
         }
     }
 }
@@ -185,7 +186,7 @@ internal fun MealTagChip(
             .clip(RoundedCornerShape(50))
             .background(bg)
             .clickable(onClick = onClick)
-            .padding(vertical = 8.dp),
+            .padding(vertical = 6.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(
