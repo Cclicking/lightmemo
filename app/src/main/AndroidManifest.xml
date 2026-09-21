@@ -6,6 +6,8 @@
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 
@@ -42,6 +44,16 @@
             android:name=".recognition.RecognitionService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
+        <receiver
+            android:name=".notification.MealReminderReceiver"
+            android:enabled="true"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+            </intent-filter>
+        </receiver>
         <activity android:name=".ui.secondary.PersonalInfoActivity" android:exported="false" />
         <activity android:name=".ui.secondary.ApiSettingsActivity" android:exported="false" />
         <activity android:name=".ui.secondary.ApiConfigurationActivity" android:exported="false" android:windowSoftInputMode="adjustResize" />
@@ -51,6 +63,7 @@
         <activity android:name=".ui.secondary.FoodDatabaseActivity" android:exported="false" />
         <activity android:name=".ui.secondary.AppearanceSettingsActivity" android:exported="false" />
         <activity android:name=".ui.secondary.PermissionManagementActivity" android:exported="false" />
+        <activity android:name=".ui.secondary.NotificationSettingsActivity" android:exported="false" />
         <activity android:name=".ui.secondary.AboutActivity" android:exported="false" />
         <activity android:name=".ui.secondary.ManageFoodCardsActivity" android:exported="false" />
         <activity android:name=".ui.secondary.EditFoodActivity" android:exported="false" android:windowSoftInputMode="adjustResize" />

@@ -61,6 +61,7 @@ fun PermissionManagementScreen(
     contentPadding: PaddingValues,
     scrollBehavior: ScrollBehavior?,
     listState: LazyListState,
+    onNotificationClick: () -> Unit,
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -237,23 +238,16 @@ fun PermissionManagementScreen(
                     summary = if (!notificationSupported) {
                         "当前 Android 版本不需要单独申请"
                     } else if (notificationGranted) {
-                        "用于后台识别完成提醒"
+                        "进入通知设置，调整三餐记录提醒时间"
                     } else {
-                        "后台识别需要通知权限，点击申请"
+                        "进入通知设置并申请权限，调整三餐记录提醒时间"
                     },
                     status = when {
                         !notificationSupported -> "系统管理"
                         notificationGranted -> "已允许"
                         else -> "未允许"
                     },
-                    onClick = if (notificationSupported) {
-                        {
-                            if (notificationGranted) openAppSettings()
-                            else requestPermission(Manifest.permission.POST_NOTIFICATIONS)
-                        }
-                    } else {
-                        null
-                    },
+                    onClick = onNotificationClick,
                 )
             }
             Text(

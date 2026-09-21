@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import com.click.lightmemo.network.RecognitionPrompt
 import com.click.lightmemo.network.userFacingRecognitionError
 import com.click.lightmemo.data.FoodImages
+import com.click.lightmemo.notification.MealReminderScheduler
 import android.net.Uri
 import android.os.SystemClock
 
@@ -185,6 +186,42 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setGallerySaveLocation(value: GallerySaveLocation) = saveSetting {
         repo.updateGallerySaveLocation(value)
+    }
+
+    fun setMealRemindersEnabled(value: Boolean) = saveSetting {
+        repo.updateMealRemindersEnabled(value)
+        refreshMealReminderScheduleAfterUpdate()
+    }
+
+    fun setBreakfastReminderMinute(value: Int) = saveSetting {
+        repo.updateBreakfastReminderMinute(value)
+        refreshMealReminderScheduleAfterUpdate()
+    }
+
+    fun setLunchReminderMinute(value: Int) = saveSetting {
+        repo.updateLunchReminderMinute(value)
+        refreshMealReminderScheduleAfterUpdate()
+    }
+
+    fun setDinnerReminderMinute(value: Int) = saveSetting {
+        repo.updateDinnerReminderMinute(value)
+        refreshMealReminderScheduleAfterUpdate()
+    }
+
+    fun refreshMealReminderSchedule() {
+        viewModelScope.launch {
+            try {
+                refreshMealReminderScheduleAfterUpdate()
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                error.value = e.message ?: "提醒设置保存失败，请重试"
+            }
+        }
+    }
+
+    private suspend fun refreshMealReminderScheduleAfterUpdate() {
+        MealReminderScheduler.schedule(appContext, repo.settings.first())
     }
 
     fun refreshPhotoCacheSize() {

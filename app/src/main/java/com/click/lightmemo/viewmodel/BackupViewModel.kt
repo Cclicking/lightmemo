@@ -5,9 +5,11 @@ import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.click.lightmemo.FoodApp
+import com.click.lightmemo.notification.MealReminderScheduler
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -66,6 +68,10 @@ class BackupViewModel(app: Application) : AndroidViewModel(app) {
                 settingsRepository.importBackupJson(
                     settingsJsonObject = root.getJSONObject("settings"),
                     foodPresetsJson = root.getJSONArray("foodPresets"),
+                )
+                MealReminderScheduler.schedule(
+                    getApplication<Application>(),
+                    settingsRepository.settings.first(),
                 )
                 "已导入完整备份：新增 $count 条记录，设置与预设食物已恢复"
             }

@@ -1,5 +1,6 @@
 package com.click.lightmemo.ui.secondary
 
+import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -38,6 +39,7 @@ import com.click.lightmemo.ui.screens.FoodDatabaseScreen
 import com.click.lightmemo.ui.screens.EditFoodScreen
 import com.click.lightmemo.ui.screens.PersonalInfoScreen
 import com.click.lightmemo.ui.screens.PermissionManagementScreen
+import com.click.lightmemo.ui.screens.NotificationSettingsScreen
 import com.click.lightmemo.ui.theme.FoodTheme
 import com.click.lightmemo.ui.theme.toComposeColors
 import com.click.lightmemo.ui.utils.LocalOverScrollState
@@ -319,6 +321,28 @@ class PermissionManagementActivity : SecondarySettingsActivity() {
         scrollBehavior: SharedScrollBehavior,
     ) {
         PermissionManagementScreen(
+            viewModel = settingsVm,
+            contentPadding = contentPadding,
+            scrollBehavior = scrollBehavior,
+            listState = rememberLazyListState(),
+            onNotificationClick = {
+                startActivity(Intent(this@PermissionManagementActivity, NotificationSettingsActivity::class.java))
+            },
+        )
+    }
+}
+
+class NotificationSettingsActivity : SecondarySettingsActivity() {
+    override val pageTitle = "通知"
+
+    @Composable
+    override fun PageContent(
+        settingsVm: SettingsViewModel,
+        backupVm: BackupViewModel,
+        contentPadding: PaddingValues,
+        scrollBehavior: SharedScrollBehavior,
+    ) {
+        NotificationSettingsScreen(
             viewModel = settingsVm,
             contentPadding = contentPadding,
             scrollBehavior = scrollBehavior,

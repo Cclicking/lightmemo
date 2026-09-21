@@ -30,6 +30,9 @@ const val DEFAULT_API_MODEL = "deepseek-flash"
 const val DEFAULT_PROFILE_HEIGHT_CM = 170f
 const val DEFAULT_PROFILE_WEIGHT_KG = 60f
 const val DEFAULT_PROFILE_AGE_YEARS = 25
+const val DEFAULT_BREAKFAST_REMINDER_MINUTE = 8 * 60
+const val DEFAULT_LUNCH_REMINDER_MINUTE = 12 * 60
+const val DEFAULT_DINNER_REMINDER_MINUTE = 18 * 60
 
 enum class Gender(val label: String) {
     MALE("男"),
@@ -93,6 +96,11 @@ data class AppSettings(
     /** 是否将相机拍摄的照片复制到系统相册。 */
     val savePhotosToGallery: Boolean = true,
     val gallerySaveLocation: GallerySaveLocation = GallerySaveLocation.PICTURES,
+    /** 三餐记录提醒总开关；默认关闭，避免升级后未经确认开始推送。 */
+    val mealRemindersEnabled: Boolean = false,
+    val breakfastReminderMinute: Int = DEFAULT_BREAKFAST_REMINDER_MINUTE,
+    val lunchReminderMinute: Int = DEFAULT_LUNCH_REMINDER_MINUTE,
+    val dinnerReminderMinute: Int = DEFAULT_DINNER_REMINDER_MINUTE,
 ) {
     val activePreset: ApiPreset
         get() = apiPresets.firstOrNull { it.id == activePresetId }
@@ -272,6 +280,10 @@ class SettingsRepository(private val store: androidx.datastore.core.DataStore<an
                 put("topGradientBlurRangeDp", current.topGradientBlurRangeDp)
                 put("savePhotosToGallery", current.savePhotosToGallery)
                 put("gallerySaveLocation", current.gallerySaveLocation.name)
+                put("mealRemindersEnabled", current.mealRemindersEnabled)
+                put("breakfastReminderMinute", current.breakfastReminderMinute)
+                put("lunchReminderMinute", current.lunchReminderMinute)
+                put("dinnerReminderMinute", current.dinnerReminderMinute)
             })
             put("foodPresets", JSONArray(settingsJson.encodeToString(presets)))
         }
@@ -373,6 +385,19 @@ class SettingsRepository(private val store: androidx.datastore.core.DataStore<an
                 defaults.savePhotosToGallery,
             )
             prefs[Keys.GALLERY_SAVE_LOCATION] = gallerySaveLocation.name
+            prefs[Keys.MEAL_REMINDERS_ENABLED] = settingsJsonObject.optBoolean(
+                "mealRemindersEnabled",
+                defaults.mealRemindersEnabled,
+            )
+            prefs[Keys.BREAKFAST_REMINDER_MINUTE] = settingsJsonObject
+                .optInt("breakfastReminderMinute", defaults.breakfastReminderMinute)
+                .coerceIn(0, 1439)
+            prefs[Keys.LUNCH_REMINDER_MINUTE] = settingsJsonObject
+                .optInt("lunchReminderMinute", defaults.lunchReminderMinute)
+                .coerceIn(0, 1439)
+            prefs[Keys.DINNER_REMINDER_MINUTE] = settingsJsonObject
+                .optInt("dinnerReminderMinute", defaults.dinnerReminderMinute)
+                .coerceIn(0, 1439)
         }
     }
 
@@ -410,6 +435,10 @@ class SettingsRepository(private val store: androidx.datastore.core.DataStore<an
         val TOP_GRADIENT_BLUR_RANGE = intPreferencesKey("top_gradient_blur_range_dp")
         val SAVE_PHOTOS_TO_GALLERY = booleanPreferencesKey("save_photos_to_gallery")
         val GALLERY_SAVE_LOCATION = stringPreferencesKey("gallery_save_location")
+        val MEAL_REMINDERS_ENABLED = booleanPreferencesKey("meal_reminders_enabled")
+        val BREAKFAST_REMINDER_MINUTE = intPreferencesKey("breakfast_reminder_minute")
+        val LUNCH_REMINDER_MINUTE = intPreferencesKey("lunch_reminder_minute")
+        val DINNER_REMINDER_MINUTE = intPreferencesKey("dinner_reminder_minute")
     }
 
     val settings: Flow<AppSettings> = store.data.map { prefs ->
@@ -490,6 +519,13 @@ class SettingsRepository(private val store: androidx.datastore.core.DataStore<an
             gallerySaveLocation = prefs[Keys.GALLERY_SAVE_LOCATION]?.let { name ->
                 GallerySaveLocation.entries.firstOrNull { it.name == name }
             } ?: GallerySaveLocation.PICTURES,
+            mealRemindersEnabled = prefs[Keys.MEAL_REMINDERS_ENABLED] ?: false,
+            breakfastReminderMinute = (prefs[Keys.BREAKFAST_REMINDER_MINUTE]
+                ?: DEFAULT_BREAKFAST_REMINDER_MINUTE).coerceIn(0, 1439),
+            lunchReminderMinute = (prefs[Keys.LUNCH_REMINDER_MINUTE]
+                ?: DEFAULT_LUNCH_REMINDER_MINUTE).coerceIn(0, 1439),
+            dinnerReminderMinute = (prefs[Keys.DINNER_REMINDER_MINUTE]
+                ?: DEFAULT_DINNER_REMINDER_MINUTE).coerceIn(0, 1439),
         )
     }.retryWhen { error, _ ->
         readError.value = "设置读取失败，正在重试：${error.message.orEmpty()}"
@@ -764,5 +800,21 @@ class SettingsRepository(private val store: androidx.datastore.core.DataStore<an
 
     suspend fun updateGallerySaveLocation(value: GallerySaveLocation) {
         store.edit { it[Keys.GALLERY_SAVE_LOCATION] = value.name }
+    }
+
+    suspend fun updateMealRemindersEnabled(value: Boolean) {
+        store.edit { it[Keys.MEAL_REMINDERS_ENABLED] = value }
+    }
+
+    suspend fun updateBreakfastReminderMinute(value: Int) {
+        store.edit { it[Keys.BREAKFAST_REMINDER_MINUTE] = value.coerceIn(0, 1439) }
+    }
+
+    suspend fun updateLunchReminderMinute(value: Int) {
+        store.edit { it[Keys.LUNCH_REMINDER_MINUTE] = value.coerceIn(0, 1439) }
+    }
+
+    suspend fun updateDinnerReminderMinute(value: Int) {
+        store.edit { it[Keys.DINNER_REMINDER_MINUTE] = value.coerceIn(0, 1439) }
     }
 }
