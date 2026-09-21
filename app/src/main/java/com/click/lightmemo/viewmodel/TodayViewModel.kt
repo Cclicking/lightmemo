@@ -23,6 +23,8 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlin.math.abs
+import kotlin.math.roundToInt
 
 data class TodayUiState(
     val date: LocalDate = LocalDate.now(),
@@ -149,10 +151,17 @@ class StatsViewModel(app: Application) : AndroidViewModel(app) {
         val elapsedDays: Int = 0,
         val daily: List<DayNutritionSummary> = emptyList(),
         val calendarDays: List<DayNutritionSummary> = emptyList(),
+        val mealTiming: List<MealTimingDay> = emptyList(),
         val averageKcal: Double = 0.0,
         val averageNutrition: Nutrition = Nutrition(),
         val mealCalories: Map<MealType, Double> = emptyMap(),
         val maxKcal: Double = 0.0,
+        val timedDays: Int = 0,
+        val averageIntakesPerDay: Double = 0.0,
+        val averageFirstMealMinute: Int? = null,
+        val averageLastMealMinute: Int? = null,
+        val averageEatingWindowMinutes: Int? = null,
+        val regularityScore: Int? = null,
         val daysHitTarget: Int = 0,
         val daysOverTarget: Int = 0,
         val loggedDays: Int = 0,
@@ -212,6 +221,27 @@ class StatsViewModel(app: Application) : AndroidViewModel(app) {
                 total = grouped[day].orEmpty().fold(Nutrition()) { acc, i -> acc + i.nutrition },
             )
         }
+        val mealTiming = (0 until days).map { offset ->
+            val dateEpochDay = from + offset
+            val points = grouped[dateEpochDay].orEmpty()
+                .mapNotNull { entry ->
+                    entry.mealMinuteOfDay?.let { minute -> minute to entry.mealType }
+                }
+                // Recognition can save several dishes for one meal. Collapse those records
+                // into one intake point so the regularity chart reflects meals, not dishes.
+                .groupBy { it.first }
+                .toSortedMap()
+                .map { (minute, entriesAtSameTime) ->
+                    IntakeTimePoint(minuteOfDay = minute, mealType = entriesAtSameTime.first().second)
+                }
+            MealTimingDay(dateEpochDay = dateEpochDay, points = points)
+        }
+        val daysWithTiming = mealTiming.filter { it.points.isNotEmpty() }
+        val averageFirstMealMinute = daysWithTiming.mapNotNull { it.firstMinute }.averageOrNullInt()
+        val averageLastMealMinute = daysWithTiming.mapNotNull { it.lastMinute }.averageOrNullInt()
+        val averageEatingWindowMinutes = daysWithTiming.map { it.eatingWindowMinutes }.averageOrNullInt()
+        val averageIntakesPerDay = daysWithTiming.map { it.points.size }.average().takeUnless { it.isNaN() } ?: 0.0
+        val elapsedDays = (minOf(to, today.toEpochDay()) - from + 1).toInt().coerceIn(0, days)
         val calendarDays = logs.filter { it.dateEpochDay in w.from..w.to }
             .groupBy { it.dateEpochDay }
             .map { (epochDay, entries) ->
@@ -221,7 +251,6 @@ class StatsViewModel(app: Application) : AndroidViewModel(app) {
         val target = settings.dailyCalorieTarget.toDouble()
         StatsUiState(
             rangeDays = days,
-            elapsedDays = (minOf(to, today.toEpochDay()) - from + 1).toInt().coerceIn(0, days),
             daily = daily,
             calendarDays = calendarDays,
             averageKcal = if (logged.isEmpty()) 0.0 else logged.map { it.total.caloriesKcal }.average(),
@@ -229,9 +258,17 @@ class StatsViewModel(app: Application) : AndroidViewModel(app) {
                 .times(1.0 / logged.size.coerceAtLeast(1)),
             mealCalories = mealCalories,
             maxKcal = daily.maxOfOrNull { it.total.caloriesKcal } ?: 0.0,
+            mealTiming = mealTiming,
+            timedDays = daysWithTiming.size,
+            averageIntakesPerDay = averageIntakesPerDay,
+            averageFirstMealMinute = averageFirstMealMinute,
+            averageLastMealMinute = averageLastMealMinute,
+            averageEatingWindowMinutes = averageEatingWindowMinutes,
+            regularityScore = calculateRegularityScore(daysWithTiming, elapsedDays),
             daysHitTarget = logged.count { it.total.caloriesKcal in 0.0..target },
             daysOverTarget = logged.count { it.total.caloriesKcal > target },
             loggedDays = logged.size,
+            elapsedDays = elapsedDays,
             target = settings.dailyCalorieTarget,
             proteinTarget = settings.effectiveProteinG.takeIf { it > 0f } ?: 120f,
             carbsTarget = settings.effectiveCarbsG.takeIf { it > 0f } ?: 250f,
@@ -243,6 +280,47 @@ class StatsViewModel(app: Application) : AndroidViewModel(app) {
         require(!end.isBefore(start))
         period.value = start to end
     }
+}
+
+data class IntakeTimePoint(
+    val minuteOfDay: Int,
+    val mealType: MealType,
+)
+
+data class MealTimingDay(
+    val dateEpochDay: Long,
+    val points: List<IntakeTimePoint>,
+) {
+    val firstMinute: Int? get() = points.minOfOrNull { it.minuteOfDay }
+    val lastMinute: Int? get() = points.maxOfOrNull { it.minuteOfDay }
+    val eatingWindowMinutes: Int get() = (lastMinute ?: 0) - (firstMinute ?: 0)
+}
+
+private fun List<Int>.averageOrNullInt(): Int? = takeIf { isNotEmpty() }?.average()?.roundToInt()
+
+/**
+ * A descriptive score for timing consistency, not a health assessment. It combines time
+ * variation, consistency of the number of daily intakes, and how many elapsed days have data.
+ */
+private fun calculateRegularityScore(days: List<MealTimingDay>, elapsedDays: Int): Int? {
+    if (days.size < 2) return null
+    val firstTimes = days.mapNotNull { it.firstMinute }
+    val lastTimes = days.mapNotNull { it.lastMinute }
+    val firstAverage = firstTimes.average()
+    val lastAverage = lastTimes.average()
+    val firstDeviation = firstTimes.map { abs(it - firstAverage) }.average()
+    val lastDeviation = lastTimes.map { abs(it - lastAverage) }.average()
+    val timingScore = (1.0 - ((firstDeviation + lastDeviation) / 2.0) / 180.0).coerceIn(0.0, 1.0)
+
+    val intakeCounts = days.map { it.points.size.toDouble() }
+    val countAverage = intakeCounts.average()
+    val countDeviation = intakeCounts.map { abs(it - countAverage) }.average()
+    val countScore = (1.0 - countDeviation / countAverage.coerceAtLeast(1.0)).coerceIn(0.0, 1.0)
+    val coverageScore = (days.size.toDouble() / elapsedDays.coerceAtLeast(1)).coerceIn(0.0, 1.0)
+
+    return ((timingScore * 0.55 + countScore * 0.25 + coverageScore * 0.20) * 100.0)
+        .roundToInt()
+        .coerceIn(0, 100)
 }
 
 private fun currentDateFlow() = flow {

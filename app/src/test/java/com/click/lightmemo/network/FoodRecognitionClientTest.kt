@@ -2,12 +2,30 @@ package com.click.lightmemo.network
 
 import com.click.lightmemo.domain.Nutrition
 import com.click.lightmemo.domain.NutritionReference
+import java.net.SocketException
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class FoodRecognitionClientTest {
     private val client = FoodRecognitionClient()
+
+    @Test
+    fun lowLevelConnectionAbortGetsActionableMessage() {
+        val message = userFacingRecognitionError(SocketException("Software caused connection abort"))
+
+        assertFalse(message.contains("Software caused", ignoreCase = true))
+        assertTrue(message.contains("网络连接被中断"))
+        assertTrue(message.contains("代理"))
+    }
+
+    @Test
+    fun httpErrorsExplainTheLikelyConfigurationProblem() {
+        assertEquals("识别服务鉴权失败：请检查 API Key 是否正确。", recognitionHttpErrorMessage(401))
+        assertEquals("图片或请求内容过大，请换一张更小的图片。", recognitionHttpErrorMessage(413))
+        assertEquals("识别服务暂时不可用（HTTP 503），请稍后重试。", recognitionHttpErrorMessage(503))
+    }
 
     @Test
     fun promptTestRejectsInvalidWeightsAndSourcesInsteadOfClamping() {

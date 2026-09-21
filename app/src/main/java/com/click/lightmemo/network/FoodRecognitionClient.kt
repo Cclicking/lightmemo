@@ -353,7 +353,7 @@ class FoodRecognitionClient(
         httpClient.newCall(request).awaitResponse().use { response ->
             val raw = response.body?.string().orEmpty()
             if (!response.isSuccessful) {
-                throw RecognitionException("识别失败 HTTP ${response.code}: ${raw.take(200)}")
+                throw RecognitionException(recognitionHttpErrorMessage(response.code))
             }
             return chatContent(raw)
         }

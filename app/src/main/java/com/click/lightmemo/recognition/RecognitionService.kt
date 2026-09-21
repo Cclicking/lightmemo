@@ -21,6 +21,7 @@ import com.click.lightmemo.domain.MealRecognition
 import com.click.lightmemo.domain.RecognitionStage
 import com.click.lightmemo.domain.splitDishes
 import com.click.lightmemo.network.RecognitionException
+import com.click.lightmemo.network.userFacingRecognitionError
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -118,7 +119,7 @@ class RecognitionService : Service() {
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
-                val message = error.message ?: "识别失败"
+                val message = userFacingRecognitionError(error)
                 if (isCurrentTask(request.id)) {
                     app.recognitionTaskStore.fail(request.id, message)
                 }

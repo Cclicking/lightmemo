@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.MutableStateFlow
 import com.click.lightmemo.network.RecognitionPrompt
+import com.click.lightmemo.network.userFacingRecognitionError
 import com.click.lightmemo.data.FoodImages
 import android.net.Uri
 import android.os.SystemClock
@@ -117,7 +118,7 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
-                promptTestResult.value = "${kind.label}测试失败：${e.message ?: "请求失败"}。继续使用上次有效 Prompt（未设置时使用默认值），草稿已保留。"
+                promptTestResult.value = "${kind.label}测试失败：${userFacingRecognitionError(e)}继续使用上次有效 Prompt（未设置时使用默认值），草稿已保留。"
             } finally {
                 testingPrompt.value = false
             }
