@@ -2,8 +2,11 @@ package com.click.lightmemo.ui.screens
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Box
@@ -29,6 +32,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -77,6 +82,27 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 private val DetailDateFormatter = DateTimeFormatter.ofPattern("M月d日", Locale.SIMPLIFIED_CHINESE)
 
+private enum class DailyHeatmapMode(val title: String) {
+    CALORIES("热量"),
+    PROTEIN("蛋白质"),
+    CARBS("碳水"),
+    FAT("脂肪");
+
+    fun next(): DailyHeatmapMode = entries[(ordinal + 1) % entries.size]
+}
+
+private fun monthHeatmapDays(
+    days: List<DayNutritionSummary>,
+    anchor: LocalDate,
+): List<DayNutritionSummary> {
+    val month = YearMonth.from(anchor)
+    val summaries = days.associateBy { it.dateEpochDay }
+    return (1..month.lengthOfMonth()).map { dayOfMonth ->
+        val epochDay = month.atDay(dayOfMonth).toEpochDay()
+        summaries[epochDay] ?: DayNutritionSummary(epochDay, Nutrition())
+    }
+}
+
 @Composable
 fun StatsScreen(
     viewModel: StatsViewModel,
@@ -90,8 +116,11 @@ fun StatsScreen(
     val readError by viewModel.readError.collectAsState()
     var selectedEpochDay by rememberSaveable { mutableLongStateOf(LocalDate.now().toEpochDay()) }
     var anchorEpochDay by rememberSaveable { mutableLongStateOf(LocalDate.now().toEpochDay()) }
+    var dailyHeatmapMode by rememberSaveable { mutableStateOf(DailyHeatmapMode.CALORIES) }
     val anchor = LocalDate.ofEpochDay(anchorEpochDay)
     val selectedDay = state.daily.firstOrNull { it.dateEpochDay == selectedEpochDay }
+    val monthlyHeatmapDays = monthHeatmapDays(state.calendarDays, anchor)
+    val selectedHeatmapDay = monthlyHeatmapDays.firstOrNull { it.dateEpochDay == selectedEpochDay }
     val periodStart = if (calendarExpanded) anchor.withDayOfMonth(1)
         else anchor.minusDays(anchor.dayOfWeek.value.toLong() - 1)
     val periodEnd = if (calendarExpanded) YearMonth.from(anchor).atEndOfMonth()
@@ -159,7 +188,15 @@ fun StatsScreen(
         }
         item {
             Box(Modifier.padding(horizontal = 16.dp)) {
-                SummaryCard(state, palette)
+                SummaryCard(
+                    state = state,
+                    selectedDay = selectedHeatmapDay,
+                    heatmapDays = monthlyHeatmapDays,
+                    palette = palette,
+                    mode = dailyHeatmapMode,
+                    onModeChange = { dailyHeatmapMode = it },
+                    onSelect = { selectedEpochDay = it },
+                )
             }
         }
         item {
@@ -193,61 +230,111 @@ fun StatsScreen(
                 )
             }
         }
-        item {
-            Box(Modifier.padding(horizontal = 16.dp)) {
-                DailyCaloriesCard(
-                    state = state,
-                    selectedDay = selectedDay,
-                    palette = palette,
-                    onSelect = { selectedEpochDay = it },
+    }
+}
+
+@Composable
+private fun SummaryCard(
+    state: StatsViewModel.StatsUiState,
+    selectedDay: DayNutritionSummary?,
+    heatmapDays: List<DayNutritionSummary>,
+    palette: FoodPaletteColors,
+    mode: DailyHeatmapMode,
+    onModeChange: (DailyHeatmapMode) -> Unit,
+    onSelect: (Long) -> Unit,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        cornerRadius = CardDefaults.CornerRadius,
+        insideMargin = PaddingValues(horizontal = 20.dp, vertical = 18.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.Top,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                DailyMetricTitle(mode, onModeChange)
+                val average = dailyAverageValue(mode, state)
+                val unit = if (mode == DailyHeatmapMode.CALORIES) "kcal" else "g"
+                Row(
+                    verticalAlignment = Alignment.Bottom,
+                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                ) {
+                    Text(
+                        average.formatMacro(),
+                        style = MiuixTheme.textStyles.title1,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        "$unit / 记录日",
+                        style = MiuixTheme.textStyles.footnote2,
+                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                        modifier = Modifier.padding(bottom = 3.dp),
+                    )
+                }
+                Text(
+                    "记录 ${state.loggedDays}/${state.rangeDays} 天 · 未超目标 ${state.daysHitTarget} 天 · 超标 ${state.daysOverTarget} 天",
+                    style = MiuixTheme.textStyles.footnote2,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                 )
             }
+            Column(
+                modifier = Modifier.padding(top = 9.dp),
+                horizontalAlignment = Alignment.End,
+            ) {
+                DailyHeatmap(
+                    days = heatmapDays,
+                    mode = mode,
+                    calorieTarget = state.target,
+                    proteinTarget = state.proteinTarget,
+                    carbsTarget = state.carbsTarget,
+                    fatTarget = state.fatTarget,
+                    selectedEpochDay = selectedDay?.dateEpochDay,
+                    calorieColor = palette.calorie,
+                    proteinColor = palette.protein,
+                    carbsColor = palette.carbs,
+                    fatColor = palette.fat,
+                    onSelect = onSelect,
+                    modifier = Modifier.width(88.dp),
+                )
+            }
+        }
+        selectedDay?.let { day ->
+            DayMetricDetailSummary(
+                day = day,
+                mode = mode,
+                target = dailyHeatmapTarget(mode, state),
+                color = dailyHeatmapColor(mode, palette),
+            )
         }
     }
 }
 
 @Composable
-private fun SummaryCard(state: StatsViewModel.StatsUiState, palette: FoodPaletteColors) {
-    val targetRate = (state.daysHitTarget.toFloat() / state.loggedDays.coerceAtLeast(1)).coerceIn(0f, 1f)
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        cornerRadius = CardDefaults.CornerRadius,
-        insideMargin = PaddingValues(horizontal = 24.dp, vertical = 20.dp),
+private fun DailyMetricTitle(mode: DailyHeatmapMode, onModeChange: (DailyHeatmapMode) -> Unit) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    val textColor = MiuixTheme.colorScheme.onSurface.copy(alpha = if (pressed) 0.45f else 1f)
+    Row(
+        modifier = Modifier
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                role = Role.Button,
+                onClick = { onModeChange(mode.next()) },
+            )
+            .semantics {
+                contentDescription = "日均摄入，当前为${mode.title}，点击切换到${mode.next().title}"
+            }
+            .padding(vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text("日均摄入", style = MiuixTheme.textStyles.headline1)
-        Spacer(Modifier.height(12.dp))
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            Text(
-                "${state.averageKcal.toInt()}",
-                style = MiuixTheme.textStyles.title1,
-                modifier = Modifier.alignByBaseline(),
-                fontWeight = FontWeight.SemiBold,
-            )
-            Text(
-                "kcal / 记录日",
-                style = MiuixTheme.textStyles.footnote1,
-                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                modifier = Modifier.alignByBaseline(),
-            )
-        }
-        Spacer(Modifier.height(4.dp))
-        Text(
-            "记录 ${state.loggedDays}/${state.rangeDays} 天 · 未超目标 ${state.daysHitTarget} 天 · 超标 ${state.daysOverTarget} 天",
-            style = MiuixTheme.textStyles.footnote1,
-            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-        )
-        Spacer(Modifier.height(8.dp))
-        LinearProgressIndicator(
-            progress = targetRate,
-            modifier = Modifier.fillMaxWidth(),
-            height = 7.dp,
-            colors = ProgressIndicatorDefaults.progressIndicatorColors(
-                foregroundColor = palette.calorie,
-            ),
-        )
+        Text("日均摄入", style = MiuixTheme.textStyles.headline1, color = textColor)
+        Text(" · ${mode.title}", style = MiuixTheme.textStyles.headline1, color = textColor)
     }
 }
 
@@ -893,184 +980,217 @@ private fun MacroProgress(
 }
 
 @Composable
-private fun DailyCaloriesCard(
-    state: StatsViewModel.StatsUiState,
-    selectedDay: DayNutritionSummary?,
-    palette: FoodPaletteColors,
-    onSelect: (Long) -> Unit,
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        cornerRadius = CardDefaults.CornerRadius,
-        insideMargin = PaddingValues(horizontal = 24.dp, vertical = 20.dp),
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-            Text("每日热量", style = MiuixTheme.textStyles.headline1, modifier = Modifier.weight(1f))
-            Text(
-                "目标 ${state.target.toInt()} kcal",
-                style = MiuixTheme.textStyles.footnote1,
-                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-            )
-        }
-        Spacer(Modifier.height(8.dp))
-        DailyCaloriesChart(
-            days = state.daily,
-            target = state.target,
-            maxKcal = if (state.maxKcal > 0.0) state.maxKcal else state.target.toDouble().coerceAtLeast(1.0),
-            selectedEpochDay = selectedDay?.dateEpochDay,
-            calorieColor = palette.calorie,
-            overTargetColor = palette.overTarget,
-            onSelect = onSelect,
-        )
-        selectedDay?.let { day ->
-            DayDetailSummary(
-                day = day,
-                target = state.target,
-                calorieColor = if (day.total.caloriesKcal > state.target) palette.overTarget else palette.calorie,
-            )
-        }
-    }
-}
-
-@Composable
-private fun DailyCaloriesChart(
+private fun DailyHeatmap(
     days: List<DayNutritionSummary>,
-    target: Float,
-    maxKcal: Double,
+    mode: DailyHeatmapMode,
+    calorieTarget: Float,
+    proteinTarget: Float,
+    carbsTarget: Float,
+    fatTarget: Float,
     selectedEpochDay: Long?,
     calorieColor: Color,
-    overTargetColor: Color,
+    proteinColor: Color,
+    carbsColor: Color,
+    fatColor: Color,
     onSelect: (Long) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    val scrollState = rememberScrollState()
-    // Keep the target line visible and reserve 15% headroom above both data and target.
-    val chartMax = maxOf(maxKcal, target.toDouble(), 1.0) * 1.15
-    val plotHeight = 156.dp
-    val labelStyle = MiuixTheme.textStyles.footnote2
-    val labelHeight = with(LocalDensity.current) { labelStyle.fontSize.toDp() * 1.5f }
-    val labelSpace = labelHeight + 4.dp
-    val gridColor = MiuixTheme.colorScheme.onSurfaceVariantSummary.copy(alpha = 0.06f)
-    val targetColor = calorieColor.copy(alpha = 0.20f)
+    if (days.isEmpty()) return
 
-    BoxWithConstraints(Modifier.fillMaxWidth()) {
-        val minItemWidth = with(LocalDensity.current) { (labelStyle.fontSize.toDp() * 4.0f).coerceAtLeast(36.dp) }
-        // Seven-day charts should fit the card so the last date/bar is not clipped.
-        val itemWidth = if (days.size <= 7) {
-            maxWidth / days.size.coerceAtLeast(1)
-        } else {
-            maxOf(minItemWidth, maxWidth / days.size.coerceAtLeast(1))
-        }
-        val chartWidth = itemWidth * days.size.coerceAtLeast(1)
-        Box(
-            modifier = Modifier.fillMaxWidth().horizontalScroll(scrollState),
-            contentAlignment = Alignment.TopCenter,
-        ) {
-            Column(Modifier.width(chartWidth)) {
-                Box(Modifier.fillMaxWidth().height(plotHeight + labelSpace)) {
-                    Canvas(Modifier.fillMaxSize()) {
-                        val bottom = size.height
-                        val height = plotHeight.toPx()
-                        // Interior guides and baseline only: no line at the chart ceiling.
-                        repeat(3) { index ->
-                            val y = bottom - height * index / 3f
-                            drawLine(gridColor, Offset(0f, y), Offset(size.width, y), strokeWidth = 0.5.dp.toPx())
-                        }
-                        if (target > 0f) {
-                            val targetY = bottom - height * (target / chartMax).toFloat().coerceIn(0f, 1f)
-                            drawLine(
-                                color = targetColor,
-                                start = Offset(0f, targetY),
-                                end = Offset(size.width, targetY),
-                                strokeWidth = 0.75.dp.toPx(),
-                                pathEffect = PathEffect.dashPathEffect(floatArrayOf(5.dp.toPx(), 4.dp.toPx())),
-                            )
-                        }
-                    }
-                    Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.Bottom) {
-                        days.forEach { day ->
-                            val calories = day.total.caloriesKcal
-                            val ratio = (calories / chartMax).toFloat().coerceIn(0f, 1f)
-                            val selected = day.dateEpochDay == selectedEpochDay
-                            val barColor = if (calories > target) overTargetColor else calorieColor
-                            Box(
-                                modifier = Modifier
-                                    .width(itemWidth)
-                                    .fillMaxSize()
-                                    .clickable(
-                                        interactionSource = null,
-                                        indication = null,
-                                        role = Role.Button,
-                                    ) { onSelect(day.dateEpochDay) },
-                                contentAlignment = Alignment.BottomCenter,
-                            ) {
-                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Text(
-                                        text = calories.toInt().toString(),
-                                        style = labelStyle,
-                                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                                        maxLines = 1,
-                                        modifier = Modifier.height(labelHeight),
-                                    )
-                                    Spacer(Modifier.height(4.dp))
-                                    Box(
-                                        Modifier
-                                            .width(if (days.size <= 7) 18.dp else 14.dp)
-                                            .height(plotHeight * ratio)
-                                            .clip(RoundedCornerShape(topStart = 6.dp, topEnd = 6.dp))
-                                            .background(barColor.copy(alpha = if (selected) 1f else 0.65f)),
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-                Row(Modifier.fillMaxWidth().padding(top = 8.dp)) {
-                    days.forEach { day ->
-                        Text(
-                            text = if (days.size <= 7) day.dateEpochDay.toLocalDate().format(DateTimeFormatter.ofPattern("M/d"))
-                                else day.dateEpochDay.toLocalDate().dayOfMonth.toString(),
-                            style = labelStyle,
-                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                            textAlign = TextAlign.Center,
-                            maxLines = 1,
-                            modifier = Modifier.width(itemWidth),
-                        )
-                    }
+    val dayMap = days.associateBy { it.dateEpochDay }
+    val first = days.minOf { it.dateEpochDay }.toLocalDate()
+    val last = days.maxOf { it.dateEpochDay }.toLocalDate()
+    val gridStart = first.minusDays(first.dayOfWeek.value.toLong() - 1)
+    val gridEnd = last.plusDays(7L - last.dayOfWeek.value)
+    val rowCount = ((gridEnd.toEpochDay() - gridStart.toEpochDay()) / 7L + 1L).toInt()
+
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.Start,
+        verticalArrangement = Arrangement.spacedBy(3.dp),
+    ) {
+        repeat(rowCount) { row ->
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(3.dp),
+            ) {
+                repeat(7) { column ->
+                    val epochDay = gridStart.plusDays((row * 7 + column).toLong()).toEpochDay()
+                    val day = dayMap[epochDay]
+                    HeatmapCell(
+                        day = day,
+                        mode = mode,
+                        calorieTarget = calorieTarget,
+                        proteinTarget = proteinTarget,
+                        carbsTarget = carbsTarget,
+                        fatTarget = fatTarget,
+                        selected = day?.dateEpochDay == selectedEpochDay,
+                        calorieColor = calorieColor,
+                        proteinColor = proteinColor,
+                        carbsColor = carbsColor,
+                        fatColor = fatColor,
+                        onSelect = onSelect,
+                        modifier = Modifier.size(10.dp),
+                    )
                 }
             }
         }
     }
 }
+
 @Composable
-private fun DayDetailSummary(day: DayNutritionSummary, target: Float, calorieColor: Color) {
-    val calories = day.total.caloriesKcal
+private fun HeatmapCell(
+    day: DayNutritionSummary?,
+    mode: DailyHeatmapMode,
+    calorieTarget: Float,
+    proteinTarget: Float,
+    carbsTarget: Float,
+    fatTarget: Float,
+    selected: Boolean,
+    calorieColor: Color,
+    proteinColor: Color,
+    carbsColor: Color,
+    fatColor: Color,
+    onSelect: (Long) -> Unit,
+    modifier: Modifier,
+) {
+    val shape = RoundedCornerShape(3.dp)
+    val date = day?.dateEpochDay?.toLocalDate()
+    val isFuture = date != null && date.isAfter(LocalDate.now())
+    val emptyColor = MiuixTheme.colorScheme.onSurfaceVariantSummary.copy(alpha = 0.08f)
+    val selectable = day != null && !isFuture
+    val target = when (mode) {
+        DailyHeatmapMode.CALORIES -> calorieTarget
+        DailyHeatmapMode.PROTEIN -> proteinTarget
+        DailyHeatmapMode.CARBS -> carbsTarget
+        DailyHeatmapMode.FAT -> fatTarget
+    }
+    val cellModifier = modifier
+        .clip(shape)
+        .background(if (day == null || isFuture) emptyColor else Color.Transparent)
+        .then(
+            if (selected) {
+                Modifier.border(1.dp, MiuixTheme.colorScheme.onSurface.copy(alpha = 0.16f), shape)
+            } else {
+                Modifier
+            },
+        )
+                .then(
+            if (selectable) {
+                Modifier
+                    .clickable(role = Role.Button) { onSelect(day.dateEpochDay) }
+                    .semantics {
+                        contentDescription = heatmapContentDescription(
+                            date = date,
+                            day = day,
+                            mode = mode,
+                            target = target,
+                        )
+                    }
+            } else {
+                Modifier
+            },
+        )
+
+    Box(cellModifier) {
+        if (day != null && !isFuture) {
+            val value = dailyHeatmapValue(mode, day.total)
+            val color = when (mode) {
+                DailyHeatmapMode.CALORIES -> calorieColor
+                DailyHeatmapMode.PROTEIN -> proteinColor
+                DailyHeatmapMode.CARBS -> carbsColor
+                DailyHeatmapMode.FAT -> fatColor
+            }
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(color.copy(alpha = heatmapIntensity(value, target))),
+            )
+        }
+    }
+}
+
+private fun heatmapIntensity(value: Double, target: Float): Float {
+    val ratio = (value / target.coerceAtLeast(1f)).coerceIn(0.0, 1.25)
+    return when {
+        ratio <= 0.0 -> 0.06f
+        ratio < 0.2 -> 0.20f
+        ratio < 0.4 -> 0.34f
+        ratio < 0.6 -> 0.48f
+        ratio < 0.8 -> 0.64f
+        ratio < 1.0 -> 0.80f
+        else -> 0.96f
+    }
+}
+
+private fun dailyHeatmapValue(mode: DailyHeatmapMode, nutrition: Nutrition): Double = when (mode) {
+    DailyHeatmapMode.CALORIES -> nutrition.caloriesKcal
+    DailyHeatmapMode.PROTEIN -> nutrition.proteinG
+    DailyHeatmapMode.CARBS -> nutrition.carbsG
+    DailyHeatmapMode.FAT -> nutrition.fatG
+}
+
+private fun dailyAverageValue(mode: DailyHeatmapMode, state: StatsViewModel.StatsUiState): Double = when (mode) {
+    DailyHeatmapMode.CALORIES -> state.averageKcal
+    else -> dailyHeatmapValue(mode, state.averageNutrition)
+}
+
+private fun dailyHeatmapTarget(mode: DailyHeatmapMode, state: StatsViewModel.StatsUiState): Float = when (mode) {
+    DailyHeatmapMode.CALORIES -> state.target
+    DailyHeatmapMode.PROTEIN -> state.proteinTarget
+    DailyHeatmapMode.CARBS -> state.carbsTarget
+    DailyHeatmapMode.FAT -> state.fatTarget
+}
+
+private fun dailyHeatmapColor(mode: DailyHeatmapMode, palette: FoodPaletteColors): Color = when (mode) {
+    DailyHeatmapMode.CALORIES -> palette.calorie
+    DailyHeatmapMode.PROTEIN -> palette.protein
+    DailyHeatmapMode.CARBS -> palette.carbs
+    DailyHeatmapMode.FAT -> palette.fat
+}
+
+private fun heatmapContentDescription(
+    date: LocalDate?,
+    day: DayNutritionSummary,
+    mode: DailyHeatmapMode,
+    target: Float,
+): String {
+    val dateText = date?.format(DetailDateFormatter) ?: "当天"
+    val value = dailyHeatmapValue(mode, day.total)
     val safeTarget = target.coerceAtLeast(1f)
+    val unit = if (mode == DailyHeatmapMode.CALORIES) "千卡" else "克"
+    return "$dateText，${value.formatMacro()}$unit，目标完成${(value / safeTarget * 100).toInt()}%"
+}
+@Composable
+private fun DayMetricDetailSummary(
+    day: DayNutritionSummary,
+    mode: DailyHeatmapMode,
+    target: Float,
+    color: Color,
+) {
+    val value = dailyHeatmapValue(mode, day.total)
+    val safeTarget = target.coerceAtLeast(1f)
+    val unit = if (mode == DailyHeatmapMode.CALORIES) "kcal" else "g"
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(top = 8.dp)
-            .clip(RoundedCornerShape(14.dp))
-            .background(calorieColor.copy(alpha = 0.07f))
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+            .padding(top = 7.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(color.copy(alpha = 0.07f))
+            .padding(horizontal = 10.dp, vertical = 8.dp),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            Text(day.dateEpochDay.toLocalDate().format(DetailDateFormatter), style = MiuixTheme.textStyles.footnote1, fontWeight = FontWeight.SemiBold)
-            Text("${calories.toInt()} / ${target.toInt()} kcal", style = MiuixTheme.textStyles.footnote1)
+            Text(
+                day.dateEpochDay.toLocalDate().format(DetailDateFormatter),
+                style = MiuixTheme.textStyles.footnote2,
+            )
+            Text(
+                "${value.formatMacro()} / ${safeTarget.formatMacro()} $unit",
+                style = MiuixTheme.textStyles.footnote2,
+            )
         }
-        LinearProgressIndicator(
-            progress = (calories / safeTarget.toDouble()).toFloat().coerceIn(0f, 1f),
-            modifier = Modifier.fillMaxWidth(),
-            height = 5.dp,
-            colors = ProgressIndicatorDefaults.progressIndicatorColors(foregroundColor = calorieColor),
-        )
     }
 }
 
