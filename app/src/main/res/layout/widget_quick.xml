@@ -1,0 +1,10 @@
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:paddingTop="36px"
+    android:paddingBottom="42px">
+<!-- Match NexioSchedule's 4x6 launcher spacing at its 480 dpi reference. -->
+<FrameLayout android:id="@+id/widget_root" android:layout_width="match_parent" android:layout_height="match_parent" android:background="@drawable/widget_quick_background" android:clipToOutline="true">
+<LinearLayout android:layout_width="match_parent" android:layout_height="match_parent" android:gravity="center" android:orientation="horizontal" android:padding="6dp"><ImageView android:id="@+id/widget_camera" android:layout_width="0dp" android:layout_weight="1" android:layout_height="match_parent" android:padding="12dp" android:src="@drawable/ic_shortcut_camera_glyph" android:tint="#FFFFFF" android:contentDescription="@string/shortcut_camera"/><ImageView android:id="@+id/widget_gallery" android:layout_width="0dp" android:layout_weight="1" android:layout_height="match_parent" android:padding="10dp" android:src="@drawable/ic_shortcut_gallery_glyph" android:tint="#FFFFFF" android:contentDescription="@string/shortcut_gallery"/><ImageView android:id="@+id/widget_manual" android:layout_width="0dp" android:layout_weight="1" android:layout_height="match_parent" android:padding="10dp" android:src="@drawable/ic_shortcut_text_glyph" android:tint="#FFFFFF" android:contentDescription="@string/shortcut_manual"/></LinearLayout>
+</FrameLayout>
+</FrameLayout>

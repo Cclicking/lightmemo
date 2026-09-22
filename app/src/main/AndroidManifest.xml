@@ -61,6 +61,53 @@
         <activity android:name=".ui.secondary.CalorieTargetActivity" android:exported="false" />
         <activity android:name=".ui.secondary.DataManagementActivity" android:exported="false" />
         <activity android:name=".ui.secondary.FoodDatabaseActivity" android:exported="false" />
+        <activity android:name=".widget.WidgetSettingsActivity" android:exported="true">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" /></intent-filter>
+        </activity>
+        <receiver android:name=".widget.StreakWidget" android:exported="false" android:label="@string/widget_streak_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="android.intent.action.DATE_CHANGED" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.CONFIGURATION_CHANGED" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_streak_info" />
+        </receiver>
+        <receiver android:name=".widget.IntakeWidget" android:exported="false" android:label="@string/widget_intake_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="android.intent.action.DATE_CHANGED" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.CONFIGURATION_CHANGED" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_intake_info" />
+        </receiver>
+        <receiver android:name=".widget.SuggestionWidget" android:exported="false" android:label="@string/widget_suggestion_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="android.intent.action.DATE_CHANGED" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.CONFIGURATION_CHANGED" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_suggestion_info" />
+        </receiver>
+        <receiver android:name=".widget.QuickWidget" android:exported="false" android:label="@string/widget_quick_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="android.intent.action.DATE_CHANGED" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.CONFIGURATION_CHANGED" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_quick_info" />
+        </receiver>
         <activity android:name=".ui.secondary.AppearanceSettingsActivity" android:exported="false" />
         <activity android:name=".ui.secondary.PermissionManagementActivity" android:exported="false" />
         <activity android:name=".ui.secondary.NotificationSettingsActivity" android:exported="false" />

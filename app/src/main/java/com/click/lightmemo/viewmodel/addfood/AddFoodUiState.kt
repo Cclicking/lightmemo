@@ -96,6 +96,8 @@ data class DatabaseSearchState(
     val error: String? = null,
     val replaceComponentName: Boolean = false,
     val initialLookupQuery: String? = null,
+    /** 更换食物时保留原来的匹配项，并始终置于普通检索结果之前。 */
+    val pinnedReference: NutritionReference? = null,
 )
 
 fun defaultMealType(): MealType {

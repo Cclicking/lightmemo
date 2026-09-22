@@ -90,7 +90,7 @@ private enum class RecommendationMode(val label: String) {
     HABITUAL("照旧吃"),
 }
 
-private data class DishRecommendation(
+internal data class DishRecommendation(
     val preset: PresetFood,
     val nutrition: Nutrition,
     val score: Int,
@@ -665,7 +665,7 @@ private fun buildPairingFoods(recommendation: DishRecommendation): List<PresetFo
     return result.take(2)
 }
 
-private fun buildRecommendations(state: StatsViewModel.StatsUiState): List<DishRecommendation> {
+internal fun buildRecommendations(state: StatsViewModel.StatsUiState): List<DishRecommendation> {
     val baseCandidates = deduplicateFoods(
         DefaultRecommendationFoods +
             DefaultPresetFoods +

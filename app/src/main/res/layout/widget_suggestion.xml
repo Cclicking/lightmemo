@@ -1,0 +1,13 @@
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:paddingTop="36px"
+    android:paddingBottom="42px">
+<!-- Match NexioSchedule's 4x6 launcher spacing at its 480 dpi reference. -->
+<LinearLayout android:id="@+id/widget_root" android:layout_width="match_parent" android:layout_height="match_parent" android:gravity="center_vertical" android:orientation="horizontal" android:paddingStart="12dp" android:paddingEnd="12dp" android:paddingTop="12dp" android:paddingBottom="12dp" android:background="@drawable/widget_background">
+<LinearLayout android:id="@+id/widget_body" android:layout_width="0dp" android:layout_weight="1" android:layout_height="match_parent" android:gravity="center_vertical" android:orientation="vertical">
+<TextView android:id="@+id/widget_title" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/widget_suggestion_title" android:textSize="@dimen/widget_suggestion_title_size" android:textColor="@color/widget_text" android:includeFontPadding="false"/>
+<TextView android:id="@+id/widget_value" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/widget_suggestion_empty" android:textSize="17sp" android:textStyle="bold" android:maxLines="1" android:ellipsize="end" android:textColor="@color/widget_text" android:includeFontPadding="false"/></LinearLayout>
+<ImageView android:id="@+id/widget_refresh" android:layout_width="56dp" android:layout_height="match_parent" android:padding="6dp" android:translationX="4dp" android:src="@drawable/widget_replace" android:contentDescription="@string/widget_refresh"/>
+</LinearLayout>
+</FrameLayout>

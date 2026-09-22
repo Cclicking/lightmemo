@@ -1109,18 +1109,8 @@ private fun HeatmapCell(
     }
 }
 
-private fun heatmapIntensity(value: Double, target: Float): Float {
-    val ratio = (value / target.coerceAtLeast(1f)).coerceIn(0.0, 1.25)
-    return when {
-        ratio <= 0.0 -> 0.06f
-        ratio < 0.2 -> 0.20f
-        ratio < 0.4 -> 0.34f
-        ratio < 0.6 -> 0.48f
-        ratio < 0.8 -> 0.64f
-        ratio < 1.0 -> 0.80f
-        else -> 0.96f
-    }
-}
+private fun heatmapIntensity(value: Double, target: Float): Float =
+    com.click.lightmemo.domain.RecordingHeatmap.intensity(value, target)
 
 private fun dailyHeatmapValue(mode: DailyHeatmapMode, nutrition: Nutrition): Double = when (mode) {
     DailyHeatmapMode.CALORIES -> nutrition.caloriesKcal

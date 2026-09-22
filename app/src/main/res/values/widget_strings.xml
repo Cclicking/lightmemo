@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="widget_streak_name">连续记录</string>
+    <string name="widget_intake_name">今日摄入</string>
+    <string name="widget_suggestion_name">饮食建议</string>
+    <string name="widget_quick_name">快捷记录</string>
+    <string name="widget_suggestion_title">建议</string>
+    <string name="widget_suggestion_empty">今日吃什么</string>
+    <string name="widget_refresh">换一个建议</string>
+    <string name="widget_zero">0</string>
+</resources>

@@ -1,6 +1,7 @@
 package com.click.lightmemo.viewmodel
 
 import com.click.lightmemo.domain.FoodComponent
+import com.click.lightmemo.domain.NutritionReference
 import com.click.lightmemo.network.FoodDataCentralClient
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -72,7 +73,15 @@ internal class ComponentSearchInteractor(
     }
 
     fun openReview(component: FoodComponent, replaceComponentName: Boolean = false) {
-        val initialLookupQuery = component.databaseQuery.trim().ifBlank { component.name }
+        // Replacing a component searches with the text shown in the input field.
+        // The databaseQuery may be an English normalization used by recognition,
+        // but it must not override the user's visible replacement term.
+        val initialLookupQuery = if (replaceComponentName) {
+            component.name
+        } else {
+            component.databaseQuery.trim().ifBlank { component.name }
+        }
+        val pinnedReference = component.nutritionReference.takeIf { replaceComponentName }
         uiState.value = uiState.value.copy(
             databaseSearch = DatabaseSearchState(
                 componentId = component.id,
@@ -80,6 +89,7 @@ internal class ComponentSearchInteractor(
                 loading = true,
                 replaceComponentName = replaceComponentName,
                 initialLookupQuery = initialLookupQuery,
+                pinnedReference = pinnedReference,
             ),
         )
         search(
@@ -87,6 +97,7 @@ internal class ComponentSearchInteractor(
             displayQuery = component.name,
             lookupQuery = initialLookupQuery,
             keepInitialLookupQuery = true,
+            pinnedReference = pinnedReference,
             isDraft = false,
         )
     }
@@ -99,6 +110,7 @@ internal class ComponentSearchInteractor(
             displayQuery = query,
             lookupQuery = lookupQuery,
             keepInitialLookupQuery = false,
+            pinnedReference = current?.pinnedReference,
             isDraft = false,
         )
     }
@@ -122,6 +134,7 @@ internal class ComponentSearchInteractor(
         displayQuery: String,
         lookupQuery: String,
         keepInitialLookupQuery: Boolean,
+        pinnedReference: NutritionReference? = null,
         isDraft: Boolean,
     ) {
         searchJob?.cancel()
@@ -153,10 +166,16 @@ internal class ComponentSearchInteractor(
                     apiKey = apiKey(),
                     limit = 20,
                 )
+                val orderedResults = pinnedReference?.let { currentReference ->
+                    buildList {
+                        add(currentReference)
+                        addAll(results.filterNot { it.sameDatabaseEntryAs(currentReference) })
+                    }
+                } ?: results
                 updateSlot(componentId, isDraft) {
                     it.copy(
                         loading = false,
-                        results = results,
+                        results = orderedResults,
                         error = if (results.isEmpty()) "没有找到相近的食物" else null,
                     )
                 }
@@ -168,6 +187,10 @@ internal class ComponentSearchInteractor(
                 }
             }
         }
+    }
+
+    private fun NutritionReference.sameDatabaseEntryAs(other: NutritionReference): Boolean {
+        return dataType == other.dataType && sourceId == other.sourceId
     }
 
     private inline fun updateSlot(

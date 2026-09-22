@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="widget_streak_name">Recording streak</string>
+    <string name="widget_intake_name">Today’s intake</string>
+    <string name="widget_suggestion_name">Meal suggestion</string>
+    <string name="widget_quick_name">Quick log</string>
+    <string name="widget_suggestion_title">Suggestion</string>
+    <string name="widget_suggestion_empty">What to eat today</string>
+    <string name="widget_refresh">Next suggestion</string>
+    <string name="widget_zero">0</string>
+</resources>

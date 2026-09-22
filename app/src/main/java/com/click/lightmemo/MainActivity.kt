@@ -117,6 +117,8 @@ enum class ShortcutAddAction {
 }
 
 class MainActivity : ComponentActivity() {
+    internal val widgetDestination = MutableStateFlow<String?>(null)
+    internal var widgetDish: String? = null
     private val openRecognition = MutableStateFlow(false)
     private val openShortcutAddAction = MutableStateFlow<ShortcutAddAction?>(null)
 
@@ -173,6 +175,12 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleShortcutIntent(intent: Intent?) {
+        widgetDish = intent?.getStringExtra(com.click.lightmemo.widget.FoodWidgets.EXTRA_DISH)
+        intent?.removeExtra(com.click.lightmemo.widget.FoodWidgets.EXTRA_DISH)
+        intent?.getStringExtra(com.click.lightmemo.widget.FoodWidgets.EXTRA_DESTINATION)?.let {
+            widgetDestination.value = it
+            intent.removeExtra(com.click.lightmemo.widget.FoodWidgets.EXTRA_DESTINATION)
+        }
         if (intent?.getBooleanExtra(com.click.lightmemo.recognition.EXTRA_OPEN_RECOGNITION, false) == true) {
             openRecognition.value = true
         }
@@ -262,6 +270,16 @@ fun FoodAppRoot() {
             var statsCalendarExpanded by rememberSaveable { mutableStateOf(false) }
             var showDatePicker by remember { mutableStateOf(false) }
             val activity = context as? MainActivity
+            val widgetDestination = activity?.widgetDestination?.collectAsState()?.value
+            LaunchedEffect(widgetDestination) {
+                if (widgetDestination != null) {
+                    selectedTab = when (widgetDestination) { "stats" -> 1; "recommend" -> 2; else -> 0 }
+                    todayVm.selectDate(LocalDate.now())
+                    if (widgetDestination == "recommend") activity.widgetDish?.let(statsVm::saveRecommendationResult)
+                    activity.widgetDish = null
+                    activity.widgetDestination.value = null
+                }
+            }
             val openRecognition = if (activity != null) {
                 activity.openRecognitionState().collectAsState().value
             } else {
@@ -282,7 +300,7 @@ fun FoodAppRoot() {
             LaunchedEffect(pendingShortcutAdd) {
                 if (pendingShortcutAdd != null) {
                     selectedTab = 0
-                    addVm.setTargetDate(selectedDate)
+                    addVm.setTargetDate(LocalDate.now())
                     showAdd = true
                 }
             }

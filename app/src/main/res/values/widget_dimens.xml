@@ -1,0 +1,5 @@
+<resources>
+    <!-- Fixed 480 dpi reference, shared by previews and RemoteViews updates. -->
+    <dimen name="widget_title_size">42px</dimen>
+    <dimen name="widget_suggestion_title_size">36px</dimen>
+</resources>

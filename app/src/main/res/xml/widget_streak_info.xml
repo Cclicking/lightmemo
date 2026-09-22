@@ -1,0 +1,6 @@
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+ android:minWidth="110dp" android:minHeight="110dp" android:targetCellWidth="2" android:targetCellHeight="2"
+ android:resizeMode="none"
+ android:updatePeriodMillis="1800000" android:initialLayout="@layout/widget_streak" android:previewLayout="@layout/widget_streak"
+ android:widgetCategory="home_screen" android:configure="com.click.lightmemo.widget.WidgetSettingsActivity"
+ android:widgetFeatures="reconfigurable|configuration_optional" />
