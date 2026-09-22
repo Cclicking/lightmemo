@@ -2,6 +2,7 @@ package com.click.lightmemo.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -38,6 +39,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -49,6 +51,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.unit.sp
 import com.click.lightmemo.data.DefaultPresetFoods
 import com.click.lightmemo.data.DefaultRecommendationFoods
@@ -75,6 +78,8 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 private val DishCardWidth = 104.dp
 private const val FocusedDishIndex = 2
 private const val RollSteps = 12
+private const val InitialRollDurationMillis = 3000
+private const val InitialRollCycles = 4
 private const val LowCalorieThresholdKcal = 350.0
 private const val RecordedFoodShare = 0.20
 
@@ -130,21 +135,30 @@ fun RecommendScreen(
     val savedResultDishes = remember(recommendations, recommendationSession.dishName) {
         centerRecommendation(recommendations, recommendationSession.dishName)
     }
-    val dishListState = rememberLazyListState()
-    var displayDishes by remember(recommendations) {
-        mutableStateOf(
-            if (recommendationSession.hasResult) {
-                savedResultDishes
-            } else {
-                rollingDishes(modeRecommendations)
-            },
-        )
+    val initialDisplayDishes = if (recommendationSession.hasResult) {
+        savedResultDishes
+    } else {
+        idleRollingDishes(modeRecommendations)
     }
+    var displayDishes by remember(recommendations) {
+        mutableStateOf(initialDisplayDishes)
+    }
+    // Start at the focused slot so the selected border is never painted on the first card
+    // while the initial LaunchedEffect is moving the carousel into position.
+    val dishListState = rememberLazyListState(
+        initialFirstVisibleItemIndex = initialDisplayDishes.focusedDishIndex(),
+    )
     var showRecommendation by remember(recommendations) {
         mutableStateOf(recommendationSession.hasResult)
     }
+    var initialRolling by remember(recommendations) {
+        mutableStateOf(!recommendationSession.hasResult)
+    }
+    var carouselReady by remember(recommendations) {
+        mutableStateOf(false)
+    }
     var animateDishContent by remember { mutableStateOf(false) }
-    var selectedBorderVisible by remember { mutableStateOf(true) }
+    var selectedBorderVisible by remember { mutableStateOf(!initialRolling) }
     var suppressResultSync by remember { mutableStateOf(false) }
     var isPicking by remember { mutableStateOf(false) }
     var modeInitialized by remember { mutableStateOf(false) }
@@ -161,9 +175,28 @@ fun RecommendScreen(
                 ?: 0
         }
     }
-    val selectedDish = displayDishes.getOrNull(centeredIndex)?.takeIf { showRecommendation }
+    val selectedDish = displayDishes.getOrNull(centeredIndex)?.takeIf {
+        showRecommendation && carouselReady
+    }
     val pairingFoods = remember(selectedDish) {
         selectedDish?.let(::buildPairingFoods).orEmpty()
+    }
+
+    LaunchedEffect(initialRolling, selectedMode, recommendationSession.hasResult, recommendations) {
+        if (!initialRolling || recommendationSession.hasResult || displayDishes.size < 2) {
+            return@LaunchedEffect
+        }
+        val resetIndex = initialRollResetIndex(modeRecommendations.size)
+        delay(240)
+        while (true) {
+            if (dishListState.firstVisibleItemIndex >= resetIndex || !dishListState.canScrollForward) {
+                dishListState.scrollToItem(FocusedDishIndex)
+            }
+            dishListState.animateScrollBy(
+                value = carouselStepPx,
+                animationSpec = tween(durationMillis = InitialRollDurationMillis, easing = LinearEasing),
+            )
+        }
     }
 
     LaunchedEffect(recommendations, recommendationSession.hasResult, recommendationSession.dishName) {
@@ -172,6 +205,7 @@ fun RecommendScreen(
                 suppressResultSync = false
                 return@LaunchedEffect
             }
+            carouselReady = false
             val alreadyShowingResult = showRecommendation &&
                 displayDishes.getOrNull(centeredIndex)?.preset?.name == recommendationSession.dishName
             if (!alreadyShowingResult) {
@@ -182,29 +216,44 @@ fun RecommendScreen(
                 }
             }
         } else {
-            displayDishes = rollingDishes(modeRecommendations)
+            carouselReady = false
+            displayDishes = if (initialRolling) {
+                idleRollingDishes(modeRecommendations)
+            } else {
+                rollingDishes(modeRecommendations)
+            }
             showRecommendation = false
             if (displayDishes.size > 1) {
                 dishListState.scrollToItem(displayDishes.focusedDishIndex())
             }
         }
+        withFrameNanos { }
+        carouselReady = true
     }
 
     LaunchedEffect(selectedMode) {
         if (modeInitialized) {
-            displayDishes = rollingDishes(modeRecommendations)
+            carouselReady = false
+            displayDishes = if (initialRolling) {
+                idleRollingDishes(modeRecommendations)
+            } else {
+                rollingDishes(modeRecommendations)
+            }
             showRecommendation = false
             animateDishContent = false
             selectedBorderVisible = true
             if (displayDishes.size > 1) {
                 dishListState.scrollToItem(displayDishes.focusedDishIndex())
             }
+            withFrameNanos { }
+            carouselReady = true
         }
         modeInitialized = true
     }
 
     fun pickDish() {
         if (isPicking || displayDishes.size < 2) return
+        initialRolling = false
         scope.launch {
             val resultDishes = nextRecommendationDishes(
                 recommendations = modeRecommendations,
@@ -295,7 +344,7 @@ fun RecommendScreen(
         item {
             DishCarousel(
                 dishes = displayDishes,
-                selectedIndex = centeredIndex,
+                selectedIndex = if (initialRolling || !carouselReady) -1 else centeredIndex,
                 listState = dishListState,
                 selectedBorderVisible = selectedBorderVisible,
                 animateDishContent = animateDishContent,
@@ -347,7 +396,10 @@ fun RecommendScreen(
             }
             AnimatedVisibility(
                 visible = showRecommendation && lowCalorieDish != null,
-                enter = fadeIn(animationSpec = tween(260)),
+                enter = slideInHorizontally(
+                    initialOffsetX = { fullWidth -> fullWidth },
+                    animationSpec = tween(durationMillis = 260, delayMillis = 80),
+                ) + fadeIn(animationSpec = tween(durationMillis = 260, delayMillis = 80)),
                 exit = fadeOut(animationSpec = tween(180)),
             ) {
                 PairingCard(
@@ -382,8 +434,9 @@ private fun DishCarousel(
         ) {
             itemsIndexed(dishes, key = { index, item -> "${item.preset.id}-$index" }) { index, dish ->
                 val selected = index == selectedIndex
+                val emphasized = selected && selectedBorderVisible
                 val emphasis by animateFloatAsState(
-                    targetValue = if (selected && selectedBorderVisible) 1f else 0f,
+                    targetValue = if (emphasized) 1f else 0f,
                     animationSpec = tween(durationMillis = 180),
                     label = "selectedDishEmphasis",
                 )
@@ -410,6 +463,15 @@ private fun DishCarousel(
                     cornerRadius = 18.dp,
                     insideMargin = PaddingValues(horizontal = 8.dp, vertical = 12.dp),
                 ) {
+                    val regularStyle = MiuixTheme.textStyles.body2
+                    val emphasizedStyle = MiuixTheme.textStyles.body1
+                    val dishNameStyle = regularStyle.copy(
+                        fontSize = lerp(
+                            regularStyle.fontSize,
+                            emphasizedStyle.fontSize,
+                            emphasis,
+                        ),
+                    )
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
@@ -419,7 +481,7 @@ private fun DishCarousel(
                     ) {
                         Text(
                             text = dish.preset.name,
-                            style = if (selected) MiuixTheme.textStyles.body1 else MiuixTheme.textStyles.body2,
+                            style = dishNameStyle,
                             fontWeight = FontWeight(
                                 (FontWeight.Normal.weight +
                                     (FontWeight.SemiBold.weight - FontWeight.Normal.weight) * emphasis)
@@ -700,6 +762,20 @@ private fun healthyModePriority(
 }
 
 private fun Int?.orZero(): Int = this ?: 0
+
+private fun initialRollResetIndex(recommendationCount: Int): Int =
+    FocusedDishIndex + recommendationCount * InitialRollCycles
+
+/** Keep several complete cycles so the idle carousel can jump to an identical sequence. */
+private fun idleRollingDishes(
+    recommendations: List<DishRecommendation>,
+): List<DishRecommendation> {
+    if (recommendations.size < 2) return recommendations
+    return rollingDishes(
+        recommendations = recommendations,
+        targetIndex = initialRollResetIndex(recommendations.size) + 4,
+    )
+}
 
 /** Keep enough repeated cards for every fast roll to retain a neighbor on the right. */
 private fun rollingDishes(
