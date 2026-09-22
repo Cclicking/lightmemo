@@ -76,6 +76,7 @@ private val DishCardWidth = 104.dp
 private const val FocusedDishIndex = 2
 private const val RollSteps = 12
 private const val LowCalorieThresholdKcal = 350.0
+private const val RecordedFoodShare = 0.20
 
 private enum class RecommendationMode(val label: String) {
     CASUAL("随便吃"),
@@ -603,15 +604,27 @@ private fun buildPairingFoods(recommendation: DishRecommendation): List<PresetFo
 }
 
 private fun buildRecommendations(state: StatsViewModel.StatsUiState): List<DishRecommendation> {
-    val candidates = (
+    val baseCandidates = deduplicateFoods(
         DefaultRecommendationFoods +
             DefaultPresetFoods +
-            state.recordedFoods +
-            state.foodPresets
+            state.foodPresets,
         )
-        .asReversed()
-        .distinctBy { it.name.trim() }
-        .asReversed()
+    val baseNames = baseCandidates.mapTo(mutableSetOf()) { it.name.trim() }
+    val recordedCandidates = deduplicateFoods(state.recordedFoods)
+        .filterNot { it.name.trim() in baseNames }
+    val recordedLimit = if (baseCandidates.isEmpty()) {
+        recordedCandidates.size
+    } else {
+        ((baseCandidates.size * RecordedFoodShare) / (1.0 - RecordedFoodShare))
+            .toInt()
+            .coerceAtLeast(1)
+    }
+    val candidates = baseCandidates + recordedCandidates
+        .sortedWith(
+            compareByDescending<PresetFood> { state.foodFrequency[it.name.trim()].orZero() }
+                .thenBy { it.name },
+        )
+        .take(recordedLimit)
     return candidates.map { preset ->
         val nutrition = presetNutrition(preset)
         DishRecommendation(
@@ -622,6 +635,11 @@ private fun buildRecommendations(state: StatsViewModel.StatsUiState): List<DishR
         )
     }.sortedByDescending { it.score }
 }
+
+private fun deduplicateFoods(foods: List<PresetFood>): List<PresetFood> = foods
+    .asReversed()
+    .distinctBy { it.name.trim() }
+    .asReversed()
 
 private fun recommendationsForMode(
     recommendations: List<DishRecommendation>,
