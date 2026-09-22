@@ -14,6 +14,9 @@ interface FoodLogDao {
     fun observeRange(fromEpochDay: Long, toEpochDay: Long): Flow<List<FoodLogEntity>>
 
     @Query("SELECT * FROM food_logs ORDER BY id ASC")
+    fun observeAll(): Flow<List<FoodLogEntity>>
+
+    @Query("SELECT * FROM food_logs ORDER BY id ASC")
     suspend fun getAll(): List<FoodLogEntity>
 
     @Query("SELECT * FROM food_logs WHERE id = :id LIMIT 1")

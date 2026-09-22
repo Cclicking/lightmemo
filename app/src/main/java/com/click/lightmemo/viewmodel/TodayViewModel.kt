@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.click.lightmemo.FoodApp
+import com.click.lightmemo.data.PresetFood
 import com.click.lightmemo.domain.DayNutritionSummary
 import com.click.lightmemo.domain.FoodLog
 import com.click.lightmemo.domain.MealType
@@ -209,6 +210,14 @@ class StatsViewModel(app: Application) : AndroidViewModel(app) {
 
     private val period = MutableStateFlow<Pair<LocalDate, LocalDate>?>(null)
 
+    data class RecommendationSession(
+        val hasResult: Boolean = false,
+        val dishName: String? = null,
+    )
+
+    private val _recommendationSession = MutableStateFlow(RecommendationSession())
+    val recommendationSession: StateFlow<RecommendationSession> = _recommendationSession
+
     data class StatsUiState(
         val rangeDays: Int = 7,
         val elapsedDays: Int = 0,
@@ -217,6 +226,11 @@ class StatsViewModel(app: Application) : AndroidViewModel(app) {
         val mealTiming: List<MealTimingDay> = emptyList(),
         val averageKcal: Double = 0.0,
         val averageNutrition: Nutrition = Nutrition(),
+        val todayNutrition: Nutrition = Nutrition(),
+        val foodPresets: List<PresetFood> = emptyList(),
+        val recordedFoods: List<PresetFood> = emptyList(),
+        val foodFrequency: Map<String, Int> = emptyMap(),
+        val recentFoodNames: Set<String> = emptySet(),
         val mealCalories: Map<MealType, Double> = emptyMap(),
         val maxKcal: Double = 0.0,
         val timedDays: Int = 0,
@@ -263,7 +277,9 @@ class StatsViewModel(app: Application) : AndroidViewModel(app) {
         window.flatMapLatest { w -> repo.logsInRange(w.from, w.to) },
         window,
         settingsRepo.settings,
-    ) { logs, w, settings ->
+        settingsRepo.foodPresets,
+        repo.allLogs(),
+    ) { logs, w, settings, foodPresets, allLogs ->
         val start = w.periodStart
         val end = w.periodEnd
         val today = w.today
@@ -311,6 +327,37 @@ class StatsViewModel(app: Application) : AndroidViewModel(app) {
                 DayNutritionSummary(epochDay, entries.fold(Nutrition()) { total, entry -> total + entry.nutrition })
             }
         val logged = daily.filter { grouped.containsKey(it.dateEpochDay) }
+        val todayNutrition = logs
+            .asSequence()
+            .filter { it.dateEpochDay == today.toEpochDay() }
+            .fold(Nutrition()) { acc, item -> acc + item.nutrition }
+        val recordedFoods = allLogs
+            .asSequence()
+            .filter { it.name.isNotBlank() }
+            .groupBy { it.name.trim() }
+            .mapNotNull { (name, entries) ->
+                val latest = entries.maxByOrNull { it.createdAtMillis } ?: return@mapNotNull null
+                PresetFood(
+                    id = "recorded:$name",
+                    name = name,
+                    defaultGrams = latest.grams.coerceAtLeast(1.0),
+                    portionLabel = "历史记录",
+                    nutrition = latest.nutrition,
+                    components = latest.components,
+                )
+            }
+        val foodFrequency = allLogs
+            .asSequence()
+            .filter { it.name.isNotBlank() }
+            .groupingBy { it.name.trim() }
+            .eachCount()
+        val recentFoodCutoff = today.minusDays(14).toEpochDay()
+        val recentFoodNames = allLogs
+            .asSequence()
+            .filter { it.dateEpochDay in recentFoodCutoff..today.toEpochDay() }
+            .map { it.name.trim() }
+            .filter { it.isNotBlank() }
+            .toSet()
         val target = settings.dailyCalorieTarget.toDouble()
         StatsUiState(
             rangeDays = days,
@@ -319,6 +366,11 @@ class StatsViewModel(app: Application) : AndroidViewModel(app) {
             averageKcal = if (logged.isEmpty()) 0.0 else logged.map { it.total.caloriesKcal }.average(),
             averageNutrition = logged.fold(Nutrition()) { acc, day -> acc + day.total }
                 .times(1.0 / logged.size.coerceAtLeast(1)),
+            todayNutrition = todayNutrition,
+            foodPresets = foodPresets,
+            recordedFoods = recordedFoods,
+            foodFrequency = foodFrequency,
+            recentFoodNames = recentFoodNames,
             mealCalories = mealCalories,
             maxKcal = daily.maxOfOrNull { it.total.caloriesKcal } ?: 0.0,
             mealTiming = mealTiming,
@@ -342,6 +394,13 @@ class StatsViewModel(app: Application) : AndroidViewModel(app) {
     fun setPeriod(start: LocalDate, end: LocalDate) {
         require(!end.isBefore(start))
         period.value = start to end
+    }
+
+    fun saveRecommendationResult(dishName: String) {
+        _recommendationSession.value = RecommendationSession(
+            hasResult = true,
+            dishName = dishName,
+        )
     }
 }
 

@@ -693,7 +693,7 @@ private fun StructureLegend(label: String, percentage: Int, color: Color) {
 }
 
 @Composable
-private fun AdviceSection(
+internal fun AdviceSection(
     state: StatsViewModel.StatsUiState,
     modifier: Modifier,
 ) {

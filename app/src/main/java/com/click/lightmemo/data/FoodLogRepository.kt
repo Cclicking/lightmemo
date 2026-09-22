@@ -51,6 +51,16 @@ class FoodLogRepository(
                 true
             }
 
+    fun allLogs(): Flow<List<FoodLog>> =
+        dao.observeAll()
+            .map { entities -> entities.map { it.toDomain() } }
+            .flowOn(Dispatchers.IO)
+            .retryWhen { cause, _ ->
+                readError.value = "记录读取失败，原数据已保留，正在重试：${cause.message.orEmpty()}"
+                delay(5_000)
+                true
+            }
+
     suspend fun ensureMigrated() {
         if (migrated.isCompleted) return migrated.await()
         migrationMutex.withLock {

@@ -65,6 +65,7 @@
         <activity android:name=".ui.secondary.PermissionManagementActivity" android:exported="false" />
         <activity android:name=".ui.secondary.NotificationSettingsActivity" android:exported="false" />
         <activity android:name=".ui.secondary.AboutActivity" android:exported="false" />
+        <activity android:name=".ui.secondary.SettingsHubActivity" android:exported="false" />
         <activity android:name=".ui.secondary.ManageFoodCardsActivity" android:exported="false" />
         <activity android:name=".ui.secondary.EditFoodActivity" android:exported="false" android:windowSoftInputMode="adjustResize" />
         <provider

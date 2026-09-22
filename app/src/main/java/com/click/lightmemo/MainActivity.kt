@@ -26,12 +26,6 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
@@ -75,10 +69,11 @@ import com.click.lightmemo.ui.screens.AboutScreen
 import com.click.lightmemo.ui.screens.CalorieTargetScreen
 import com.click.lightmemo.ui.screens.DataManagementScreen
 import com.click.lightmemo.ui.screens.FoodDatabaseScreen
-import com.click.lightmemo.ui.screens.MineHubScreen
 import com.click.lightmemo.ui.screens.PersonalInfoScreen
+import com.click.lightmemo.ui.screens.RecommendScreen
 import com.click.lightmemo.ui.screens.StatsScreen
 import com.click.lightmemo.ui.screens.TodayScreen
+import com.click.lightmemo.ui.secondary.SettingsHubActivity
 import com.click.lightmemo.ui.theme.FoodTheme
 import com.click.lightmemo.ui.theme.toComposeColors
 import com.click.lightmemo.viewmodel.AddFoodViewModel
@@ -104,6 +99,7 @@ import top.yukonga.miuix.kmp.icon.os4.Delete
 import top.yukonga.miuix.kmp.icon.os4.GridView
 import top.yukonga.miuix.kmp.icon.os4.Import
 import top.yukonga.miuix.kmp.icon.os4.Months
+import top.yukonga.miuix.kmp.icon.os4.Settings
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import java.time.LocalDate
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -212,7 +208,7 @@ class MainActivity : ComponentActivity() {
 private enum class AppTab(val title: String) {
     TODAY("今日"),
     STATS("统计"),
-    MINE("我的"),
+    RECOMMEND("推荐"),
 }
 
 
@@ -304,13 +300,13 @@ fun FoodAppRoot() {
             val scrollBehavior = rememberSharedScrollBehavior(state = appBarState)
             val todayList = rememberLazyListState()
             val statsList = rememberLazyListState()
-            val mineList = rememberLazyListState()
+            val recommendList = rememberLazyListState()
             val addList = rememberLazyListState()
 
             val activeList = when (selectedTab) {
                 0 -> todayList
                 1 -> statsList
-                else -> mineList
+                else -> recommendList
             }
             val foodSelectionMode = selectedTab == 0 && selectedFoodIds.isNotEmpty()
 
@@ -321,7 +317,6 @@ fun FoodAppRoot() {
             BackHandler(enabled = foodSelectionMode) {
                 selectedFoodIds = emptySet()
             }
-
             // Each destination keeps its own LazyListState. Restore the app-bar state from that
             // destination instead of always expanding it when the bottom tab changes.
             LaunchedEffect(selectedTab, activeList.canScrollBackward) {
@@ -358,12 +353,12 @@ fun FoodAppRoot() {
                     LocalDate.now().minusDays(1) -> "昨日"
                     else -> "${selectedDate.monthValue}月${selectedDate.dayOfMonth}日"
                 }
-                2 -> "我的"
+                2 -> "推荐"
                 else -> AppTab.entries[selectedTab].title
             }
             val compactTitle = when (selectedTab) {
                 0 -> "今日"
-                2 -> "我的"
+                2 -> "推荐"
                 else -> AppTab.entries[selectedTab].title
             }
 
@@ -444,6 +439,20 @@ fun FoodAppRoot() {
                                 backdrop = backdrop,
                                 icon = MiuixIcons.Os4.Months,
                                 contentDescription = if (statsCalendarExpanded) "收起月视图" else "展开月视图",
+                                backdropAlpha = glassAlpha,
+                                shadowAlpha = shadowAlpha,
+                            )
+                        } }
+                        2 -> { { glassAlpha, shadowAlpha ->
+                            LiquidTopBarButton(
+                                onClick = {
+                                    context.startActivity(
+                                        Intent(context, SettingsHubActivity::class.java),
+                                    )
+                                },
+                                backdrop = backdrop,
+                                icon = MiuixIcons.Os4.Settings,
+                                contentDescription = "推荐设置",
                                 backdropAlpha = glassAlpha,
                                 shadowAlpha = shadowAlpha,
                             )
@@ -595,11 +604,11 @@ fun FoodAppRoot() {
                                         calendarExpanded = statsCalendarExpanded,
                                         palette = palette,
                                     )
-                                    else -> MineHubScreen(
+                                    else -> RecommendScreen(
+                                        viewModel = statsVm,
                                         contentPadding = padding,
                                         scrollBehavior = scrollBehavior,
-                                        listState = mineList,
-                                        viewModel = settingsVm,
+                                        listState = recommendList,
                                     )
                                 }
                             }

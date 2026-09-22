@@ -40,6 +40,7 @@ import com.click.lightmemo.ui.screens.EditFoodScreen
 import com.click.lightmemo.ui.screens.PersonalInfoScreen
 import com.click.lightmemo.ui.screens.PermissionManagementScreen
 import com.click.lightmemo.ui.screens.NotificationSettingsScreen
+import com.click.lightmemo.ui.screens.MineHubScreen
 import com.click.lightmemo.ui.theme.FoodTheme
 import com.click.lightmemo.ui.theme.toComposeColors
 import com.click.lightmemo.ui.utils.LocalOverScrollState
@@ -135,6 +136,25 @@ abstract class SecondarySettingsActivity : ComponentActivity() {
                 }
             }
         }
+    }
+}
+
+class SettingsHubActivity : SecondarySettingsActivity() {
+    override val pageTitle = "设置"
+
+    @Composable
+    override fun PageContent(
+        settingsVm: SettingsViewModel,
+        backupVm: BackupViewModel,
+        contentPadding: PaddingValues,
+        scrollBehavior: SharedScrollBehavior,
+    ) {
+        MineHubScreen(
+            contentPadding = contentPadding,
+            scrollBehavior = scrollBehavior,
+            listState = rememberLazyListState(),
+            viewModel = settingsVm,
+        )
     }
 }
 
