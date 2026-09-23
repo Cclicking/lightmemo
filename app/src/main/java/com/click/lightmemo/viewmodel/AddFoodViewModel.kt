@@ -295,7 +295,14 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
             ?.flatMap { it.allComponents }
             ?.firstOrNull { it.id == componentId }
         if (review != null && component == null) return
-        if (state.recognizing || state.saving || component?.nutritionReference != null ||
+        val search = state.databaseSearch
+        val replacementName = foodName.trim().takeIf {
+            it.isNotBlank() &&
+                search?.let { current ->
+                    current.componentId == componentId && current.replaceComponentName
+                } == true
+        }
+        if (state.recognizing || state.saving ||
             componentId in state.aiEstimatingComponentIds
         ) return
 
@@ -326,7 +333,7 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
                         step = current.copy(
                             result = current.result.copy(
                                 dishes = current.result.dishes.map { dish ->
-                                    dish.withReference(componentId, reference)
+                                    dish.withReference(componentId, reference, replacementName)
                                 },
                             ),
                         ),

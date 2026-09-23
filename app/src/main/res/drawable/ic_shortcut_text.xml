@@ -1,14 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- White circular launcher shortcut icon with the text-entry glyph scaled to 85%. -->
+<!-- High-resolution circular launcher shortcut icon with the Edit glyph scaled to 85%. -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item
-        android:width="20.4dp"
-        android:height="20.4dp"
+        android:width="108dp"
+        android:height="108dp"
         android:gravity="center"
         android:drawable="@drawable/shortcut_circle" />
     <item
-        android:width="11.56dp"
-        android:height="11.56dp"
+        android:width="61.2dp"
+        android:height="61.2dp"
         android:gravity="center"
         android:drawable="@drawable/ic_shortcut_text_glyph" />
 </layer-list>

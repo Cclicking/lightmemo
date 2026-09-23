@@ -103,19 +103,25 @@ fun ComponentDatabaseOverlay(
                 colors = ButtonDefaults.buttonColorsPrimary(),
             ) { Text(if (current.loading) "查询中…" else "查询数据库") }
             val canEstimate = onEstimateNutrition != null &&
-                (current.allowAiEstimate || (adding && current.componentId == NewComponentId))
+                (current.allowAiEstimate || current.replaceComponentName ||
+                    (adding && current.componentId == NewComponentId))
             if (canEstimate) {
+                val estimateWeightG = if (adding) {
+                    grams.toDoubleOrNull()?.takeIf { it.isFinite() && it > 0.0 } ?: 100.0
+                } else {
+                    current.estimatedWeightG?.takeIf { it.isFinite() && it > 0.0 } ?: 100.0
+                }
                 Button(
                     onClick = {
                         onEstimateNutrition.invoke(
                             current.componentId,
                             query,
-                            current.estimatedWeightG ?: 100.0,
+                            estimateWeightG,
                         ) { reference ->
                             onEstimateResolved?.invoke(
                                 current.componentId,
                                 query,
-                                current.estimatedWeightG ?: 100.0,
+                                estimateWeightG,
                                 reference,
                             )
                         }

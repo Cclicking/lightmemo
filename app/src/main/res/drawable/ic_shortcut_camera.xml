@@ -1,14 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- White circular launcher shortcut icon with a normalized camera glyph. -->
+<!-- High-resolution circular launcher shortcut icon with a normalized camera glyph. -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item
-        android:width="20.4dp"
-        android:height="20.4dp"
+        android:width="108dp"
+        android:height="108dp"
         android:gravity="center"
         android:drawable="@drawable/shortcut_circle" />
     <item
-        android:width="10.2dp"
-        android:height="10.2dp"
+        android:width="54dp"
+        android:height="54dp"
         android:gravity="center"
         android:drawable="@drawable/ic_shortcut_camera_glyph" />
 </layer-list>
