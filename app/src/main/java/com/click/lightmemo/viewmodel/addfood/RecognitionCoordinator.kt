@@ -37,7 +37,11 @@ internal class RecognitionCoordinator(
             RecognitionService.cancel(app, previous.request.id)
         }
         store.begin(request)
-        uiState.value = uiState.value.copy(canRetryRecognition = false, error = null)
+        uiState.value = uiState.value.copy(
+            canRetryRecognition = false,
+            error = null,
+            aiEstimatingComponentIds = emptySet(),
+        )
         notify(startMessage)
         try {
             RecognitionService.start(app, request)

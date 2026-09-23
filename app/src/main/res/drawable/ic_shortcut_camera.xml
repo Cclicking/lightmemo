@@ -7,8 +7,8 @@
         android:gravity="center"
         android:drawable="@drawable/shortcut_circle" />
     <item
-        android:width="12dp"
-        android:height="12dp"
+        android:width="10.2dp"
+        android:height="10.2dp"
         android:gravity="center"
         android:drawable="@drawable/ic_shortcut_camera_glyph" />
 </layer-list>

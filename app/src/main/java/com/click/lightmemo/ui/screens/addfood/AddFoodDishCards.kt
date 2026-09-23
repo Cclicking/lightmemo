@@ -68,7 +68,6 @@ internal fun DishResultCard(
     onWeightChange: (String, Double) -> Unit,
     onRemoveComponent: (String) -> Unit,
     onRemoveDish: (String) -> Unit,
-    onDatabaseSearch: (FoodComponent) -> Unit,
     onReplaceComponent: (FoodComponent) -> Unit,
     onReplaceDish: (RecognizedDish) -> Unit,
     enabled: Boolean,
@@ -169,7 +168,6 @@ internal fun DishResultCard(
                             component = component,
                             onWeightChange = onWeightChange,
                             onRemove = onRemoveComponent,
-                            onMatch = onDatabaseSearch,
                             onNameClick = onReplaceComponent,
                             selected = selectedComponentId == component.id,
                             enabled = enabled,
@@ -190,7 +188,6 @@ internal fun DishResultCard(
                                 component = component,
                                 onWeightChange = onWeightChange,
                                 onRemove = onRemoveComponent,
-                                onMatch = onDatabaseSearch,
                                 onNameClick = onReplaceComponent,
                                 selected = selectedComponentId == component.id,
                                 enabled = enabled,
@@ -217,7 +214,6 @@ fun ComponentResultRow(
     component: FoodComponent,
     onWeightChange: (String, Double) -> Unit,
     onRemove: (String) -> Unit,
-    onMatch: (FoodComponent) -> Unit,
     onNameClick: ((FoodComponent) -> Unit)? = null,
     selected: Boolean = false,
     enabled: Boolean = true,
@@ -251,8 +247,11 @@ fun ComponentResultRow(
             val ref = component.nutritionReference
             Text(
                 text = ref?.let {
-                    val source = if (it.dataType.contains("中国")) "中国食物成分表" else "USDA"
-                    "来自 $source #${it.sourceId}"
+                    when {
+                        it.dataType.contains("AI估算") -> "来自 AI 估算 · 仅供参考"
+                        it.dataType.contains("中国") -> "来自 中国食物成分表 #${it.sourceId}"
+                        else -> "来自 USDA #${it.sourceId}"
+                    }
                 } ?: "未匹配到营养数据",
                 style = MiuixTheme.textStyles.footnote2,
                 color = if (ref == null) MiuixTheme.colorScheme.error
@@ -260,19 +259,6 @@ fun ComponentResultRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            if (ref == null) {
-                Text(
-                    text = "手动匹配数据库",
-                    style = MiuixTheme.textStyles.footnote1,
-                    color = MiuixTheme.colorScheme.primary,
-                    modifier = Modifier.clickable(
-                        interactionSource = null,
-                        indication = null,
-                        enabled = enabled,
-                        onClick = { onMatch(component) },
-                    ),
-                )
-            }
         }
 
         // 克重

@@ -51,6 +51,29 @@ class FoodRecognitionClientTest {
     }
 
     @Test
+    fun nutritionEstimateIsParsedAsPer100gValues() {
+        val nutrition = client.parseNutritionEstimate(
+            """{"calories_kcal_per_100g":218.5,"protein_g_per_100g":7.2,"carbs_g_per_100g":31.0,"fat_g_per_100g":8.4}""",
+        )
+
+        assertEquals(218.5, nutrition.caloriesKcal, 0.01)
+        assertEquals(7.2, nutrition.proteinG, 0.01)
+        assertEquals(31.0, nutrition.carbsG, 0.01)
+        assertEquals(8.4, nutrition.fatG, 0.01)
+    }
+
+    @Test
+    fun nutritionEstimateRejectsNegativeValues() {
+        assertTrue(
+            runCatching {
+                client.parseNutritionEstimate(
+                    """{"calories_kcal_per_100g":-1,"protein_g_per_100g":0,"carbs_g_per_100g":0,"fat_g_per_100g":0}""",
+                )
+            }.isFailure,
+        )
+    }
+
+    @Test
     fun savedPromptIsUsedForRecognitionButDraftIsUsedForTest() = kotlinx.coroutines.runBlocking {
         val prompts = mutableListOf<String>()
         val http = okhttp3.OkHttpClient.Builder().addInterceptor { chain ->

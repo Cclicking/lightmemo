@@ -203,6 +203,10 @@ fun AddFoodRoute(
         onSelect = { componentId, query, _, reference ->
             viewModel.selectComponentReference(componentId, query, reference)
         },
+        onEstimateNutrition = { componentId, query, weightG, _ ->
+            viewModel.estimateComponentNutrition(componentId, query, weightG)
+        },
+        estimatingComponentId = state.aiEstimatingComponentIds.firstOrNull(),
     )
 
     Box(modifier = Modifier.fillMaxWidth()) {
@@ -335,6 +339,10 @@ fun AddFoodRoute(
                         onSave = { draft -> viewModel.saveManualDraft(draft, onDone) },
                         onHasContentChange = viewModel::setSecondaryHasContent,
                         onDraftSync = viewModel::syncManualDraft,
+                        onEstimateNutrition = { componentId, query, weightG, onResolved ->
+                            viewModel.estimateComponentNutrition(componentId, query, weightG, onResolved)
+                        },
+                        estimatingComponentId = state.aiEstimatingComponentIds.firstOrNull(),
                     )
                 }
 
@@ -397,6 +405,10 @@ fun AddFoodRoute(
                         },
                         onHasContentChange = viewModel::setSecondaryHasContent,
                         onDraftSync = viewModel::syncManualDraft,
+                        onEstimateNutrition = { componentId, query, weightG, onResolved ->
+                            viewModel.estimateComponentNutrition(componentId, query, weightG, onResolved)
+                        },
+                        estimatingComponentId = state.aiEstimatingComponentIds.firstOrNull(),
                     )
 
                     AnimatedOverlayDialog(
@@ -446,7 +458,6 @@ fun AddFoodRoute(
                         onWeightChange = viewModel::updateComponentWeight,
                         onRemoveComponent = viewModel::removeComponent,
                         onRemoveDish = viewModel::removeDish,
-                        onDatabaseSearch = { component -> viewModel.openComponentSearch(component) },
                         onReplaceComponent = { component ->
                             viewModel.openComponentSearch(component, replaceComponentName = true)
                         },

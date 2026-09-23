@@ -15,10 +15,13 @@ import android.graphics.Paint
 import android.util.TypedValue
 import android.graphics.Typeface
 import android.graphics.drawable.Icon
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.util.SizeF
 import android.widget.RemoteViews
 import androidx.core.net.toUri
 import androidx.core.os.BundleCompat
+import androidx.core.content.ContextCompat
 import com.click.lightmemo.EXTRA_SHORTCUT
 import com.click.lightmemo.FoodApp
 import com.click.lightmemo.MainActivity
@@ -37,11 +40,17 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
 
-enum class WidgetKind(val title: String, val layout: Int, val provider: Class<out FoodWidgetProvider>, val defaultAction: WidgetAction) {
-    STREAK("连续记录 · 2×2", R.layout.widget_streak, StreakWidget::class.java, WidgetAction.STATS),
-    INTAKE("今日摄入 · 2×2", R.layout.widget_intake, IntakeWidget::class.java, WidgetAction.TODAY),
-    SUGGESTION("饮食建议 · 2×1", R.layout.widget_suggestion, SuggestionWidget::class.java, WidgetAction.RECOMMEND),
-    QUICK("快捷记录 · 2×1", R.layout.widget_quick, QuickWidget::class.java, WidgetAction.CAMERA),
+enum class WidgetKind(
+    val title: String,
+    val layout: Int,
+    val provider: Class<out FoodWidgetProvider>,
+    val defaultAction: WidgetAction,
+    val defaultCornerRadiusDp: Float,
+) {
+    STREAK("连续记录 · 2×2", R.layout.widget_streak, StreakWidget::class.java, WidgetAction.STATS, WidgetPreferences.DEFAULT_CHART_RADIUS_DP),
+    INTAKE("今日摄入 · 2×2", R.layout.widget_intake, IntakeWidget::class.java, WidgetAction.TODAY, WidgetPreferences.DEFAULT_CHART_RADIUS_DP),
+    SUGGESTION("饮食建议 · 2×1", R.layout.widget_suggestion, SuggestionWidget::class.java, WidgetAction.RECOMMEND, WidgetPreferences.DEFAULT_STANDARD_RADIUS_DP),
+    QUICK("快捷记录 · 2×1", R.layout.widget_quick, QuickWidget::class.java, WidgetAction.CAMERA, WidgetPreferences.DEFAULT_STANDARD_RADIUS_DP),
 }
 
 class StreakWidget : FoodWidgetProvider()
@@ -83,6 +92,8 @@ object FoodWidgets {
     const val EXTRA_DESTINATION = "com.click.lightmemo.widget.DESTINATION"
     const val EXTRA_DISH = "com.click.lightmemo.widget.DISH"
     private val mutex = Mutex()
+    private const val BASE_OUTER_TOP_PX = 36
+    private const val BASE_OUTER_BOTTOM_PX = 42
 
     fun instances(context: Context): List<Pair<Int, WidgetKind>> {
         val manager = AppWidgetManager.getInstance(context)
@@ -90,6 +101,14 @@ object FoodWidgets {
             manager.getAppWidgetIds(ComponentName(context, kind.provider)).map { it to kind }
         }
     }
+
+    fun kindForId(context: Context, id: Int): WidgetKind? =
+        instances(context).firstOrNull { it.first == id }?.second
+            ?: AppWidgetManager.getInstance(context)
+                .getAppWidgetInfo(id)
+                ?.provider
+                ?.className
+                ?.let { providerName -> WidgetKind.entries.firstOrNull { it.provider.name == providerName } }
 
     suspend fun updateAll(context: Context, refreshId: Int? = null) = mutex.withLock {
         val instances = instances(context)
@@ -146,6 +165,25 @@ object FoodWidgets {
         val preferences = WidgetPreferences(context)
         val density = context.resources.displayMetrics.density
         val cardWidth = size.width * density
+        val (marginTopPx, marginBottomPx) = when (preferences.marginPreset(id)) {
+            WidgetMarginPreset.DESKTOP_4X6 -> BASE_OUTER_TOP_PX to BASE_OUTER_BOTTOM_PX
+            else -> (preferences.marginTop(id) * density).toInt() to
+                (preferences.marginBottom(id) * density).toInt()
+        }
+        val cardHeight = (size.height * density - marginTopPx - marginBottomPx).toInt().coerceAtLeast(1)
+        views.setViewPadding(R.id.widget_outer, 0, marginTopPx, 0, marginBottomPx)
+        views.setImageViewBitmap(
+            R.id.widget_background,
+            roundedBackground(
+                width = cardWidth.toInt().coerceAtLeast(1),
+                height = cardHeight,
+                radius = preferences.cornerRadius(id, kind) * density,
+                color = ContextCompat.getColor(
+                    context,
+                    if (kind == WidgetKind.QUICK) R.color.widget_quick else R.color.widget_surface,
+                ),
+            ),
+        )
         val chartCard = kind == WidgetKind.STREAK || kind == WidgetKind.INTAKE
         // Design reference: 283 px card, 28 px inset, 22 px title, 40 px value.
         val designScale = cardWidth / 283f
@@ -169,7 +207,7 @@ object FoodWidgets {
         }
         // Render at the actual display size; reserve the fixed outer launcher spacing.
         val width = (cardWidth - padding * 2).toInt().coerceAtLeast(1)
-        val height = (size.height * density - 78 - padding * 2 -
+        val height = (size.height * density - marginTopPx - marginBottomPx - padding * 2 -
             textHeight(22 * designScale) - textHeight(40 * designScale, true) - 4 * density)
             .toInt().coerceAtLeast(1)
         fun click(view: Int, slot: String, default: WidgetAction) {
@@ -217,13 +255,28 @@ object FoodWidgets {
         return views
     }
 
+    private fun roundedBackground(width: Int, height: Int, radius: Float, color: Int): Bitmap {
+        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val safeRadius = radius.coerceAtMost(minOf(width, height) / 2f)
+        Canvas(bitmap).drawRoundRect(
+            0f,
+            0f,
+            width.toFloat(),
+            height.toFloat(),
+            safeRadius,
+            safeRadius,
+            Paint(Paint.ANTI_ALIAS_FLAG).apply { this.color = color },
+        )
+        return bitmap
+    }
+
     private fun valueText(value: String, suffix: String) = SpannableString(value + suffix).apply {
         setSpan(StyleSpan(Typeface.BOLD), 0, value.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         setSpan(RelativeSizeSpan(.60f), value.length, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
     }
 
     fun pendingAction(context: Context, id: Int, slot: String, action: WidgetAction, dish: String? = null): PendingIntent {
-        val intent = Intent(context, if (action == WidgetAction.SETTINGS) WidgetSettingsActivity::class.java else MainActivity::class.java)
+        val intent = Intent(context, if (action == WidgetAction.SETTINGS) WidgetEditActivity::class.java else MainActivity::class.java)
             .setAction(Intent.ACTION_VIEW).setData("lightmemo-widget://action/$id/$slot/${action.route}".toUri())
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         if (action == WidgetAction.SETTINGS) intent.putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, id)

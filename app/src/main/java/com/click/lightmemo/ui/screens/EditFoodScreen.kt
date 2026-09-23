@@ -245,16 +245,53 @@ fun EditFoodScreen(
                     viewModel.closeComponentSearch()
                 }
             } else {
+                val selectedQuery = query.trim()
+                val replacingName = databaseSearch?.replaceComponentName == true && selectedQuery.isNotBlank()
                 val next = draft.components.map { component ->
                     if (component.id == componentId) {
-                        val selectedQuery = query.trim()
                         component.copy(
+                            name = if (replacingName) selectedQuery else component.name,
                             nutritionReference = reference,
-                            databaseQuery = if (reference.dataType.contains("中国")) {
+                            databaseQuery = if (replacingName && reference.dataType.contains("中国")) {
                                 selectedQuery
                             } else {
                                 reference.description
                             },
+                            chinaDatabaseQuery = selectedQuery,
+                        )
+                } else {
+                    component
+                }
+                }
+                draft = draft.copy(
+                    components = next,
+                    nutrition = completeComponentNutrition(next) ?: draft.nutrition,
+                )
+                viewModel.closeComponentSearch()
+            }
+        },
+        onEstimateNutrition = { componentId, query, weightG, onResolved ->
+            viewModel.estimateComponentNutrition(componentId, query, weightG, onResolved)
+        },
+        onEstimateResolved = { componentId, query, weight, reference ->
+            if (componentId == EditFoodViewModel.NewComponentId) {
+                val safeWeight = weight.takeIf { it.isFinite() && it > 0.0 } ?: 100.0
+                val next = draft.components + newFoodComponent(query, safeWeight, reference)
+                draft = draft.copy(
+                    components = next,
+                    grams = next.sumOf { it.estimatedWeightG },
+                    nutrition = completeComponentNutrition(next) ?: draft.nutrition,
+                )
+                gramsInput = draft.grams.formatEditNumber()
+            } else {
+                val selectedQuery = query.trim()
+                val replacingName = databaseSearch?.replaceComponentName == true && selectedQuery.isNotBlank()
+                val next = draft.components.map { component ->
+                    if (component.id == componentId) {
+                        component.copy(
+                            name = if (replacingName) selectedQuery else component.name,
+                            nutritionReference = reference,
+                            databaseQuery = reference.description,
                             chinaDatabaseQuery = selectedQuery,
                         )
                     } else {
@@ -265,9 +302,9 @@ fun EditFoodScreen(
                     components = next,
                     nutrition = completeComponentNutrition(next) ?: draft.nutrition,
                 )
-                viewModel.closeComponentSearch()
             }
         },
+        estimatingComponentId = state.aiEstimatingComponentId,
     )
 
     LazyColumn(
@@ -381,6 +418,9 @@ fun EditFoodScreen(
                             draft.components.forEach { component ->
                                 ComponentResultRow(
                                     component = component,
+                                    onNameClick = { clicked ->
+                                        if (!busy) viewModel.openComponentSearch(clicked)
+                                    },
                                     onWeightChange = { componentId, weight ->
                                         if (!busy) {
                                             val next = draft.components.map {
@@ -409,7 +449,6 @@ fun EditFoodScreen(
                                             if (next.isNotEmpty()) gramsInput = draft.grams.formatEditNumber()
                                         }
                                     },
-                                    onMatch = { if (!busy) viewModel.openComponentSearch(it) },
                                 )
                             }
                         }

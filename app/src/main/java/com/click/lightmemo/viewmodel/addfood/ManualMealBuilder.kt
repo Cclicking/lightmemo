@@ -30,12 +30,17 @@ internal fun buildManualMealRecognition(
         weightMinG = safeGrams,
         weightMaxG = safeGrams,
         confidence = 1.0,
-        nutritionReference = NutritionReference(
-            sourceId = "manual-recognition",
-            description = safeName,
-            dataType = "文字识别",
-            per100g = per100g,
-        ),
+        nutritionReference = per100g.takeIf { nutrition ->
+            nutrition.caloriesKcal > 0.0 || nutrition.proteinG > 0.0 ||
+                nutrition.carbsG > 0.0 || nutrition.fatG > 0.0
+        }?.let { resolvedNutrition ->
+            NutritionReference(
+                sourceId = "manual-recognition",
+                description = safeName,
+                dataType = "文字识别",
+                per100g = resolvedNutrition,
+            )
+        },
     )
     val dish = RecognizedDish(
         id = java.util.UUID.randomUUID().toString(),

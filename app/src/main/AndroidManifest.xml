@@ -61,7 +61,8 @@
         <activity android:name=".ui.secondary.CalorieTargetActivity" android:exported="false" />
         <activity android:name=".ui.secondary.DataManagementActivity" android:exported="false" />
         <activity android:name=".ui.secondary.FoodDatabaseActivity" android:exported="false" />
-        <activity android:name=".widget.WidgetSettingsActivity" android:exported="true">
+        <activity android:name=".widget.WidgetSettingsActivity" android:exported="false" />
+        <activity android:name=".widget.WidgetEditActivity" android:exported="true">
             <intent-filter><action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" /></intent-filter>
         </activity>
         <receiver android:name=".widget.StreakWidget" android:exported="false" android:label="@string/widget_streak_name">

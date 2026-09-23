@@ -24,6 +24,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.click.lightmemo.domain.MealType
 import com.click.lightmemo.domain.Nutrition
+import com.click.lightmemo.domain.NutritionReference
 import com.click.lightmemo.viewmodel.NewComponentId
 import com.click.lightmemo.viewmodel.newFoodComponent
 import com.click.lightmemo.domain.FoodLog
@@ -80,6 +81,8 @@ internal fun ManualEditContent(
     onSave: (FoodLog) -> Unit,
     onHasContentChange: (Boolean) -> Unit,
     onDraftSync: (ManualDraftSnapshot) -> Unit,
+    onEstimateNutrition: ((String, String, Double, (NutritionReference) -> Unit) -> Unit)? = null,
+    estimatingComponentId: String? = null,
 ) {
     val initialEpochDay = defaultDateEpochDay
     val componentGrams = initialComponents.sumOf { it.estimatedWeightG }
@@ -263,12 +266,14 @@ internal fun ManualEditContent(
                     onCloseComponentSearch()
                 }
             } else {
+                val selectedQuery = query.trim()
+                val replacingName = draftDatabaseSearch?.replaceComponentName == true && selectedQuery.isNotBlank()
                 val next = draft.components.map { component ->
                     if (component.id == componentId) {
-                        val selectedQuery = query.trim()
                         component.copy(
+                            name = if (replacingName) selectedQuery else component.name,
                             nutritionReference = reference,
-                            databaseQuery = if (reference.dataType.contains("中国")) {
+                            databaseQuery = if (replacingName && reference.dataType.contains("中国")) {
                                 selectedQuery
                             } else {
                                 reference.description
@@ -286,6 +291,39 @@ internal fun ManualEditContent(
                 onCloseComponentSearch()
             }
         },
+        onEstimateNutrition = onEstimateNutrition,
+        onEstimateResolved = { componentId, query, weight, reference ->
+            if (componentId == NewComponentId) {
+                val safeWeight = weight.takeIf { it.isFinite() && it > 0.0 } ?: 100.0
+                val next = draft.components + newFoodComponent(query, safeWeight, reference)
+                draft = draft.copy(
+                    components = next,
+                    grams = next.sumOf { it.estimatedWeightG },
+                    nutrition = completeComponentNutrition(next) ?: draft.nutrition,
+                )
+                gramsInput = draft.grams.formatEditNumber()
+            } else {
+                val selectedQuery = query.trim()
+                val replacingName = draftDatabaseSearch?.replaceComponentName == true && selectedQuery.isNotBlank()
+                val next = draft.components.map { component ->
+                    if (component.id == componentId) {
+                        component.copy(
+                            name = if (replacingName) selectedQuery else component.name,
+                            nutritionReference = reference,
+                            databaseQuery = reference.description,
+                            chinaDatabaseQuery = selectedQuery,
+                        )
+                    } else {
+                        component
+                    }
+                }
+                draft = draft.copy(
+                    components = next,
+                    nutrition = completeComponentNutrition(next) ?: draft.nutrition,
+                )
+            }
+        },
+        estimatingComponentId = estimatingComponentId,
     )
 
     LazyColumn(
@@ -403,6 +441,9 @@ internal fun ManualEditContent(
                             draft.components.forEach { component ->
                                 ComponentResultRow(
                                     component = component,
+                                    onNameClick = { clicked ->
+                                        if (!busy) onOpenComponentSearch(clicked)
+                                    },
                                     onWeightChange = { componentId, weight ->
                                         if (!busy) {
                                             val next = draft.components.map {
@@ -431,7 +472,6 @@ internal fun ManualEditContent(
                                             if (next.isNotEmpty()) gramsInput = draft.grams.formatEditNumber()
                                         }
                                     },
-                                    onMatch = { if (!busy) onOpenComponentSearch(it) },
                                 )
                             }
                         }

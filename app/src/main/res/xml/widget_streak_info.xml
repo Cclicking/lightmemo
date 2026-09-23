@@ -2,5 +2,5 @@
  android:minWidth="110dp" android:minHeight="110dp" android:targetCellWidth="2" android:targetCellHeight="2"
  android:resizeMode="none"
  android:updatePeriodMillis="1800000" android:initialLayout="@layout/widget_streak" android:previewLayout="@layout/widget_streak"
- android:widgetCategory="home_screen" android:configure="com.click.lightmemo.widget.WidgetSettingsActivity"
+ android:widgetCategory="home_screen" android:configure="com.click.lightmemo.widget.WidgetEditActivity"
  android:widgetFeatures="reconfigurable|configuration_optional" />

@@ -276,6 +276,70 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
         notify(if (replacementName == null) "已匹配：${reference.description}" else "已更换食物：$replacementName")
     }
 
+    /** 对数据库未收录的识别组成做一次显式 AI 营养估算。 */
+    fun estimateComponentNutrition(
+        componentId: String,
+        foodName: String,
+        weightG: Double,
+        onResolved: (NutritionReference) -> Unit = {},
+    ) {
+        val state = _uiState.value
+        val review = state.step as? AddStep.Review
+        val component = review?.result?.dishes
+            ?.flatMap { it.allComponents }
+            ?.firstOrNull { it.id == componentId }
+        if (review != null && component == null) return
+        if (state.recognizing || state.saving || component?.nutritionReference != null ||
+            componentId in state.aiEstimatingComponentIds
+        ) return
+
+        _uiState.value = state.copy(
+            aiEstimatingComponentIds = state.aiEstimatingComponentIds + componentId,
+        )
+        viewModelScope.launch {
+            try {
+                val appSettings = settings.value
+                val estimatedPer100g = foodApp.recognitionClient.estimateNutrition(
+                    baseUrl = appSettings.baseUrl,
+                    apiKey = appSettings.apiKey,
+                    model = appSettings.model,
+                    foodName = foodName.trim().ifBlank { component?.name ?: "食物" },
+                    estimatedWeightG = weightG.takeIf { it.isFinite() && it > 0.0 }
+                        ?: component?.estimatedWeightG
+                        ?: 100.0,
+                )
+                val reference = NutritionReference(
+                    sourceId = "ai-estimate-$componentId",
+                    description = foodName.trim().ifBlank { component?.name ?: "食物" },
+                    dataType = "AI估算（仅供参考）",
+                    per100g = estimatedPer100g,
+                )
+                val current = _uiState.value.step as? AddStep.Review
+                if (current != null) {
+                    _uiState.value = _uiState.value.copy(
+                        step = current.copy(
+                            result = current.result.copy(
+                                dishes = current.result.dishes.map { dish ->
+                                    dish.withReference(componentId, reference)
+                                },
+                            ),
+                        ),
+                    )
+                }
+                onResolved(reference)
+                notify("已完成 AI 营养估算，请确认结果")
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                notify(e.message ?: "AI 营养估算失败，请稍后重试")
+            } finally {
+                _uiState.value = _uiState.value.copy(
+                    aiEstimatingComponentIds = _uiState.value.aiEstimatingComponentIds - componentId,
+                )
+            }
+        }
+    }
+
     fun closeComponentSearch() {
         componentSearch.closeReview()
     }

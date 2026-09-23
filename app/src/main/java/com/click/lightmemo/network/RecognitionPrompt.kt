@@ -3,7 +3,7 @@ package com.click.lightmemo.network
 /** Stable keys persist overrides; defaults are shared by the editor and requests. */
 enum class RecognitionPrompt(val label: String, val requiresImage: Boolean = false) {
     IMAGE("图片识别", true), TEXT("文字识别"), REVIEW("图片复核", true),
-    NORMALIZE("食物名称标准化"), PORTION("份量估重");
+    NORMALIZE("食物名称标准化"), PORTION("份量估重"), NUTRITION_ESTIMATE("营养估算");
 
     val defaultText: String get() = when (this) {
         IMAGE -> DefaultRecognitionPrompts.SYSTEM_PROMPT
@@ -11,6 +11,7 @@ enum class RecognitionPrompt(val label: String, val requiresImage: Boolean = fal
         REVIEW -> DefaultRecognitionPrompts.REVIEW_PROMPT
         NORMALIZE -> DefaultRecognitionPrompts.NORMALIZE_PROMPT
         PORTION -> DefaultRecognitionPrompts.PORTION_PROMPT
+        NUTRITION_ESTIMATE -> DefaultRecognitionPrompts.NUTRITION_ESTIMATE_PROMPT
     }
 
     fun resolve(overrides: Map<String, String>): String =
@@ -83,5 +84,12 @@ internal object DefaultRecognitionPrompts {
                     根据食物、份数和补充说明估计总可食用克重，排除骨、壳、包装。
                     明确的总克重直接采用；每份克重乘份数，仅计算一次。无克重时按所述单位和常见份量估计，不把一份当作100克。
                     只输出单行 JSON：{"estimated_weight_g":数字}，不解释。
+    """.trimIndent()
+    val NUTRITION_ESTIMATE_PROMPT = """
+                    你是营养估算助手。根据食物名称、烹饪状态和用户提供的克重，估算该食物每100克可食用部分的营养值。
+                    只估算热量、蛋白质、碳水化合物和脂肪；不要把当前份量的总值填入每100克字段。
+                    结果仅供饮食记录参考，不要假装来自 USDA 或其他数据库。未知时按合理范围保守估计，不输出负数。
+                    只输出单行 JSON，不要 Markdown、单位或解释：
+                    {"calories_kcal_per_100g":数字,"protein_g_per_100g":数字,"carbs_g_per_100g":数字,"fat_g_per_100g":数字}
     """.trimIndent()
 }

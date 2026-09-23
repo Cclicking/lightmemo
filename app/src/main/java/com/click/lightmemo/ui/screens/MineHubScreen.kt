@@ -177,7 +177,7 @@ fun MineHubScreen(
                     )
                     ArrowPreference(
                         title = "小组件设置",
-                        summary = "桌面组件与各实例的点击动作",
+                        summary = "桌面组件与各实例的动作、圆角和边距",
                         onClick = { open(com.click.lightmemo.widget.WidgetSettingsActivity::class.java) },
                     )
                     ArrowPreference(

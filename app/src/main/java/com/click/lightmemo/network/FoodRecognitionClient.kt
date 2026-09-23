@@ -80,6 +80,14 @@ internal data class VisualComponentDto(
     @SerialName("needs_confirmation") val needsConfirmation: Boolean = false,
 )
 
+@Serializable
+internal data class NutritionEstimateDto(
+    @SerialName("calories_kcal_per_100g") val caloriesKcalPer100g: Double,
+    @SerialName("protein_g_per_100g") val proteinGPer100g: Double,
+    @SerialName("carbs_g_per_100g") val carbsGPer100g: Double,
+    @SerialName("fat_g_per_100g") val fatGPer100g: Double,
+)
+
 class FoodRecognitionClient(
     private val httpClient: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
@@ -136,6 +144,34 @@ class FoodRecognitionClient(
             ?: throw RecognitionException("无法估计该份数对应的克重")
     }
 
+    /** Estimates nutrition per 100g for a food that is absent from the bundled databases. */
+    suspend fun estimateNutrition(
+        baseUrl: String,
+        apiKey: String,
+        model: String,
+        foodName: String,
+        estimatedWeightG: Double,
+    ): com.click.lightmemo.domain.Nutrition = withContext(Dispatchers.IO) {
+        validateConfig(baseUrl, apiKey)
+        if (foodName.isBlank()) throw RecognitionException("食物名称为空")
+        if (!estimatedWeightG.isFinite() || estimatedWeightG <= 0.0) {
+            throw RecognitionException("食物重量无效")
+        }
+        val content = complete(
+            baseUrl,
+            apiKey,
+            model,
+            listOf(
+                promptMessage(RecognitionPrompt.NUTRITION_ESTIMATE),
+                textMessage(
+                    "user",
+                    "食物名称：${foodName.trim()}\n当前可食用重量：${estimatedWeightG.formatForPrompt()}克",
+                ),
+            ),
+        )
+        parseNutritionEstimate(extractJson(content))
+    }
+
     /** 纯文字快速识别：根据描述拆出完整菜品与组成，并估计克重。 */
     suspend fun recognizeFromText(
         baseUrl: String,
@@ -190,6 +226,7 @@ class FoodRecognitionClient(
             RecognitionPrompt.TEXT -> "200克熟白米饭，不加油，不含其他食物。"
             RecognitionPrompt.NORMALIZE -> "熟白米饭"
             RecognitionPrompt.PORTION -> "食物：熟白米饭\n份数：2份\n补充说明：每份可食用重量150克"
+            RecognitionPrompt.NUTRITION_ESTIMATE -> "食物名称：熟白米饭\n当前可食用重量：200克"
             RecognitionPrompt.IMAGE -> runtimePrompt("", "", "")
             RecognitionPrompt.REVIEW -> {
                 val baseline = complete(baseUrl, apiKey, model, listOf(
@@ -226,6 +263,20 @@ class FoodRecognitionClient(
                     grams != null && grams.isFinite() && kotlin.math.abs(grams - 300.0) < 0.01) {
                     "估重测试应返回数字300克（2份 × 150克）"
                 }
+            }
+            RecognitionPrompt.NUTRITION_ESTIMATE -> {
+                val value = strict.decodeFromString<NutritionEstimateDto>(response)
+                require(
+                    root.keys == setOf(
+                        "calories_kcal_per_100g",
+                        "protein_g_per_100g",
+                        "carbs_g_per_100g",
+                        "fat_g_per_100g",
+                    ) && value.caloriesKcalPer100g.isFinite() && value.caloriesKcalPer100g >= 0.0 &&
+                        value.proteinGPer100g.isFinite() && value.proteinGPer100g >= 0.0 &&
+                        value.carbsGPer100g.isFinite() && value.carbsGPer100g >= 0.0 &&
+                        value.fatGPer100g.isFinite() && value.fatGPer100g >= 0.0,
+                ) { "营养估算值必须是非负数字" }
             }
             else -> {
                 require(root.keys.containsAll(listOf("is_food_image", "dishes", "overall_confidence"))) { "缺少餐食必要字段" }
@@ -334,6 +385,24 @@ class FoodRecognitionClient(
         throw RecognitionException("视觉模型返回的结构不完整", e)
     }
 
+    internal fun parseNutritionEstimate(payload: String): com.click.lightmemo.domain.Nutrition = try {
+        val value = json.decodeFromString<NutritionEstimateDto>(payload)
+        require(
+            value.caloriesKcalPer100g.isFinite() && value.caloriesKcalPer100g >= 0.0 &&
+                value.proteinGPer100g.isFinite() && value.proteinGPer100g >= 0.0 &&
+                value.carbsGPer100g.isFinite() && value.carbsGPer100g >= 0.0 &&
+                value.fatGPer100g.isFinite() && value.fatGPer100g >= 0.0,
+        )
+        com.click.lightmemo.domain.Nutrition(
+            caloriesKcal = value.caloriesKcalPer100g,
+            proteinG = value.proteinGPer100g,
+            carbsG = value.carbsGPer100g,
+            fatG = value.fatGPer100g,
+        )
+    } catch (e: Exception) {
+        throw RecognitionException("营养估算结果无效", e)
+    }
+
     private suspend fun complete(
         baseUrl: String,
         apiKey: String,
@@ -391,6 +460,9 @@ class FoodRecognitionClient(
         用餐类型：${mealType.ifBlank { "未提供" }}
         空缺信息仅根据图片判断，不要擅自当作已知事实。严格返回系统规定的 JSON。
     """.trimIndent()
+
+    private fun Double.formatForPrompt(): String =
+        if (this % 1.0 == 0.0) toInt().toString() else "%.1f".format(java.util.Locale.ROOT, this)
 
 
 }

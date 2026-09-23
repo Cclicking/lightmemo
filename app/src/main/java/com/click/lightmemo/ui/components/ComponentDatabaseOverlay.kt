@@ -24,6 +24,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.click.lightmemo.domain.NutritionReference
+import com.click.lightmemo.viewmodel.NewComponentId
 import com.click.lightmemo.viewmodel.DatabaseSearchState
 import top.yukonga.miuix.kmp.basic.Button
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
@@ -42,6 +43,9 @@ fun ComponentDatabaseOverlay(
     onDismiss: () -> Unit,
     onSearch: (String, String) -> Unit,
     onSelect: (String, String, String, NutritionReference) -> Unit,
+    onEstimateNutrition: ((String, String, Double, (NutritionReference) -> Unit) -> Unit)? = null,
+    onEstimateResolved: ((String, String, Double, NutritionReference) -> Unit)? = null,
+    estimatingComponentId: String? = null,
 ) {
     var displayedState by remember { mutableStateOf<DatabaseSearchState?>(null) }
     LaunchedEffect(searchState) {
@@ -98,6 +102,39 @@ fun ComponentDatabaseOverlay(
                 modifier = Modifier.fillMaxWidth(),
                 colors = ButtonDefaults.buttonColorsPrimary(),
             ) { Text(if (current.loading) "查询中…" else "查询数据库") }
+            val canEstimate = onEstimateNutrition != null &&
+                (current.allowAiEstimate || (adding && current.componentId == NewComponentId))
+            if (canEstimate) {
+                Button(
+                    onClick = {
+                        onEstimateNutrition.invoke(
+                            current.componentId,
+                            query,
+                            current.estimatedWeightG ?: 100.0,
+                        ) { reference ->
+                            onEstimateResolved?.invoke(
+                                current.componentId,
+                                query,
+                                current.estimatedWeightG ?: 100.0,
+                                reference,
+                            )
+                        }
+                        onDismiss()
+                    },
+                    enabled = !current.loading &&
+                        query.isNotBlank() && estimatingComponentId != current.componentId,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(),
+                ) {
+                    Text(
+                        if (estimatingComponentId == current.componentId) {
+                            "AI 估算中…"
+                        } else {
+                            "AI 估算营养（仅供参考）"
+                        },
+                    )
+                }
+            }
             if (current.loading) LinearProgressIndicator(progress = null, modifier = Modifier.fillMaxWidth())
             current.error?.let { message ->
                 Text(message, style = MiuixTheme.textStyles.footnote2, color = MiuixTheme.colorScheme.error)

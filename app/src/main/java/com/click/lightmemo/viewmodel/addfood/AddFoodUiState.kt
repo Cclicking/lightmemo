@@ -70,6 +70,8 @@ data class AddFoodUiState(
     val estimatedPortionGrams: Double? = null,
     val presets: List<PresetFood> = DefaultPresetFoods,
     val databaseSearch: DatabaseSearchState? = null,
+    /** 当前正在请求 AI 营养估算的识别组成。 */
+    val aiEstimatingComponentIds: Set<String> = emptySet(),
     /** 手动录入（编辑记录式）页的成分数据库搜索 */
     val draftDatabaseSearch: DatabaseSearchState? = null,
     /** 二级页是否已有未保存内容（用于返回确认） */
@@ -96,6 +98,9 @@ data class DatabaseSearchState(
     val error: String? = null,
     val replaceComponentName: Boolean = false,
     val initialLookupQuery: String? = null,
+    /** 当前组成是否允许在共享查询弹窗中使用 AI 估算。 */
+    val allowAiEstimate: Boolean = false,
+    val estimatedWeightG: Double? = null,
     /** 更换食物时保留原来的匹配项，并始终置于普通检索结果之前。 */
     val pinnedReference: NutritionReference? = null,
 )

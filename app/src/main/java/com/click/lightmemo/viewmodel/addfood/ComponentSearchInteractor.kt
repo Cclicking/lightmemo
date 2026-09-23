@@ -26,14 +26,21 @@ internal class ComponentSearchInteractor(
     }
 
     fun openDraft(component: FoodComponent) {
-        val initialLookupQuery = component.databaseQuery.trim().ifBlank { component.name }
+        // Existing components are opened from their name as a replacement
+        // action, matching the recognition-result replacement flow.
+        val initialLookupQuery = component.name
+        val pinnedReference = component.nutritionReference
         searchJob?.cancel()
         uiState.value = uiState.value.copy(
             draftDatabaseSearch = DatabaseSearchState(
                 componentId = component.id,
                 query = component.name,
                 loading = true,
+                replaceComponentName = true,
                 initialLookupQuery = initialLookupQuery,
+                pinnedReference = pinnedReference,
+                allowAiEstimate = component.nutritionReference == null,
+                estimatedWeightG = component.estimatedWeightG,
             ),
         )
         search(
@@ -41,6 +48,7 @@ internal class ComponentSearchInteractor(
             displayQuery = component.name,
             lookupQuery = initialLookupQuery,
             keepInitialLookupQuery = true,
+            pinnedReference = pinnedReference,
             isDraft = true,
         )
     }
@@ -90,6 +98,8 @@ internal class ComponentSearchInteractor(
                 replaceComponentName = replaceComponentName,
                 initialLookupQuery = initialLookupQuery,
                 pinnedReference = pinnedReference,
+                allowAiEstimate = component.nutritionReference == null,
+                estimatedWeightG = component.estimatedWeightG,
             ),
         )
         search(

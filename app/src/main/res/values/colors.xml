@@ -2,6 +2,8 @@
 <resources>
     <color name="ic_launcher_background">#5693C9</color>
     <color name="ic_launcher_foreground">#5693C9</color>
+    <!-- Slightly darker than the launcher icon blue for shortcut backgrounds. -->
+    <color name="shortcut_background">#4F89BD</color>
     <!-- Matches the Miuix surface behind the home-page cards. -->
     <color name="splash_screen_background">#F7F7F7</color>
 </resources>

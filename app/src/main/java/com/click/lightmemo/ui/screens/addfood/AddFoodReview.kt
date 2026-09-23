@@ -77,7 +77,6 @@ internal fun ReviewContent(
     onWeightChange: (String, Double) -> Unit,
     onRemoveComponent: (String) -> Unit,
     onRemoveDish: (String) -> Unit,
-    onDatabaseSearch: (FoodComponent) -> Unit,
     onReplaceComponent: (FoodComponent) -> Unit,
     onReplaceDish: (String, String) -> Unit,
     error: String?,
@@ -195,7 +194,6 @@ internal fun ReviewContent(
                 onWeightChange = onWeightChange,
                 onRemoveComponent = onRemoveComponent,
                 onRemoveDish = onRemoveDish,
-                onDatabaseSearch = onDatabaseSearch,
                 onReplaceComponent = onReplaceComponent,
                 onReplaceDish = {
                     replacingDish = it
@@ -227,20 +225,22 @@ internal fun ReviewContent(
         }
 
         item {
-            RecognitionErrorRow(
-                error = error,
-                canRetry = canRetryRecognition,
-                onRetry = onRetryRecognition,
-            )
-            Button(
-                onClick = onSave,
-                enabled = !recognizing && result.dishes.isNotEmpty() && result.dishes.all { dish ->
-                    dish.allComponents.isNotEmpty()
-                },
-                modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColorsPrimary(),
-            ) {
-                Text("保存 ${result.dishes.size} 道菜")
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                RecognitionErrorRow(
+                    error = error,
+                    canRetry = canRetryRecognition,
+                    onRetry = onRetryRecognition,
+                )
+                Button(
+                    onClick = onSave,
+                    enabled = !recognizing && result.dishes.isNotEmpty() && result.dishes.all { dish ->
+                        dish.allComponents.isNotEmpty()
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColorsPrimary(),
+                ) {
+                    Text("保存 ${result.dishes.size} 道菜")
+                }
             }
         }
     }

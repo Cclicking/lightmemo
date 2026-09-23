@@ -26,6 +26,7 @@ data class EditFoodUiState(
     val saving: Boolean = false,
     val error: String? = null,
     val databaseSearch: DatabaseSearchState? = null,
+    val aiEstimatingComponentId: String? = null,
     val pinnedNames: Set<String> = emptySet(),
     val pinMessage: String? = null,
 )
@@ -129,15 +130,19 @@ class EditFoodViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun openComponentSearch(component: FoodComponent) {
-        // The component name is user-facing (usually Chinese), while the
-        // bundled USDA descriptions and the USDA API are searched in English.
-        val initialLookupQuery = component.databaseQuery.trim().ifBlank { component.name }
+        // Tapping an existing component is a replacement action, so search
+        // with the visible food name and let the selected result replace it.
+        val initialLookupQuery = component.name
         _uiState.value = _uiState.value.copy(
             databaseSearch = DatabaseSearchState(
                 componentId = component.id,
                 query = component.name,
                 loading = true,
+                replaceComponentName = true,
                 initialLookupQuery = initialLookupQuery,
+                pinnedReference = component.nutritionReference,
+                allowAiEstimate = component.nutritionReference == null,
+                estimatedWeightG = component.estimatedWeightG,
             ),
         )
         searchComponentDatabaseInternal(
@@ -188,7 +193,7 @@ class EditFoodViewModel(app: Application) : AndroidViewModel(app) {
                 it.copy(
                     query = displayQuery,
                     loading = false,
-                    results = emptyList(),
+                    results = withCurrentReference(componentId, emptyList()),
                     error = "请输入食物名称",
                     initialLookupQuery = if (keepInitialLookupQuery) it.initialLookupQuery else null,
                 )
@@ -213,7 +218,7 @@ class EditFoodViewModel(app: Application) : AndroidViewModel(app) {
                 updateDatabaseSearch(componentId) {
                     it.copy(
                         loading = false,
-                        results = results,
+                        results = withCurrentReference(componentId, results),
                         error = if (results.isEmpty()) "没有找到相近的食物" else null,
                     )
                 }
@@ -221,15 +226,75 @@ class EditFoodViewModel(app: Application) : AndroidViewModel(app) {
                 throw e
             } catch (e: Exception) {
                 updateDatabaseSearch(componentId) {
-                    it.copy(loading = false, results = emptyList(), error = e.message ?: "数据库查询失败")
+                    it.copy(
+                        loading = false,
+                        results = withCurrentReference(componentId, emptyList()),
+                        error = e.message ?: "数据库查询失败",
+                    )
                 }
             }
+        }
+    }
+
+    private fun withCurrentReference(
+        componentId: String,
+        results: List<NutritionReference>,
+    ): List<NutritionReference> {
+        val current = _uiState.value.databaseSearch
+            ?.takeIf { it.componentId == componentId }
+            ?.pinnedReference
+            ?: return results
+        return buildList {
+            add(current)
+            addAll(results.filterNot {
+                it.sourceId == current.sourceId && it.dataType == current.dataType
+            })
         }
     }
 
     fun closeComponentSearch() {
         databaseSearchJob?.cancel()
         _uiState.value = _uiState.value.copy(databaseSearch = null)
+    }
+
+    fun estimateComponentNutrition(
+        componentId: String,
+        foodName: String,
+        weightG: Double,
+        onResolved: (NutritionReference) -> Unit,
+    ) {
+        val state = _uiState.value
+        if (state.saving || state.aiEstimatingComponentId != null) return
+        _uiState.value = state.copy(
+            aiEstimatingComponentId = componentId,
+            error = null,
+        )
+        viewModelScope.launch {
+            try {
+                val appSettings = settings.value
+                val nutrition = foodApp.recognitionClient.estimateNutrition(
+                    baseUrl = appSettings.baseUrl,
+                    apiKey = appSettings.apiKey,
+                    model = appSettings.model,
+                    foodName = foodName.trim().ifBlank { "食物" },
+                    estimatedWeightG = weightG.takeIf { it.isFinite() && it > 0.0 } ?: 100.0,
+                )
+                onResolved(
+                    NutritionReference(
+                        sourceId = "ai-estimate-$componentId",
+                        description = foodName.trim().ifBlank { "食物" },
+                        dataType = "AI估算（仅供参考）",
+                        per100g = nutrition,
+                    ),
+                )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(error = e.message ?: "AI 营养估算失败，请稍后重试")
+            } finally {
+                _uiState.value = _uiState.value.copy(aiEstimatingComponentId = null)
+            }
+        }
     }
 
     fun save(updated: FoodLog, onSaved: () -> Unit) {

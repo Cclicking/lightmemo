@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Shared white circular background for launcher shortcut icons. -->
+<!-- Shared slightly darker blue circular background for launcher shortcut icons. -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="oval">
     <size
         android:width="24dp"
         android:height="24dp" />
-    <solid android:color="#FFFFFFFF" />
+    <solid android:color="@color/shortcut_background" />
 </shape>

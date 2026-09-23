@@ -18,6 +18,7 @@ import com.click.lightmemo.MainActivity
 import com.click.lightmemo.R
 import com.click.lightmemo.data.FoodImages
 import com.click.lightmemo.domain.MealRecognition
+import com.click.lightmemo.domain.Nutrition
 import com.click.lightmemo.domain.RecognitionStage
 import com.click.lightmemo.domain.splitDishes
 import com.click.lightmemo.network.RecognitionException
@@ -173,10 +174,9 @@ class RecognitionService : Service() {
                 )
                 updateStage(request, RecognitionStage.MATCHING)
                 val reference = nutritionDatabase.lookup(query, settings.foodDataCentralApiKey)
-                    ?: throw RecognitionException("USDA 数据库中未找到该食物，请尝试更具体的名称")
                 complete(
                     request,
-                    manualNutrition = reference.per100g * (grams / 100.0),
+                    manualNutrition = reference?.per100g?.times(grams / 100.0) ?: Nutrition(),
                 )
             }
 
@@ -200,10 +200,9 @@ class RecognitionService : Service() {
                 )
                 updateStage(request, RecognitionStage.MATCHING)
                 val reference = nutritionDatabase.lookup(query, settings.foodDataCentralApiKey)
-                    ?: throw RecognitionException("USDA 数据库中未找到该食物，请尝试更具体的名称")
                 complete(
                     request,
-                    manualNutrition = reference.per100g * (grams / 100.0),
+                    manualNutrition = reference?.per100g?.times(grams / 100.0) ?: Nutrition(),
                     estimatedPortionGrams = grams,
                 )
             }

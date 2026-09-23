@@ -3,6 +3,7 @@ package com.click.lightmemo.ui.components
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -16,6 +17,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.style.TextOverflow
 import top.yukonga.miuix.kmp.basic.BasicComponent
 import top.yukonga.miuix.kmp.basic.BasicComponentDefaults
 import top.yukonga.miuix.kmp.basic.DropdownArrowEndAction
@@ -77,8 +79,11 @@ fun DropdownPref(
                     text = it,
                     fontSize = 14.2.sp,
                     color = MiuixTheme.colorScheme.onSurfaceVariantActions,
-                    modifier = Modifier.padding(end = 8.dp),
+                    modifier = Modifier
+                        .widthIn(max = 152.dp)
+                        .padding(end = 8.dp),
                     maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
             DropdownArrowEndAction(
