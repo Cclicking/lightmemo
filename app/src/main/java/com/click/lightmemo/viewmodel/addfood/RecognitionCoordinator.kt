@@ -95,7 +95,7 @@ internal class RecognitionCoordinator(
             -> {
                 uiState.value = state.copy(
                     step = AddStep.PickSource,
-                    quickInput = request.text ?: state.quickInput,
+                    quickInput = request.text ?: request.foodName ?: state.quickInput,
                     recognizing = true,
                     recognitionStage = com.click.lightmemo.domain.RecognitionStage.PREPARING,
                 )
@@ -151,7 +151,7 @@ internal class RecognitionCoordinator(
                 }
                 uiState.value = baseState.copy(
                     step = step,
-                    quickInput = request.text ?: baseState.quickInput,
+                    quickInput = request.text ?: request.foodName ?: baseState.quickInput,
                     quantityMode = if (request.type == RecognitionRequestType.MANUAL_PORTIONS) {
                         QuantityMode.PORTIONS
                     } else {
@@ -202,7 +202,7 @@ internal class RecognitionCoordinator(
                     -> record.result?.let { result ->
                         uiState.value = baseState.copy(
                             step = AddStep.Review(record.imageUri, result),
-                            quickInput = request.text ?: baseState.quickInput,
+                            quickInput = request.text ?: request.foodName ?: baseState.quickInput,
                             recognizing = false,
                             recognitionStage = null,
                             replacingDishId = null,

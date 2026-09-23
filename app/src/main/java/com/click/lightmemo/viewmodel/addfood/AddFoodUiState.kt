@@ -120,4 +120,6 @@ fun mealTypeForMinuteOfDay(minuteOfDay: Int): MealType {
     }
 }
 
-val DefaultMealTags = listOf("无糖", "少油", "少盐", "清淡", "多菜", "无主食", "高蛋白", "外食")
+val DefaultMealTags = listOf("无糖", "少油", "少盐", "清淡", "两人份", "三人份", "外食")
+
+val MealPortionTags = setOf("两人份", "三人份")

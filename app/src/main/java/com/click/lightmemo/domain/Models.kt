@@ -111,6 +111,23 @@ data class MealRecognition(
     val nutritionMax: Nutrition get() = dishes.fold(Nutrition()) { total, dish -> total + dish.nutritionMax }
 }
 
+/** Converts a shared meal estimate into the single-person amount saved by the app. */
+fun MealRecognition.scaledForServing(servingCount: Double): MealRecognition {
+    if (!servingCount.isFinite() || servingCount <= 1.0) return this
+    return copy(dishes = dishes.map { it.scaledForServing(servingCount) })
+}
+
+private fun RecognizedDish.scaledForServing(servingCount: Double): RecognizedDish = copy(
+    components = components.map { component ->
+        component.copy(
+            estimatedWeightG = component.estimatedWeightG / servingCount,
+            weightMinG = component.weightMinG / servingCount,
+            weightMaxG = component.weightMaxG / servingCount,
+        )
+    },
+    children = children.map { it.scaledForServing(servingCount) },
+)
+
 /** Promote recognized sub-dishes without losing components attached to their parent. */
 fun MealRecognition.splitDishes(): MealRecognition = copy(
     dishes = dishes.flatMap { it.splitDishes() },

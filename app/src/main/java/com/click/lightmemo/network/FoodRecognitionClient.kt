@@ -457,6 +457,7 @@ class FoodRecognitionClient(
         分析这张食物照片。先识别完整菜品，再拆解主要组成并估计可食用重量。
         餐具尺寸：${plateSize.ifBlank { "未提供" }}
         用户补充说明：${userDescription.ifBlank { "未提供" }}
+        若补充说明包含“两人份”或“三人份”，请先估计图中整份食物的总可食用重量，应用会在识别完成后换算为单人份。
         用餐类型：${mealType.ifBlank { "未提供" }}
         空缺信息仅根据图片判断，不要擅自当作已知事实。严格返回系统规定的 JSON。
     """.trimIndent()

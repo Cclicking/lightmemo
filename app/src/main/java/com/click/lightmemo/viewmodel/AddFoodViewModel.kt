@@ -102,7 +102,13 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
 
     fun toggleTag(tag: String) {
         val current = _uiState.value.selectedTags
-        val next = if (tag in current) current - tag else current + tag
+        val next = if (tag in current) {
+            current - tag
+        } else if (tag in MealPortionTags) {
+            (current - MealPortionTags) + tag
+        } else {
+            current + tag
+        }
         _uiState.value = _uiState.value.copy(
             selectedTags = next,
             photoDescription = next.joinToString("、"),
@@ -714,6 +720,7 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
             RecognitionRequest(
                 type = RecognitionRequestType.TEXT,
                 text = text,
+                foodName = text,
                 mealType = state.mealType,
                 targetDateEpochDay = state.targetDateEpochDay,
                 mealMinuteOfDay = state.mealMinuteOfDay,
@@ -732,6 +739,7 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
             RecognitionRequest(
                 type = RecognitionRequestType.IMAGE,
                 imageUri = uri.toString(),
+                foodName = state.quickInput.trim().takeIf { it.isNotEmpty() },
                 mealType = state.mealType,
                 targetDateEpochDay = state.targetDateEpochDay,
                 mealMinuteOfDay = state.mealMinuteOfDay,

@@ -20,6 +20,7 @@ import com.click.lightmemo.data.FoodImages
 import com.click.lightmemo.domain.MealRecognition
 import com.click.lightmemo.domain.Nutrition
 import com.click.lightmemo.domain.RecognitionStage
+import com.click.lightmemo.domain.scaledForServing
 import com.click.lightmemo.domain.splitDishes
 import com.click.lightmemo.network.RecognitionException
 import com.click.lightmemo.network.userFacingRecognitionError
@@ -157,7 +158,11 @@ class RecognitionService : Service() {
         val nutritionDatabase = app.nutritionDatabase
         val userDescription = buildList {
             settings.systemBackground.takeIf { it.isNotBlank() }?.let { add("用户背景：$it") }
+            request.foodName?.takeIf { it.isNotBlank() }?.let { add("用户指定食物名称：$it") }
             request.selectedTags.joinToString("、").takeIf { it.isNotBlank() }?.let { add("本餐说明：$it") }
+            servingCountFor(request.selectedTags)?.let {
+                add("份量换算：当前记录按 $it 人份的单人份量保存，识别到的总可食用重量和营养在完成后按 1/$it 换算")
+            }
             request.note.takeIf { it.isNotBlank() }?.let { add("备注：$it") }
         }.joinToString("\n")
 
@@ -223,7 +228,13 @@ class RecognitionService : Service() {
                     throw RecognitionException("未能识别到可记录的食物，请换个说法")
                 }
                 updateStage(request, RecognitionStage.MATCHING)
-                complete(request, result = nutritionDatabase.enrich(visualResult, settings.foodDataCentralApiKey).splitDishes())
+                complete(
+                    request,
+                    result = nutritionDatabase
+                        .enrich(visualResult, settings.foodDataCentralApiKey)
+                        .splitDishes()
+                        .scaledForServing(servingCountFor(request.selectedTags) ?: 1.0),
+                )
             }
 
             RecognitionRequestType.IMAGE -> {
@@ -245,7 +256,10 @@ class RecognitionService : Service() {
                     throw RecognitionException("图片中没有识别到可记录的食物")
                 }
                 updateStage(request, RecognitionStage.MATCHING)
-                val result = nutritionDatabase.enrich(visualResult, settings.foodDataCentralApiKey).splitDishes()
+                val result = nutritionDatabase
+                    .enrich(visualResult, settings.foodDataCentralApiKey)
+                    .splitDishes()
+                    .scaledForServing(servingCountFor(request.selectedTags) ?: 1.0)
                 val savedImageUri = FoodImages.persistEncoded(this, base64).toString()
                 complete(request, result = result, imageUri = savedImageUri)
             }
@@ -301,6 +315,12 @@ class RecognitionService : Service() {
 
     private fun isCurrentTask(taskId: String): Boolean =
         app.recognitionTaskStore.state.value?.request?.id == taskId
+
+    private fun servingCountFor(tags: List<String>): Double? = when {
+        "三人份" in tags -> 3.0
+        "两人份" in tags -> 2.0
+        else -> null
+    }
 
     private suspend fun retainCompletedLiveNotification(
         request: RecognitionRequest,
