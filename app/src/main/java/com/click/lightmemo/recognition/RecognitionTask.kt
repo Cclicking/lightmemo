@@ -40,7 +40,10 @@ data class RecognitionRequest(
     val selectedTags: List<String> = emptyList(),
     val plateSize: String = "",
     val baseResult: MealRecognition? = null,
+    val baseOriginalResult: MealRecognition? = null,
     val replaceDishId: String? = null,
+    /** null asks on a hit; true reuses it; false forces a new recognition. */
+    val reuseImageCache: Boolean? = null,
 )
 
 @Serializable
@@ -48,6 +51,7 @@ enum class RecognitionTaskStatus {
     RUNNING,
     COMPLETED,
     FAILED,
+    AWAITING_CACHE_CONFIRMATION,
 }
 
 @Serializable
@@ -61,6 +65,10 @@ data class RecognitionTaskRecord(
     val estimatedPortionGrams: Double? = null,
     val error: String? = null,
     val updatedAtMillis: Long = System.currentTimeMillis(),
+    val path: com.click.lightmemo.domain.RecognitionPath = com.click.lightmemo.domain.RecognitionPath.FULL,
+    val modelCallCount: Int = 0,
+    val durationMillis: Long = 0,
+    val cacheReused: Boolean = false,
 )
 
 /** Process-safe handoff between the foreground service and the screen ViewModel. */
@@ -91,6 +99,10 @@ class RecognitionTaskStore(context: Context) {
         imageUri: String? = null,
         manualNutrition: Nutrition? = null,
         estimatedPortionGrams: Double? = null,
+        path: com.click.lightmemo.domain.RecognitionPath = com.click.lightmemo.domain.RecognitionPath.FULL,
+        modelCallCount: Int = 0,
+        durationMillis: Long = 0,
+        cacheReused: Boolean = false,
     ) {
         update(taskId) {
             it.copy(
@@ -101,6 +113,10 @@ class RecognitionTaskStore(context: Context) {
                 manualNutrition = manualNutrition,
                 estimatedPortionGrams = estimatedPortionGrams,
                 error = null,
+                path = path,
+                modelCallCount = modelCallCount,
+                durationMillis = durationMillis,
+                cacheReused = cacheReused,
                 updatedAtMillis = System.currentTimeMillis(),
             )
         }
@@ -114,6 +130,10 @@ class RecognitionTaskStore(context: Context) {
                 updatedAtMillis = System.currentTimeMillis(),
             )
         }
+    }
+
+    fun awaitCacheConfirmation(taskId: String) {
+        update(taskId) { it.copy(status = RecognitionTaskStatus.AWAITING_CACHE_CONFIRMATION) }
     }
 
     fun clear(taskId: String? = null) {

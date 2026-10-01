@@ -15,6 +15,8 @@ import com.click.lightmemo.domain.MealRecognition
 import com.click.lightmemo.domain.RecognizedDish
 import com.click.lightmemo.domain.NutritionReference
 import com.click.lightmemo.domain.RecognitionStage
+import com.click.lightmemo.domain.withMemoryPortion
+import com.click.lightmemo.domain.withoutAutomaticMemoryReferences
 import com.click.lightmemo.recognition.RecognitionRequest
 import com.click.lightmemo.recognition.RecognitionRequestType
 import com.click.lightmemo.recognition.RecognitionService
@@ -30,6 +32,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.collectLatest
 
 
 class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
@@ -66,7 +69,7 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
         viewModelScope.launch {
-            recognitionTaskStore.state.collect(recognition::sync)
+            recognitionTaskStore.state.collectLatest(recognition::sync)
         }
     }
 
@@ -229,6 +232,7 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
     fun saveManualDraft(draft: FoodLog, onSaved: () -> Unit = {}) {
         save(onSaved) {
             repo.insert(draft)
+            foodApp.personalFoodMemoryRepository.learnAfterSave(draft)
             recognitionTaskStore.clear()
             _uiState.value = _uiState.value.copy(
                 step = AddStep.PickSource,
@@ -762,10 +766,20 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
         recognition.retry()
     }
 
+    fun resolveImageReuse(reuse: Boolean) {
+        val request = _uiState.value.pendingImageReuse ?: return
+        recognition.start(request.copy(id = java.util.UUID.randomUUID().toString(), reuseImageCache = reuse),
+            if (reuse) "正在读取上次识别结果…" else "正在重新识别…")
+    }
+
+    fun dismissImageReuse() {
+        val request = _uiState.value.pendingImageReuse ?: return
+        recognition.clear(request.id)
+    }
+
     fun saveManual(name: String, grams: Double, nutrition: Nutrition, onSaved: () -> Unit = {}) {
         save(onSaved) {
-            repo.insert(
-                FoodLog(
+            val log = FoodLog(
                     name = name,
                     mealType = _uiState.value.mealType,
                     grams = grams,
@@ -774,8 +788,9 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
                     mealMinuteOfDay = _uiState.value.mealMinuteOfDay,
                     note = _uiState.value.note.takeIf { it.isNotBlank() },
                     mealTags = _uiState.value.selectedTags.toList(),
-                ),
             )
+            repo.insert(log)
+            foodApp.personalFoodMemoryRepository.learnAfterSave(log)
             recognitionTaskStore.clear()
             _uiState.value = _uiState.value.copy(step = AddStep.PickSource, error = null)
             notify("食物已保存")
@@ -840,6 +855,7 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
                 selectedTags = state.selectedTags.toList(),
                 plateSize = state.plateSize,
                 baseResult = review.result,
+                baseOriginalResult = review.originalResult,
                 replaceDishId = dishId,
             ),
             startMessage = "正在重新识别菜品…",
@@ -847,6 +863,7 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun saveRecognized(result: MealRecognition, imageUri: String?, onSaved: () -> Unit = {}) {
+        val originalResult = (_uiState.value.step as? AddStep.Review)?.originalResult
         save(onSaved) {
             require(result.dishes.isNotEmpty()) { "请先添加食物" }
             require(result.dishes.all { dish -> dish.allComponents.all { it.nutritionReference != null } }) {
@@ -860,7 +877,7 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
             val savedImageUri = imageUri?.let { source ->
                 FoodImages.persist(foodApp, Uri.parse(source)).toString()
             }
-            repo.insertAll(result.dishes.map { dish ->
+            val logs = result.dishes.map { dish ->
                     FoodLog(
                         name = dish.name,
                         mealType = meal,
@@ -873,7 +890,19 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
                         note = note,
                         mealTags = tags,
                     )
-            })
+            }
+            repo.insertAll(logs)
+            originalResult?.let {
+                foodApp.diagnosticsRepository.recordSafely(com.click.lightmemo.domain.DiagnosticEvents.reviewed(
+                    java.time.LocalDate.now().toEpochDay(), it, result))
+            }
+
+            logs.zip(result.dishes).forEach { (log, dish) ->
+                val original = originalResult?.dishes?.find { it.id == dish.id }?.let {
+                    log.copy(name = it.name, grams = it.grams, nutrition = it.nutrition, components = it.allComponents)
+                }
+                foodApp.personalFoodMemoryRepository.learnAfterSave(log, original)
+            }
             recognitionTaskStore.clear()
             _uiState.value = _uiState.value.copy(
                 step = AddStep.PickSource,
@@ -884,6 +913,35 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
             )
             notify("已保存 ${result.dishes.size} 道菜")
         }
+    }
+
+    fun acceptMemorySuggestion(dishId: String) {
+        val state = _uiState.value
+        if (state.recognizing || state.saving) return
+        val review = state.step as? AddStep.Review ?: return
+        val suggestion = review.memorySuggestions.find { it.dishId == dishId } ?: return
+        if (!suggestion.match.canApply) return
+        _uiState.value = state.copy(step = review.copy(
+            result = review.result.copy(dishes = review.result.dishes.map {
+                if (it.id == dishId) it.withMemoryPortion(suggestion.match.memory) else it
+            }),
+            memorySuggestions = review.memorySuggestions.map { if (it.dishId == dishId) it.copy(accepted = true) else it },
+        ))
+    }
+
+    fun ignoreMemorySuggestion(dishId: String) {
+        val state = _uiState.value
+        if (state.recognizing || state.saving) return
+        val review = state.step as? AddStep.Review ?: return
+        val rawDish = review.unassistedResult.dishes.find { it.id == dishId } ?: return
+        val memory = review.memorySuggestions.find { it.dishId == dishId }?.match?.memory ?: return
+        // Ignore is offered before acceptance and restores only automatic reference changes.
+        // Weight/name/component edits made since recognition remain intact.
+        _uiState.value = state.copy(step = review.copy(
+            result = review.result.copy(dishes = review.result.dishes.map { if (it.id == dishId) it.withoutAutomaticMemoryReferences(rawDish, memory) else it }),
+            originalResult = review.originalResult.copy(dishes = review.originalResult.dishes.map { if (it.id == dishId) it.withoutAutomaticMemoryReferences(rawDish, memory) else it }),
+            memorySuggestions = review.memorySuggestions.filterNot { it.dishId == dishId },
+        ))
     }
 
     private fun save(onSaved: () -> Unit, block: suspend () -> Unit) {

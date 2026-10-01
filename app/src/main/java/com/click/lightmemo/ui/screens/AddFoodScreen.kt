@@ -76,6 +76,18 @@ fun AddFoodRoute(
     val settings by viewModel.settings.collectAsState()
     val context = LocalContext.current
     val gallerySaveScope = rememberCoroutineScope()
+    AnimatedOverlayDialog(
+        show = state.pendingImageReuse != null,
+        title = "使用上次结果？",
+        summary = "这张图片刚刚识别过，是否使用上次结果？仍可核对和修改食物与份量。",
+        onDismissRequest = viewModel::dismissImageReuse,
+    ) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Button(onClick = { viewModel.resolveImageReuse(false) }, modifier = Modifier.weight(1f)) { Text("重新识别") }
+            Button(onClick = { viewModel.resolveImageReuse(true) }, modifier = Modifier.weight(1f),
+                colors = ButtonDefaults.buttonColorsPrimary()) { Text("使用上次结果") }
+        }
+    }
 
     // 二级页：系统返回键回上级；有内容时先确认
     val isSecondaryStep = state.step !is AddStep.PickSource
@@ -470,6 +482,9 @@ fun AddFoodRoute(
                         palette = palette,
                         canRetryRecognition = state.canRetryRecognition,
                         onRetryRecognition = viewModel::retryRecognition,
+                        memorySuggestions = step.memorySuggestions,
+                        onAcceptMemory = viewModel::acceptMemorySuggestion,
+                        onIgnoreMemory = viewModel::ignoreMemorySuggestion,
                     )
                 }
             }

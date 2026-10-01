@@ -16,6 +16,9 @@ sealed interface AddStep {
     data class Review(
         val imageUri: String?,
         val result: MealRecognition,
+        val originalResult: MealRecognition = result,
+        val unassistedResult: MealRecognition = result,
+        val memorySuggestions: List<com.click.lightmemo.domain.PersonalFoodSuggestion> = emptyList(),
     ) : AddStep
 
     /** 文字录入：名称 / 计量 / 自动识别 / 手动录入入口 */
@@ -50,6 +53,7 @@ enum class QuantityMode(val label: String) {
 data class AddFoodUiState(
     val step: AddStep = AddStep.PickSource,
     val recognizing: Boolean = false,
+    val pendingImageReuse: com.click.lightmemo.recognition.RecognitionRequest? = null,
     val recognitionStage: RecognitionStage? = null,
     val replacingDishId: String? = null,
     val saving: Boolean = false,

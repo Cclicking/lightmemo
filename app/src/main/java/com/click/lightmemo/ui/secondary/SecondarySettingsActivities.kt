@@ -35,6 +35,8 @@ import com.click.lightmemo.ui.screens.PromptSettingsScreen
 import com.click.lightmemo.ui.screens.AppearanceSettingsScreen
 import com.click.lightmemo.ui.screens.CalorieTargetScreen
 import com.click.lightmemo.ui.screens.DataManagementScreen
+import com.click.lightmemo.ui.screens.PersonalFoodMemoryScreen
+import com.click.lightmemo.viewmodel.PersonalFoodMemoryViewModel
 import com.click.lightmemo.ui.screens.FoodDatabaseScreen
 import com.click.lightmemo.ui.screens.EditFoodScreen
 import com.click.lightmemo.ui.screens.PersonalInfoScreen
@@ -253,6 +255,16 @@ class DataManagementActivity : SecondarySettingsActivity() {
     }
 }
 
+class PersonalFoodMemoryActivity : SecondarySettingsActivity() {
+    override val pageTitle = "个人食物记忆"
+
+    @Composable
+    override fun PageContent(settingsVm: SettingsViewModel, backupVm: BackupViewModel, contentPadding: PaddingValues, scrollBehavior: SharedScrollBehavior) {
+        val memoryVm: PersonalFoodMemoryViewModel = viewModel()
+        PersonalFoodMemoryScreen(memoryVm, contentPadding, scrollBehavior, rememberLazyListState())
+    }
+}
+
 class FoodDatabaseActivity : SecondarySettingsActivity() {
     override val pageTitle = "数据库浏览"
     override val hasPageEndAction = true
@@ -307,6 +319,16 @@ class AppearanceSettingsActivity : SecondarySettingsActivity() {
             scrollBehavior = scrollBehavior,
             listState = rememberLazyListState(),
         )
+    }
+}
+
+class DiagnosticsActivity : SecondarySettingsActivity() {
+    override val pageTitle = "诊断信息"
+    @Composable
+    override fun PageContent(settingsVm: SettingsViewModel, backupVm: BackupViewModel,
+        contentPadding: PaddingValues, scrollBehavior: SharedScrollBehavior) {
+        val diagnosticsVm: com.click.lightmemo.viewmodel.DiagnosticsViewModel = viewModel()
+        com.click.lightmemo.ui.screens.DiagnosticsScreen(diagnosticsVm, contentPadding, scrollBehavior, rememberLazyListState())
     }
 }
 

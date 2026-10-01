@@ -1555,6 +1555,13 @@ fun AboutScreen(
                 }
 
                 Spacer(Modifier.height(20.dp))
+                SmallTitle(text = "本地统计", modifier = Modifier.offset(x = (-16).dp))
+                Card(cornerRadius = 20.dp, modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(0.dp)) {
+                    ArrowPreference(title = "诊断信息", summary = "近 30 天识别、营养匹配与推荐统计",
+                        onClick = { context.startActivity(Intent(context, com.click.lightmemo.ui.secondary.DiagnosticsActivity::class.java)) })
+                }
+
+                Spacer(Modifier.height(20.dp))
                 SmallTitle(
                     text = "开源",
                     modifier = Modifier.offset(x = (-16).dp),

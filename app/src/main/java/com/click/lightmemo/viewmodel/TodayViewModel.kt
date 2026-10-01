@@ -28,6 +28,17 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.catch
+import com.click.lightmemo.data.DefaultRecommendationFoods
+import com.click.lightmemo.data.DefaultPresetFoods
+import com.click.lightmemo.data.RecommendationFeedback
+import com.click.lightmemo.data.RecommendationFeedbackEntity
+import com.click.lightmemo.domain.DishRecommendation
+import com.click.lightmemo.domain.FoodPreference
+import com.click.lightmemo.domain.RecommendationContext
+import com.click.lightmemo.domain.PairingContext
+import com.click.lightmemo.domain.normalizeFoodName
+import com.click.lightmemo.domain.toFoodLog
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlinx.coroutines.withContext
@@ -204,6 +215,7 @@ class TodayViewModel(app: Application) : AndroidViewModel(app) {
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class StatsViewModel(app: Application) : AndroidViewModel(app) {
+    private val foodApp = app as FoodApp
     private val repo = (app as FoodApp).foodLogRepository
     val readError: StateFlow<String?> = repo.readError
     private val settingsRepo = (app as FoodApp).settingsRepository
@@ -213,10 +225,17 @@ class StatsViewModel(app: Application) : AndroidViewModel(app) {
     data class RecommendationSession(
         val hasResult: Boolean = false,
         val dishName: String? = null,
+        val recentResults: List<String> = emptyList(),
+        val savedDishName: String? = null,
     )
 
     private val _recommendationSession = MutableStateFlow(RecommendationSession())
     val recommendationSession: StateFlow<RecommendationSession> = _recommendationSession
+    val recommendationOperation = MutableStateFlow(RecommendationOperation())
+    private val recommendationRepo = foodApp.recommendationRepository
+    val recommendationFeedback: StateFlow<List<RecommendationFeedbackEntity>> = recommendationRepo.feedback
+        .catch { emit(emptyList()) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     data class StatsUiState(
         val rangeDays: Int = 7,
@@ -230,6 +249,7 @@ class StatsViewModel(app: Application) : AndroidViewModel(app) {
         val foodPresets: List<PresetFood> = emptyList(),
         val recordedFoods: List<PresetFood> = emptyList(),
         val foodFrequency: Map<String, Int> = emptyMap(),
+        val foodMealFrequency: Map<MealType, Map<String, Int>> = emptyMap(),
         val recentFoodNames: Set<String> = emptySet(),
         val mealCalories: Map<MealType, Double> = emptyMap(),
         val maxKcal: Double = 0.0,
@@ -370,6 +390,9 @@ class StatsViewModel(app: Application) : AndroidViewModel(app) {
             foodPresets = foodPresets,
             recordedFoods = recordedFoods,
             foodFrequency = foodFrequency,
+            foodMealFrequency = allLogs.groupBy { it.mealType }.mapValues { (_, entries) ->
+                entries.groupingBy { normalizeFoodName(it.name) }.eachCount()
+            },
             recentFoodNames = recentFoodNames,
             mealCalories = mealCalories,
             maxKcal = daily.maxOfOrNull { it.total.caloriesKcal } ?: 0.0,
@@ -400,9 +423,95 @@ class StatsViewModel(app: Application) : AndroidViewModel(app) {
         _recommendationSession.value = RecommendationSession(
             hasResult = true,
             dishName = dishName,
+            recentResults = (_recommendationSession.value.recentResults + dishName).takeLast(3),
         )
     }
+
+    fun recommendationContext(state: StatsUiState): RecommendationContext {
+        val time = LocalTime.now()
+        val meal = mealTypeForMinuteOfDay(time.hour * 60 + time.minute)
+        return RecommendationContext(
+            presets = DefaultRecommendationFoods + DefaultPresetFoods + state.foodPresets,
+            recordedFoods = state.recordedFoods, todayNutrition = state.todayNutrition,
+            target = state.target.toDouble(), proteinTarget = state.proteinTarget.toDouble(),
+            carbsTarget = state.carbsTarget.toDouble(), fatTarget = state.fatTarget.toDouble(),
+            foodFrequency = state.foodFrequency.entries.groupBy { normalizeFoodName(it.key) }
+                .mapValues { (_, rows) -> rows.sumOf { it.value } },
+            recentFoodNames = state.recentFoodNames.mapTo(mutableSetOf(), ::normalizeFoodName),
+            mealFrequency = state.foodMealFrequency[meal].orEmpty(),
+            preferences = recommendationFeedback.value.associate { row -> row.foodName to FoodPreference(
+                row.likedCount, row.acceptedCount, row.dislikedCount, row.skippedCount, row.lastRejectedAtMillis,
+            ) },
+        )
+    }
+
+    fun clearRecommendationMessage() { recommendationOperation.update { it.copy(message = null) } }
+
+    fun recommendationOpened() {
+        foodApp.recordDiagnostic(com.click.lightmemo.data.LocalDiagnosticsEntity(LocalDate.now().toEpochDay(), recommendationOpenCount = 1))
+    }
+
+    fun pairingContext(state: StatsUiState, mainAlreadyRecorded: Boolean): PairingContext = PairingContext(
+        target = Nutrition(state.target.toDouble(), state.proteinTarget.toDouble(), state.carbsTarget.toDouble(), state.fatTarget.toDouble()),
+        todayNutrition = state.todayNutrition,
+        userPresets = state.foodPresets.filterNot { it in DefaultPresetFoods },
+        recordedFoods = state.recordedFoods,
+        foodFrequency = state.foodFrequency,
+        mainAlreadyRecorded = mainAlreadyRecorded,
+    )
+
+    fun completeRecommendationPick(name: String, skippedName: String?) {
+        foodApp.recordDiagnostic(com.click.lightmemo.data.LocalDiagnosticsEntity(LocalDate.now().toEpochDay(),
+            recommendationDrawCount = 1, recommendationSkipCount = if (skippedName != null && skippedName != name) 1 else 0))
+        saveRecommendationResult(name)
+        clearRecommendationMessage()
+        if (skippedName != null && skippedName != name) {
+            viewModelScope.launch {
+                try { recommendationRepo.record(skippedName, RecommendationFeedback.SKIPPED) }
+                catch (e: CancellationException) { throw e }
+                catch (_: Exception) { recommendationOperation.update { it.copy(message = "推荐已更新，偏好暂未保存") } }
+            }
+        }
+    }
+
+    fun likeRecommendation(name: String) {
+        if (recommendationOperation.value.busy) return
+        recommendationOperation.value = RecommendationOperation(busy = true)
+        viewModelScope.launch {
+            try {
+                val liked = recommendationRepo.toggleLike(name)
+                if (liked) foodApp.diagnosticsRepository.recordSafely(com.click.lightmemo.data.LocalDiagnosticsEntity(
+                    LocalDate.now().toEpochDay(), recommendationLikeCount = 1))
+                recommendationOperation.value = RecommendationOperation(message = if (liked) "已记住你的喜欢" else "已取消喜欢")
+            } catch (e: CancellationException) { throw e }
+            catch (_: Exception) { recommendationOperation.value = RecommendationOperation(message = "偏好保存失败，请重试") }
+            finally { recommendationOperation.update { it.copy(busy = false) } }
+        }
+    }
+
+    fun acceptRecommendation(dish: DishRecommendation, grams: Double, meal: MealType) {
+        if (recommendationOperation.value.busy || recommendationSession.value.savedDishName == dish.preset.name) return
+        recommendationOperation.value = RecommendationOperation(busy = true)
+        viewModelScope.launch {
+            try {
+                val time = LocalTime.now()
+                val log = dish.toFoodLog(grams, meal, LocalDate.now().toEpochDay(), time.hour * 60 + time.minute, System.currentTimeMillis())
+                val saved = recommendationRepo.saveAccepted(log, repo)
+                foodApp.diagnosticsRepository.recordSafely(com.click.lightmemo.data.LocalDiagnosticsEntity(
+                    LocalDate.now().toEpochDay(), recommendationAcceptCount = 1))
+                _recommendationSession.update { it.copy(savedDishName = dish.preset.name) }
+                foodApp.personalFoodMemoryRepository.learnAfterSave(log, log.copy(
+                    grams = dish.preset.defaultGrams, nutrition = dish.nutrition, components = dish.preset.components,
+                ))
+                recommendationOperation.value = RecommendationOperation(message = if (saved.feedbackSaved) "已记录${dish.preset.name}" else "饮食已记录，偏好暂未保存")
+            } catch (e: CancellationException) { throw e }
+            catch (e: Exception) { recommendationOperation.value = RecommendationOperation(message = "记录失败：${e.message.orEmpty()}") }
+            finally { recommendationOperation.update { it.copy(busy = false) } }
+        }
+    }
 }
+
+data class RecommendationOperation(val busy: Boolean = false, val message: String? = null)
 
 data class IntakeTimePoint(
     val minuteOfDay: Int,

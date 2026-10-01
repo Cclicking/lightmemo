@@ -9,6 +9,7 @@ import java.util.Properties
 
 tasks.withType<Test>().configureEach {
     systemProperty("food.assets", file("src/main/assets").absolutePath)
+    systemProperty("food.schemas", file("schemas").absolutePath)
 }
 
 val localProperties = Properties().apply {
@@ -22,7 +23,7 @@ fun localProp(key: String): String? =
     localProperties.getProperty(key)?.takeIf { it.isNotBlank() }
         ?: System.getenv(key)?.takeIf { it.isNotBlank() }
 
-val appVersionName = "1.4.4"
+val appVersionName = "1.5.0"
 
 android {
     namespace = "com.click.lightmemo"
@@ -32,7 +33,7 @@ android {
         applicationId = "com.click.lightmemo"
         minSdk = 31
         targetSdk = 37
-        versionCode = 32
+        versionCode = 34
         versionName = appVersionName
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
@@ -95,6 +96,10 @@ androidComponents {
             output.outputFileName.set("Lightmemo-v${appVersionName}.apk")
         }
     }
+}
+
+ksp {
+    arg("room.schemaLocation", file("schemas").absolutePath)
 }
 
 dependencies {

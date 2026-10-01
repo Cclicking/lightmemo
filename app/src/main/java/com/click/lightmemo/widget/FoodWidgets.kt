@@ -31,8 +31,15 @@ import com.click.lightmemo.data.PresetFood
 import com.click.lightmemo.domain.FoodLog
 import com.click.lightmemo.domain.Nutrition
 import com.click.lightmemo.domain.RecordingHeatmap
-import com.click.lightmemo.ui.screens.buildRecommendations
-import com.click.lightmemo.viewmodel.StatsViewModel
+import com.click.lightmemo.domain.RecommendationEngine
+import com.click.lightmemo.domain.RecommendationContext
+import com.click.lightmemo.domain.DishRecommendation
+import com.click.lightmemo.domain.FoodPreference
+import com.click.lightmemo.domain.normalizeFoodName
+import com.click.lightmemo.data.DefaultRecommendationFoods
+import com.click.lightmemo.data.DefaultPresetFoods
+import com.click.lightmemo.data.RecommendationFeedbackEntity
+import kotlinx.coroutines.flow.catch
 import java.time.LocalDate
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -121,13 +128,14 @@ object FoodWidgets {
         val today = LocalDate.now()
         val totals = logs.groupBy { it.dateEpochDay }.mapValues { (_, items) -> items.fold(Nutrition()) { a, b -> a + b.nutrition } }
         val total = totals[today.toEpochDay()] ?: Nutrition()
-        val candidates = recommendations(logs, settings, presets, total)
+        val feedback = app.recommendationRepository.feedback.catch { emit(emptyList()) }.first()
+        val candidates = recommendations(logs, settings, presets, total, feedback)
         val manager = AppWidgetManager.getInstance(context)
         val preferences = WidgetPreferences(context)
         instances.forEach { (id, kind) ->
             var dish = preferences.dish(id, today.toEpochDay())
-            if (kind == WidgetKind.SUGGESTION && (refreshId == id || dish !in candidates)) {
-                dish = candidates.filterNot { it == dish }.randomOrNull() ?: candidates.firstOrNull() ?: "打开饮食推荐"
+            if (kind == WidgetKind.SUGGESTION && (refreshId == id || candidates.none { it.preset.name == dish })) {
+                dish = RecommendationEngine.pick(candidates, listOfNotNull(dish))?.preset?.name ?: "打开饮食推荐"
                 preferences.setDish(id, today.toEpochDay(), dish)
             }
             val options = manager.getAppWidgetOptions(id)
@@ -143,19 +151,22 @@ object FoodWidgets {
         }
     }
 
-    private fun recommendations(logs: List<FoodLog>, settings: AppSettings, presets: List<PresetFood>, total: Nutrition): List<String> {
+    private fun recommendations(logs: List<FoodLog>, settings: AppSettings, presets: List<PresetFood>, total: Nutrition, feedback: List<RecommendationFeedbackEntity>): List<DishRecommendation> {
         val recorded = logs.filter { it.name.isNotBlank() }.groupBy { it.name.trim() }.map { (name, items) ->
             val latest = items.maxBy { it.createdAtMillis }
             PresetFood("recorded:$name", name, latest.grams.coerceAtLeast(1.0), "历史记录", latest.nutrition, latest.components)
         }
-        return buildRecommendations(StatsViewModel.StatsUiState(
-            todayNutrition = total, target = settings.dailyCalorieTarget,
-            proteinTarget = settings.effectiveProteinG.takeIf { it > 0 } ?: 120f,
-            carbsTarget = settings.effectiveCarbsG.takeIf { it > 0 } ?: 250f,
-            fatTarget = settings.effectiveFatG.takeIf { it > 0 } ?: 60f,
-            foodPresets = presets, recordedFoods = recorded,
-            foodFrequency = logs.groupingBy { it.name.trim() }.eachCount(),
-        )).map { it.preset.name }
+        return RecommendationEngine.rank(RecommendationContext(
+            todayNutrition = total, target = settings.dailyCalorieTarget.toDouble(),
+            proteinTarget = (settings.effectiveProteinG.takeIf { it > 0 } ?: 120f).toDouble(),
+            carbsTarget = (settings.effectiveCarbsG.takeIf { it > 0 } ?: 250f).toDouble(),
+            fatTarget = (settings.effectiveFatG.takeIf { it > 0 } ?: 60f).toDouble(),
+            presets = DefaultRecommendationFoods + DefaultPresetFoods + presets, recordedFoods = recorded,
+            foodFrequency = logs.groupingBy { normalizeFoodName(it.name) }.eachCount(),
+            recentFoodNames = logs.filter { it.dateEpochDay in LocalDate.now().minusDays(14).toEpochDay()..LocalDate.now().toEpochDay() }
+                .mapTo(mutableSetOf()) { normalizeFoodName(it.name) },
+            preferences = feedback.associate { it.foodName to FoodPreference(it.likedCount, it.acceptedCount, it.dislikedCount, it.skippedCount, it.lastRejectedAtMillis) },
+        ))
     }
 
     internal fun render(context: Context, id: Int, kind: WidgetKind, size: SizeF, settings: AppSettings,

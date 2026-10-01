@@ -4,6 +4,10 @@ import android.net.Uri
 import com.click.lightmemo.FoodApp
 import com.click.lightmemo.domain.MealRecognition
 import com.click.lightmemo.domain.Nutrition
+import com.click.lightmemo.domain.PersonalFoodMatcher
+import com.click.lightmemo.domain.PersonalFoodSuggestion
+import com.click.lightmemo.domain.withPreferredReferences
+import kotlinx.coroutines.CancellationException
 import com.click.lightmemo.recognition.RecognitionRequest
 import com.click.lightmemo.recognition.RecognitionRequestType
 import com.click.lightmemo.recognition.RecognitionService
@@ -21,8 +25,10 @@ internal class RecognitionCoordinator(
     private val store: RecognitionTaskStore,
     private val uiState: MutableStateFlow<AddFoodUiState>,
     private val notify: (String) -> Unit,
+    private val loadMemories: suspend () -> List<com.click.lightmemo.domain.PersonalFoodMemory> = { app.personalFoodMemoryRepository.readAll() },
 ) {
     private var activeTaskId: String? = null
+    private var completedTaskId: String? = null
 
     val currentRecord: RecognitionTaskRecord?
         get() = store.state.value
@@ -41,6 +47,7 @@ internal class RecognitionCoordinator(
             canRetryRecognition = false,
             error = null,
             aiEstimatingComponentIds = emptySet(),
+            pendingImageReuse = null,
         )
         notify(startMessage)
         try {
@@ -107,17 +114,19 @@ internal class RecognitionCoordinator(
         )
     }
 
-    fun sync(record: RecognitionTaskRecord?) {
+    suspend fun sync(record: RecognitionTaskRecord?) {
         if (record == null) {
             uiState.value = uiState.value.copy(
                 recognizing = false,
                 recognitionStage = null,
                 replacingDishId = null,
+                pendingImageReuse = null,
             )
             return
         }
 
         val request = record.request
+        if (record.status == RecognitionTaskStatus.COMPLETED && completedTaskId == request.id) return
         val baseState = uiState.value.copy(
             mealType = request.mealType,
             targetDateEpochDay = request.targetDateEpochDay,
@@ -127,6 +136,9 @@ internal class RecognitionCoordinator(
             plateSize = request.plateSize,
         )
         when (record.status) {
+            RecognitionTaskStatus.AWAITING_CACHE_CONFIRMATION -> {
+                uiState.value = baseState.copy(recognizing = false, recognitionStage = null, pendingImageReuse = request)
+            }
             RecognitionTaskStatus.RUNNING -> {
                 activeTaskId = request.id
                 val step = when (request.type) {
@@ -145,6 +157,7 @@ internal class RecognitionCoordinator(
                     RecognitionRequestType.REPLACE_DISH -> AddStep.Review(
                         imageUri = request.imageUri,
                         result = request.baseResult ?: return,
+                        originalResult = request.baseOriginalResult ?: request.baseResult,
                     )
 
                     else -> AddStep.PickSource
@@ -162,10 +175,12 @@ internal class RecognitionCoordinator(
                     recognitionStage = record.stage,
                     replacingDishId = request.replaceDishId,
                     error = null,
+                    pendingImageReuse = null,
                 )
             }
 
             RecognitionTaskStatus.COMPLETED -> {
+                val previousReview = uiState.value.step as? AddStep.Review
                 val shouldNotify = activeTaskId == request.id
                 activeTaskId = null
                 when (request.type) {
@@ -178,7 +193,7 @@ internal class RecognitionCoordinator(
                             ?: 0.0
                         val nutrition = record.manualNutrition ?: Nutrition()
                         uiState.value = baseState.copy(
-                            step = AddStep.Review(
+                            step = reviewWithMemory(
                                 imageUri = null,
                                 result = buildManualMealRecognition(name, grams, nutrition),
                             ),
@@ -201,7 +216,7 @@ internal class RecognitionCoordinator(
                     RecognitionRequestType.IMAGE,
                     -> record.result?.let { result ->
                         uiState.value = baseState.copy(
-                            step = AddStep.Review(record.imageUri, result),
+                            step = reviewWithMemory(record.imageUri, result),
                             quickInput = request.text ?: request.foodName ?: baseState.quickInput,
                             recognizing = false,
                             recognitionStage = null,
@@ -212,9 +227,10 @@ internal class RecognitionCoordinator(
 
                     RecognitionRequestType.REPLACE_DISH -> record.result?.let { replacement ->
                         uiState.value = baseState.copy(
-                            step = AddStep.Review(
+                            step = reviewWithMemory(
                                 request.imageUri,
                                 mergeReplacement(request, replacement),
+                                previousReview?.originalResult,
                             ),
                             recognizing = false,
                             recognitionStage = null,
@@ -223,6 +239,7 @@ internal class RecognitionCoordinator(
                         )
                     }
                 }
+                completedTaskId = request.id
                 if (shouldNotify) {
                     notify(
                         when (request.type) {
@@ -256,11 +273,38 @@ internal class RecognitionCoordinator(
         replacement: MealRecognition,
     ): MealRecognition {
         val original = request.baseResult ?: return replacement
-        val replacementDishes = replacement.dishes.map { it.withFreshIds() }
+        val replacementDishes = replacement.dishes.mapIndexed { index, dish ->
+            val fresh = dish.withFreshIds()
+            if (index == 0) fresh.copy(id = request.replaceDishId ?: fresh.id) else fresh
+        }
         return original.copy(
             dishes = original.dishes.flatMap { dish ->
                 if (dish.id == request.replaceDishId) replacementDishes else listOf(dish)
             },
         )
+    }
+
+    private suspend fun reviewWithMemory(
+        imageUri: String?,
+        result: MealRecognition,
+        originalResult: MealRecognition? = null,
+    ): AddStep.Review {
+        return try {
+            val memories = loadMemories()
+            val suggestions = result.dishes.mapNotNull { dish ->
+                val match = PersonalFoodMatcher.match(dish.name, memories) ?: return@mapNotNull null
+                val preferred = if (match.canApply) dish.withPreferredReferences(match.memory) else dish
+                PersonalFoodSuggestion(dish.id, match, referenceApplied = preferred != dish)
+            }
+            val assisted = result.copy(dishes = result.dishes.map { dish ->
+                val suggestion = suggestions.find { it.dishId == dish.id }
+                if (suggestion?.match?.canApply == true) dish.withPreferredReferences(suggestion.match.memory) else dish
+            })
+            AddStep.Review(imageUri, assisted, originalResult ?: assisted, result, suggestions)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            AddStep.Review(imageUri, result, originalResult ?: result)
+        }
     }
 }

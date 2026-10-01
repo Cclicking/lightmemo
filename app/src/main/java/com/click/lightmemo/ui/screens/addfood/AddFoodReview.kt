@@ -85,6 +85,9 @@ internal fun ReviewContent(
     palette: FoodPaletteColors,
     canRetryRecognition: Boolean = false,
     onRetryRecognition: () -> Unit = {},
+    memorySuggestions: List<com.click.lightmemo.domain.PersonalFoodSuggestion> = emptyList(),
+    onAcceptMemory: (String) -> Unit = {},
+    onIgnoreMemory: (String) -> Unit = {},
 ) {
     val total = result.nutrition
     val calorieColor = if (total.caloriesKcal > 1800.0) palette.overTarget else palette.calorie
@@ -186,6 +189,32 @@ internal fun ReviewContent(
 
         // 每道菜一张可折叠卡片
         items(result.dishes, key = { it.id }) { dish ->
+            memorySuggestions.find { it.dishId == dish.id }?.let { suggestion ->
+                val memory = suggestion.match.memory
+                Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = if (suggestion.match.kind == com.click.lightmemo.domain.MemoryMatchKind.SIMILAR) {
+                            "与历史记录「${memory.canonicalName}」相近，仅供参考"
+                        } else {
+                            "根据你过去 ${memory.useCount} 次记录，${dish.name} 通常约 ${memory.minGrams.toInt()}–${memory.maxGrams.toInt()}g"
+                        },
+                        style = MiuixTheme.textStyles.footnote2,
+                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    )
+                    if (suggestion.referenceApplied) Text("已参考你的历史食物匹配", style = MiuixTheme.textStyles.footnote2)
+                    if (suggestion.accepted) {
+                        Text("已使用历史份量与组成，请确认", style = MiuixTheme.textStyles.footnote2)
+                    } else {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            if (suggestion.match.canApply) Button(
+                                onClick = { onAcceptMemory(dish.id) }, enabled = !recognizing,
+                                modifier = Modifier.weight(1f),
+                            ) { Text("使用历史建议") }
+                            Button(onClick = { onIgnoreMemory(dish.id) }, enabled = !recognizing, modifier = Modifier.weight(1f)) { Text("忽略建议") }
+                        }
+                    }
+                }
+            }
             DishResultCard(
                 dish = dish,
                 replacing = dish.id == replacingDishId,

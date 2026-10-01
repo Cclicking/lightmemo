@@ -11,6 +11,45 @@ import org.junit.Test
 class FoodRecognitionClientTest {
     private val client = FoodRecognitionClient()
 
+    private fun imageClient(): FoodRecognitionClient {
+        val payload = """{"is_food_image":true,"meal_name":"午餐","overall_confidence":0.95,"confirmation_questions":[],"dishes":[{"dish_name":"米饭","dish_type":"single_food","dish_confidence":0.95,"components":[{"name":"米饭","database_query":"rice cooked","source":"visible","estimated_weight_g":200,"weight_min_g":180,"weight_max_g":220,"confidence":0.95}]}]}"""
+        val body = kotlinx.serialization.json.buildJsonObject {
+            put("choices", kotlinx.serialization.json.buildJsonArray {
+                add(kotlinx.serialization.json.buildJsonObject {
+                    put("message", kotlinx.serialization.json.buildJsonObject {
+                        put("content", kotlinx.serialization.json.JsonPrimitive(payload))
+                    })
+                })
+            })
+        }.toString()
+        val http = okhttp3.OkHttpClient.Builder().addInterceptor { chain ->
+            okhttp3.Response.Builder().request(chain.request()).protocol(okhttp3.Protocol.HTTP_1_1)
+                .code(200).message("OK").body(okhttp3.ResponseBody.create(null, body)).build()
+        }.build()
+        return FoodRecognitionClient(httpClient = http)
+    }
+
+    @Test fun fastPathStillCallsVisionButSkipsSecondModelReview() = kotlinx.coroutines.runBlocking {
+        var calls = 0
+        val stages = mutableListOf<com.click.lightmemo.domain.RecognitionStage>()
+        val result = imageClient().recognize("https://example.test/v1", "test", "test", "image",
+            onStage = { stages += it }, fastResult = { it.copy(confirmationQuestions = listOf("核对历史组成")) },
+            onModelCall = { calls++ })
+        assertEquals(1, calls)
+        assertEquals(listOf(com.click.lightmemo.domain.RecognitionStage.RECOGNIZING), stages)
+        assertEquals(listOf("核对历史组成"), result.confirmationQuestions)
+    }
+
+    @Test fun fastMissContinuesOriginalTwoCallWorkflow() = kotlinx.coroutines.runBlocking {
+        var calls = 0
+        val stages = mutableListOf<com.click.lightmemo.domain.RecognitionStage>()
+        val result = imageClient().recognize("https://example.test/v1", "test", "test", "image",
+            onStage = { stages += it }, fastResult = { null }, onModelCall = { calls++ })
+        assertEquals(2, calls)
+        assertTrue(stages.contains(com.click.lightmemo.domain.RecognitionStage.REVIEWING))
+        assertEquals("米饭", result.dishes.single().name)
+    }
+
     @Test
     fun lowLevelConnectionAbortGetsActionableMessage() {
         val message = userFacingRecognitionError(SocketException("Software caused connection abort"))

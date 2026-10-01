@@ -60,6 +60,7 @@
         <activity android:name=".ui.secondary.PromptSettingsActivity" android:exported="false" android:windowSoftInputMode="adjustResize" />
         <activity android:name=".ui.secondary.CalorieTargetActivity" android:exported="false" />
         <activity android:name=".ui.secondary.DataManagementActivity" android:exported="false" />
+        <activity android:name=".ui.secondary.PersonalFoodMemoryActivity" android:exported="false" />
         <activity android:name=".ui.secondary.FoodDatabaseActivity" android:exported="false" />
         <activity android:name=".widget.WidgetSettingsActivity" android:exported="false" />
         <activity android:name=".widget.WidgetEditActivity" android:exported="true">
@@ -112,6 +113,7 @@
         <activity android:name=".ui.secondary.AppearanceSettingsActivity" android:exported="false" />
         <activity android:name=".ui.secondary.PermissionManagementActivity" android:exported="false" />
         <activity android:name=".ui.secondary.NotificationSettingsActivity" android:exported="false" />
+        <activity android:name=".ui.secondary.DiagnosticsActivity" android:exported="false" />
         <activity android:name=".ui.secondary.AboutActivity" android:exported="false" />
         <activity android:name=".ui.secondary.SettingsHubActivity" android:exported="false" />
         <activity android:name=".ui.secondary.ManageFoodCardsActivity" android:exported="false" />

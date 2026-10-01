@@ -37,6 +37,10 @@ app/build/
 # Local screenshot exports in the repository root. App resources under app/src remain trackable.
 /lightmemo*.png
 
+# Local verification screenshots and implementation notes
+/docs/screenshots/
+/docs/LightMemo-v1.5-progress.md
+
 # Build logs
 *-log.txt
 

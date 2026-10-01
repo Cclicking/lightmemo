@@ -34,6 +34,8 @@ import com.click.lightmemo.ui.components.AnimatedOverlayDialog
 import com.click.lightmemo.ui.utils.overScrollVertical
 import com.click.lightmemo.viewmodel.BackupViewModel
 import com.click.lightmemo.viewmodel.SettingsViewModel
+import android.content.Intent
+import com.click.lightmemo.ui.secondary.PersonalFoodMemoryActivity
 import top.yukonga.miuix.kmp.basic.BasicComponent
 import top.yukonga.miuix.kmp.basic.Button
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
@@ -75,6 +77,7 @@ fun DataManagementScreen(
     val importLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument(),
     ) { uri -> uri?.let(backupViewModel::import) }
+
 
     LaunchedEffect(backupMessage) {
         backupMessage?.let { message ->
@@ -176,6 +179,17 @@ fun DataManagementScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
+            SmallTitle(text = "个人食物记忆", modifier = Modifier.offset(x = (-16).dp))
+            Card(cornerRadius = 20.dp, modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(0.dp)) {
+                ArrowPreference(
+                    title = "个人食物记忆",
+                    summary = "查看历史份量、组成与食物匹配",
+                    onClick = { context.startActivity(Intent(context, PersonalFoodMemoryActivity::class.java)) },
+                )
+            }
+        }
+        item {
+            Spacer(Modifier.height(4.dp))
             SmallTitle(
                 text = "连接情况",
                 modifier = Modifier.offset(x = (-16).dp),

@@ -1,6 +1,7 @@
 package com.click.lightmemo.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloatAsState
@@ -47,15 +48,19 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalContext
+import android.widget.Toast
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.unit.sp
-import com.click.lightmemo.data.DefaultPresetFoods
-import com.click.lightmemo.data.DefaultRecommendationFoods
-import com.click.lightmemo.data.PresetFood
+import com.click.lightmemo.domain.DishRecommendation
+import com.click.lightmemo.domain.RecommendationMode
+import com.click.lightmemo.domain.PairingRecommendationEngine
+import com.click.lightmemo.domain.PairingResult
+import com.click.lightmemo.domain.RecommendationEngine
 import com.click.lightmemo.domain.Nutrition
 import com.click.lightmemo.ui.basic.SharedScrollBehavior as ScrollBehavior
 import com.click.lightmemo.ui.utils.overScrollVertical
@@ -80,23 +85,6 @@ private const val FocusedDishIndex = 2
 private const val RollSteps = 12
 private const val InitialRollDurationMillis = 3000
 private const val InitialRollCycles = 4
-private const val LowCalorieThresholdKcal = 350.0
-private const val RecordedFoodShare = 0.20
-
-private enum class RecommendationMode(val label: String) {
-    CASUAL("随便吃"),
-    HEALTHY("健康吃"),
-    CHANGE("新口味"),
-    HABITUAL("照旧吃"),
-}
-
-internal data class DishRecommendation(
-    val preset: PresetFood,
-    val nutrition: Nutrition,
-    val score: Int,
-    val reasons: List<String>,
-)
-
 @Composable
 fun RecommendScreen(
     viewModel: StatsViewModel,
@@ -107,31 +95,20 @@ fun RecommendScreen(
     val state by viewModel.uiState.collectAsState()
     val readError by viewModel.readError.collectAsState()
     val recommendationSession by viewModel.recommendationSession.collectAsState()
-    val recommendations = remember(
-        state.foodPresets,
-        state.recordedFoods,
-        state.todayNutrition,
-        state.target,
-        state.proteinTarget,
-        state.carbsTarget,
-        state.fatTarget,
-    ) {
-        buildRecommendations(state)
+    LaunchedEffect(Unit) { viewModel.recommendationOpened() }
+    val feedback by viewModel.recommendationFeedback.collectAsState()
+    val operation by viewModel.recommendationOperation.collectAsState()
+    val androidContext = LocalContext.current
+    LaunchedEffect(operation.message) {
+        operation.message?.let { Toast.makeText(androidContext, it, Toast.LENGTH_SHORT).show() }
     }
+    val context = remember(state, feedback) { viewModel.recommendationContext(state) }
+    val recommendations = remember(context) { RecommendationEngine.rank(context) }
     var selectedMode by remember { mutableStateOf(RecommendationMode.CASUAL) }
-    val modeRecommendations = remember(
-        recommendations,
-        selectedMode,
-        state.foodFrequency,
-        state.recentFoodNames,
-        state.todayNutrition,
-        state.target,
-        state.proteinTarget,
-        state.carbsTarget,
-        state.fatTarget,
-    ) {
-        recommendationsForMode(recommendations, state, selectedMode)
+    val modeRecommendations = remember(recommendations, selectedMode) {
+        RecommendationEngine.forMode(recommendations, context, selectedMode)
     }
+    var confirmationDish by remember { mutableStateOf<DishRecommendation?>(null) }
     val savedResultDishes = remember(recommendations, recommendationSession.dishName) {
         centerRecommendation(recommendations, recommendationSession.dishName)
     }
@@ -140,7 +117,7 @@ fun RecommendScreen(
     } else {
         idleRollingDishes(modeRecommendations)
     }
-    var displayDishes by remember(recommendations) {
+    var displayDishes by remember {
         mutableStateOf(initialDisplayDishes)
     }
     // Start at the focused slot so the selected border is never painted on the first card
@@ -148,13 +125,13 @@ fun RecommendScreen(
     val dishListState = rememberLazyListState(
         initialFirstVisibleItemIndex = initialDisplayDishes.focusedDishIndex(),
     )
-    var showRecommendation by remember(recommendations) {
+    var showRecommendation by remember {
         mutableStateOf(recommendationSession.hasResult)
     }
-    var initialRolling by remember(recommendations) {
+    var initialRolling by remember {
         mutableStateOf(!recommendationSession.hasResult)
     }
-    var carouselReady by remember(recommendations) {
+    var carouselReady by remember {
         mutableStateOf(false)
     }
     var animateDishContent by remember { mutableStateOf(false) }
@@ -178,8 +155,11 @@ fun RecommendScreen(
     val selectedDish = displayDishes.getOrNull(centeredIndex)?.takeIf {
         showRecommendation && carouselReady
     }
-    val pairingFoods = remember(selectedDish) {
-        selectedDish?.let(::buildPairingFoods).orEmpty()
+    val pairingResult = remember(selectedDish, state, recommendationSession.savedDishName) {
+        selectedDish?.let { dish ->
+            PairingRecommendationEngine.recommend(dish, viewModel.pairingContext(state,
+                mainAlreadyRecorded = recommendationSession.savedDishName == dish.preset.name))
+        }
     }
 
     LaunchedEffect(initialRolling, selectedMode, recommendationSession.hasResult, recommendations) {
@@ -200,6 +180,8 @@ fun RecommendScreen(
     }
 
     LaunchedEffect(recommendations, recommendationSession.hasResult, recommendationSession.dishName) {
+        // Room/settings can emit while rolling; moving the list here cancels its animation.
+        if (isPicking) return@LaunchedEffect
         if (recommendationSession.hasResult) {
             if (suppressResultSync) {
                 suppressResultSync = false
@@ -252,42 +234,59 @@ fun RecommendScreen(
     }
 
     fun pickDish() {
-        if (isPicking || displayDishes.size < 2) return
+        if (isPicking || operation.busy || modeRecommendations.isEmpty()) return
         initialRolling = false
         scope.launch {
-            val resultDishes = nextRecommendationDishes(
-                recommendations = modeRecommendations,
-                previousDishName = recommendationSession.dishName ?: selectedDish?.preset?.name,
-            )
-            val resultIndex = resultDishes.focusedDishIndex()
-            val resultDish = resultDishes.getOrNull(resultIndex) ?: return@launch
+            val drawPool = modeRecommendations
+            val previousDish = selectedDish?.preset?.name?.takeUnless { it == recommendationSession.savedDishName }
+            val resultDish = RecommendationEngine.pick(drawPool, recommendationSession.recentResults) ?: return@launch
+            if (drawPool.size == 1) {
+                displayDishes = listOf(resultDish)
+                showRecommendation = true
+                carouselReady = true
+                viewModel.completeRecommendationPick(resultDish.preset.name, previousDish)
+                return@launch
+            }
             val targetIndex = FocusedDishIndex + RollSteps
             animateDishContent = false
             selectedBorderVisible = false
             isPicking = true
-            showRecommendation = false
-            // Let the previous result finish fading out before the next roll starts.
-            delay(180)
-            displayDishes = rollingDishes(
-                recommendations = modeRecommendations,
-                targetIndex = targetIndex,
-                targetDishName = resultDish.preset.name,
-            )
-            dishListState.scrollToItem(displayDishes.focusedDishIndex())
-            dishListState.animateScrollBy(
-                value = carouselStepPx * RollSteps,
-                animationSpec = tween(durationMillis = 820, easing = FastOutSlowInEasing),
-            )
-            // The result was already placed at this index, so this only corrects tiny pixel rounding.
-            dishListState.scrollToItem(targetIndex)
-            animateDishContent = true
-            delay(50)
-            showRecommendation = true
-            selectedBorderVisible = true
-            suppressResultSync = true
-            viewModel.saveRecommendationResult(resultDish.preset.name)
-            isPicking = false
+            try {
+                showRecommendation = false
+                // Let the previous result finish fading out before the next roll starts.
+                delay(180)
+                displayDishes = rollingDishes(
+                    recommendations = drawPool,
+                    targetIndex = targetIndex,
+                    targetDishName = resultDish.preset.name,
+                )
+                dishListState.scrollToItem(displayDishes.focusedDishIndex())
+                dishListState.animateScrollBy(
+                    value = carouselStepPx * RollSteps,
+                    animationSpec = tween(durationMillis = 820, easing = FastOutSlowInEasing),
+                )
+                // The result was already placed at this index, so this only corrects tiny pixel rounding.
+                dishListState.scrollToItem(targetIndex)
+                animateDishContent = true
+                delay(50)
+                showRecommendation = true
+                selectedBorderVisible = true
+                suppressResultSync = true
+                viewModel.completeRecommendationPick(resultDish.preset.name, previousDish)
+            } finally {
+                isPicking = false
+            }
         }
+    }
+
+    RecommendationRecordDialog(
+        dish = confirmationDish,
+        operation = operation,
+        onDismiss = { if (!operation.busy) confirmationDish = null },
+        onSave = { dish, grams, meal -> viewModel.acceptRecommendation(dish, grams, meal) },
+    )
+    LaunchedEffect(recommendationSession.savedDishName) {
+        if (recommendationSession.savedDishName != null) confirmationDish = null
     }
 
     LazyColumn(
@@ -336,7 +335,7 @@ fun RecommendScreen(
                     tabs = RecommendationMode.entries.map { it.label },
                     selectedTabIndex = RecommendationMode.entries.indexOf(selectedMode),
                     onTabSelected = { index ->
-                        if (!isPicking) selectedMode = RecommendationMode.entries[index]
+                        if (!isPicking && !operation.busy) selectedMode = RecommendationMode.entries[index]
                     },
                 )
             }
@@ -355,7 +354,7 @@ fun RecommendScreen(
         item {
             Button(
                 onClick = ::pickDish,
-                enabled = !isPicking && displayDishes.size > 1,
+                enabled = !isPicking && !operation.busy && modeRecommendations.isNotEmpty(),
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp),
@@ -367,22 +366,20 @@ fun RecommendScreen(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text("✦", fontSize = 20.sp, color = Color.White)
-                    Text("抽选菜品")
+                    Text(if (selectedDish != null) "换一个" else "抽选菜品")
                 }
             }
         }
         item(key = "recommendation") {
-            AnimatedVisibility(
-                visible = showRecommendation && selectedDish != null,
-                enter = slideInHorizontally(
-                    initialOffsetX = { fullWidth -> fullWidth },
-                    animationSpec = tween(260),
-                ) + fadeIn(animationSpec = tween(260)),
-                exit = fadeOut(animationSpec = tween(180)),
-            ) {
+            RecommendationResultEntrance(visible = showRecommendation && selectedDish != null) {
                 selectedDish?.let { dish ->
                     RecommendationCard(
                         recommendation = dish,
+                        liked = feedback.any { it.foodName == com.click.lightmemo.domain.normalizeFoodName(dish.preset.name) && it.likedCount > 0 },
+                        saved = recommendationSession.savedDishName == dish.preset.name,
+                        enabled = !isPicking && !operation.busy,
+                        onLike = { viewModel.likeRecommendation(dish.preset.name) },
+                        onAccept = { viewModel.clearRecommendationMessage(); confirmationDish = dish },
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 16.dp),
@@ -390,27 +387,33 @@ fun RecommendScreen(
                 }
             }
         }
-        item(key = "pairing") {
-            val lowCalorieDish = selectedDish?.takeIf {
-                it.nutrition.caloriesKcal <= LowCalorieThresholdKcal && pairingFoods.isNotEmpty()
-            }
-            AnimatedVisibility(
-                visible = showRecommendation && lowCalorieDish != null,
-                enter = slideInHorizontally(
-                    initialOffsetX = { fullWidth -> fullWidth },
-                    animationSpec = tween(durationMillis = 260, delayMillis = 80),
-                ) + fadeIn(animationSpec = tween(durationMillis = 260, delayMillis = 80)),
-                exit = fadeOut(animationSpec = tween(180)),
-            ) {
-                PairingCard(
-                    foods = pairingFoods,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp),
-                )
+        if (pairingResult?.foods?.isNotEmpty() == true) {
+            item(key = "pairing") {
+                RecommendationResultEntrance(visible = showRecommendation, delayMillis = 80) {
+                    PairingCard(
+                        result = pairingResult,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp),
+                    )
+                }
             }
         }
     }
+}
+
+/** Starts hidden even when a lazy item is first composed after the result becomes visible. */
+@Composable
+private fun RecommendationResultEntrance(visible: Boolean, delayMillis: Int = 0, content: @Composable () -> Unit) {
+    val visibility = remember { MutableTransitionState(false) }
+    visibility.targetState = visible
+    AnimatedVisibility(
+        visibleState = visibility,
+        enter = slideInHorizontally(initialOffsetX = { it },
+            animationSpec = tween(durationMillis = 260, delayMillis = delayMillis)) +
+            fadeIn(animationSpec = tween(durationMillis = 260, delayMillis = delayMillis)),
+        exit = fadeOut(animationSpec = tween(180)),
+    ) { content() }
 }
 
 @Composable
@@ -509,6 +512,11 @@ private fun DishCarousel(
 @Composable
 private fun RecommendationCard(
     recommendation: DishRecommendation,
+    liked: Boolean,
+    saved: Boolean,
+    enabled: Boolean,
+    onLike: () -> Unit,
+    onAccept: () -> Unit,
     modifier: Modifier,
 ) {
     Card(
@@ -576,12 +584,21 @@ private fun RecommendationCard(
                 }
             }
         }
+        Spacer(Modifier.height(16.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Button(onClick = onLike, enabled = enabled, modifier = Modifier.weight(1f)) {
+                Text(if (liked) "取消喜欢" else "喜欢")
+            }
+            Button(onClick = onAccept, enabled = enabled && !saved, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColorsPrimary()) {
+                Text(if (saved) "已记录" else "就吃这个")
+            }
+        }
     }
 }
 
 @Composable
 private fun PairingCard(
-    foods: List<PresetFood>,
+    result: PairingResult,
     modifier: Modifier,
 ) {
     Card(
@@ -596,19 +613,20 @@ private fun PairingCard(
         )
         Spacer(Modifier.height(4.dp))
         Text(
-            text = "这道菜热量较低，搭配下面的食物更容易吃饱，营养也更完整",
+            text = result.summary,
             style = MiuixTheme.textStyles.footnote2,
             color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
         )
-        Spacer(Modifier.height(10.dp))
-        Row(
+        if (result.foods.isNotEmpty()) Spacer(Modifier.height(10.dp))
+        Column(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            foods.forEach { food ->
+            result.foods.forEach { pairing ->
+                val food = pairing.food
                 Column(
                     modifier = Modifier
-                        .weight(1f)
+                        .fillMaxWidth()
                         .clip(RoundedCornerShape(14.dp))
                         .background(MiuixTheme.colorScheme.primary.copy(alpha = 0.08f))
                         .padding(horizontal = 10.dp, vertical = 9.dp),
@@ -622,146 +640,19 @@ private fun PairingCard(
                     )
                     Spacer(Modifier.height(3.dp))
                     Text(
-                        text = "${food.portionLabel} · ${food.nutrition?.caloriesKcal?.toInt() ?: 0} kcal",
+                        text = "${food.portionLabel} · ${food.defaultGrams.roundToInt()}g · ${pairing.nutrition.caloriesKcal.roundToInt()} kcal",
                         style = MiuixTheme.textStyles.footnote2,
                         color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
+                    Spacer(Modifier.height(3.dp))
+                    Text(pairing.reason, style = MiuixTheme.textStyles.footnote2, color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
                 }
             }
         }
     }
 }
-
-private fun buildPairingFoods(recommendation: DishRecommendation): List<PresetFood> {
-    val available = DefaultPresetFoods.filter { food ->
-        food.id != recommendation.preset.id && food.name != recommendation.preset.name
-    }
-    val proteinOptions = available.filter { it.id in setOf("chicken_breast", "egg", "milk", "yogurt") }
-    val stapleOptions = available.filter { it.id in setOf("rice", "mantou", "bread", "oats") }
-    val lightOptions = available.filter { it.id in setOf("yogurt", "apple", "banana") }
-    val result = mutableListOf<PresetFood>()
-
-    fun addFirst(options: List<PresetFood>) {
-        options.firstOrNull { candidate -> result.none { it.id == candidate.id } }?.let(result::add)
-    }
-
-    if (recommendation.nutrition.proteinG < 20.0) {
-        addFirst(proteinOptions)
-    }
-    if (recommendation.nutrition.carbsG < 30.0) {
-        addFirst(stapleOptions)
-    }
-    if (result.size < 2) {
-        addFirst(lightOptions)
-    }
-    if (result.size < 2) {
-        addFirst(proteinOptions)
-    }
-    if (result.size < 2) {
-        addFirst(stapleOptions)
-    }
-    return result.take(2)
-}
-
-internal fun buildRecommendations(state: StatsViewModel.StatsUiState): List<DishRecommendation> {
-    val baseCandidates = deduplicateFoods(
-        DefaultRecommendationFoods +
-            DefaultPresetFoods +
-            state.foodPresets,
-        )
-    val baseNames = baseCandidates.mapTo(mutableSetOf()) { it.name.trim() }
-    val recordedCandidates = deduplicateFoods(state.recordedFoods)
-        .filterNot { it.name.trim() in baseNames }
-    val recordedLimit = if (baseCandidates.isEmpty()) {
-        recordedCandidates.size
-    } else {
-        ((baseCandidates.size * RecordedFoodShare) / (1.0 - RecordedFoodShare))
-            .toInt()
-            .coerceAtLeast(1)
-    }
-    val candidates = baseCandidates + recordedCandidates
-        .sortedWith(
-            compareByDescending<PresetFood> { state.foodFrequency[it.name.trim()].orZero() }
-                .thenBy { it.name },
-        )
-        .take(recordedLimit)
-    return candidates.map { preset ->
-        val nutrition = presetNutrition(preset)
-        DishRecommendation(
-            preset = preset,
-            nutrition = nutrition,
-            score = recommendationScore(nutrition, state),
-            reasons = recommendationReasons(preset, nutrition, state),
-        )
-    }.sortedByDescending { it.score }
-}
-
-private fun deduplicateFoods(foods: List<PresetFood>): List<PresetFood> = foods
-    .asReversed()
-    .distinctBy { it.name.trim() }
-    .asReversed()
-
-private fun recommendationsForMode(
-    recommendations: List<DishRecommendation>,
-    state: StatsViewModel.StatsUiState,
-    mode: RecommendationMode,
-): List<DishRecommendation> = when (mode) {
-    RecommendationMode.CASUAL -> recommendations.shuffled()
-    RecommendationMode.HABITUAL -> {
-        val frequent = recommendations
-            .filter { state.foodFrequency[it.preset.name.trim()].orZero() > 0 }
-            .sortedWith(
-                compareByDescending<DishRecommendation> {
-                    state.foodFrequency[it.preset.name.trim()].orZero()
-                }.thenByDescending { it.score },
-            )
-        if (frequent.size >= 2) frequent else {
-            recommendations.sortedWith(
-                compareByDescending<DishRecommendation> {
-                    state.foodFrequency[it.preset.name.trim()].orZero()
-                }.thenByDescending { it.score },
-            )
-        }
-    }
-    RecommendationMode.HEALTHY -> recommendations.sortedWith(
-        compareByDescending<DishRecommendation> { healthyModePriority(it, state) }
-            .thenByDescending { it.score },
-    )
-    RecommendationMode.CHANGE -> {
-        val fresh = recommendations
-            .filterNot { state.recentFoodNames.contains(it.preset.name.trim()) }
-            .shuffled()
-        val recentlyEaten = recommendations
-            .filter { state.recentFoodNames.contains(it.preset.name.trim()) }
-            .sortedByDescending { it.score }
-        (fresh + recentlyEaten).distinctBy { it.preset.name.trim() }
-    }
-}
-
-private fun healthyModePriority(
-    recommendation: DishRecommendation,
-    state: StatsViewModel.StatsUiState,
-): Double {
-    val today = state.todayNutrition
-    val remainingCalories = (state.target - today.caloriesKcal).coerceAtLeast(0.0)
-    val mealCalories = (remainingCalories / 2.0).coerceIn(300.0, 750.0)
-    val proteinNeed = (state.proteinTarget - today.proteinG).coerceAtLeast(20.0)
-    val carbsNeed = (state.carbsTarget - today.carbsG).coerceAtLeast(40.0)
-    val fatRoom = (state.fatTarget - today.fatG).coerceAtLeast(1.0)
-    val proteinCoverage = (recommendation.nutrition.proteinG / proteinNeed).coerceIn(0.0, 1.0)
-    val carbsCoverage = (recommendation.nutrition.carbsG / carbsNeed).coerceIn(0.0, 1.0)
-    val calorieFit = (
-        1.0 - kotlin.math.abs(recommendation.nutrition.caloriesKcal - mealCalories) / mealCalories
-    ).coerceIn(0.0, 1.0)
-    val fatFit = (
-        1.0 - (recommendation.nutrition.fatG - fatRoom).coerceAtLeast(0.0) / fatRoom
-    ).coerceIn(0.0, 1.0)
-    return proteinCoverage * 0.40 + carbsCoverage * 0.20 + calorieFit * 0.25 + fatFit * 0.15
-}
-
-private fun Int?.orZero(): Int = this ?: 0
 
 private fun initialRollResetIndex(recommendationCount: Int): Int =
     FocusedDishIndex + recommendationCount * InitialRollCycles
@@ -805,21 +696,6 @@ private fun List<DishRecommendation>.focusedDishIndex(): Int = when {
     else -> 0
 }
 
-/** Move through the score-sorted candidates so each new draw changes the dish. */
-private fun nextRecommendationDishes(
-    recommendations: List<DishRecommendation>,
-    previousDishName: String?,
-): List<DishRecommendation> {
-    if (recommendations.isEmpty()) return emptyList()
-    val previousIndex = recommendations.indexOfFirst { it.preset.name == previousDishName }
-    val nextIndex = if (previousIndex < 0) {
-        0
-    } else {
-        (previousIndex + 1) % recommendations.size
-    }
-    return centerRecommendation(recommendations, recommendations[nextIndex].preset.name)
-}
-
 /** Put the selected result in the third slot so both edges can show a partial neighbor. */
 private fun centerRecommendation(
     recommendations: List<DishRecommendation>,
@@ -841,122 +717,6 @@ private fun centerRecommendation(
     } else {
         listOf(left, secondLeft, selected) + remaining
     }
-}
-
-private fun presetNutrition(preset: PresetFood): Nutrition {
-    return preset.nutrition ?: preset.components
-        .takeIf { components ->
-            components.isNotEmpty() && components.all { it.nutritionReference != null }
-        }
-        ?.fold(Nutrition()) { total, component -> total + component.nutrition }
-        ?: Nutrition()
-}
-
-private fun recommendationScore(nutrition: Nutrition, state: StatsViewModel.StatsUiState): Int {
-    val today = state.todayNutrition
-    val remainingCalories = (state.target - today.caloriesKcal).coerceAtLeast(0.0)
-    val mealCalories = (remainingCalories / 2.0).coerceIn(300.0, 750.0)
-    val calorieFit = (1.0 - kotlin.math.abs(nutrition.caloriesKcal - mealCalories) / mealCalories).coerceIn(0.0, 1.0)
-    val proteinGap = (state.proteinTarget - today.proteinG).coerceAtLeast(0.0)
-    val proteinCoverage = (nutrition.proteinG / proteinGap.coerceAtLeast(20.0)).coerceIn(0.0, 1.0)
-    val fatAllowance = (state.fatTarget - today.fatG).coerceAtLeast(1.0)
-    val fatFit = (1.0 - (nutrition.fatG - fatAllowance).coerceAtLeast(0.0) / fatAllowance).coerceIn(0.0, 1.0)
-    return ((calorieFit * 0.35 + proteinCoverage * 0.45 + fatFit * 0.20) * 100.0)
-        .roundToInt()
-        .coerceIn(1, 99)
-}
-
-private fun recommendationReasons(
-    preset: PresetFood,
-    nutrition: Nutrition,
-    state: StatsViewModel.StatsUiState,
-): List<String> {
-    val remainingCalories = (state.target - state.todayNutrition.caloriesKcal).coerceAtLeast(0.0)
-    val mealCalories = (remainingCalories / 2.0).coerceIn(300.0, 750.0)
-    val proteinGap = (state.proteinTarget - state.todayNutrition.proteinG).coerceAtLeast(0.0)
-    val carbsGap = (state.carbsTarget - state.todayNutrition.carbsG).coerceAtLeast(0.0)
-    val fatAllowance = (state.fatTarget - state.todayNutrition.fatG).coerceAtLeast(0.0)
-    val wordingVariant = (preset.name.hashCode() and Int.MAX_VALUE) % 3
-    return buildList {
-        if (proteinGap >= 8.0 && nutrition.proteinG >= 10.0) {
-            add(
-                when (wordingVariant) {
-                    0 -> "这份大约有 ${nutrition.proteinG.toInt()}g 蛋白质，吃完更顶饱"
-                    1 -> "含约 ${nutrition.proteinG.toInt()}g 蛋白质，适合当今天的一顿正餐"
-                    else -> "蛋白质约 ${nutrition.proteinG.toInt()}g，和主食、蔬菜搭配就很完整"
-                },
-            )
-        } else if (nutrition.proteinG >= 10.0) {
-            add(
-                when (wordingVariant) {
-                    0 -> "蛋白质约 ${nutrition.proteinG.toInt()}g，比只吃主食更顶饱"
-                    1 -> "含约 ${nutrition.proteinG.toInt()}g 蛋白质，作为一餐比较扎实"
-                    else -> "这道菜有 ${nutrition.proteinG.toInt()}g 蛋白质，适合配饭一起吃"
-                },
-            )
-        }
-        if (nutrition.caloriesKcal <= mealCalories * 1.15) {
-            add(
-                when (wordingVariant) {
-                    0 -> "热量约 ${nutrition.caloriesKcal.toInt()} kcal，作为今天这一餐分量不重"
-                    1 -> "一份约 ${nutrition.caloriesKcal.toInt()} kcal，今天吃它比较轻松"
-                    else -> "约 ${nutrition.caloriesKcal.toInt()} kcal，放在正餐里刚好"
-                },
-            )
-        }
-        if (nutrition.fatG <= state.fatTarget / 4.0) {
-            add(
-                when (wordingVariant) {
-                    0 -> "脂肪约 ${nutrition.fatG.toInt()}g，想吃清淡一点可以选它"
-                    1 -> "脂肪只有约 ${nutrition.fatG.toInt()}g，比油炸类更轻"
-                    else -> "脂肪约 ${nutrition.fatG.toInt()}g，今天少油一点时很合适"
-                },
-            )
-        } else if (nutrition.fatG <= fatAllowance) {
-            add(
-                when (wordingVariant) {
-                    0 -> "脂肪约 ${nutrition.fatG.toInt()}g，今天控制油量时还能安排"
-                    1 -> "脂肪约 ${nutrition.fatG.toInt()}g，配一份蔬菜会更合适"
-                    else -> "这份脂肪约 ${nutrition.fatG.toInt()}g，别再搭配太多油炸小菜就好"
-                },
-            )
-        }
-        if (carbsGap >= 20.0 && nutrition.carbsG >= 20.0) {
-            add(
-                when (wordingVariant) {
-                    0 -> "碳水约 ${nutrition.carbsG.toInt()}g，能补上米饭或面条的能量"
-                    1 -> "有约 ${nutrition.carbsG.toInt()}g 碳水，适合今天想吃主食的一顿"
-                    else -> "这份约含 ${nutrition.carbsG.toInt()}g 碳水，吃它时主食不用点太多"
-                },
-            )
-        } else if (nutrition.carbsG <= state.carbsTarget / 5.0) {
-            add(
-                when (wordingVariant) {
-                    0 -> "碳水约 ${nutrition.carbsG.toInt()}g，不想吃太多米饭时可以选它"
-                    1 -> "主食量不多，适合今天少吃一点面或饭"
-                    else -> "这份碳水约 ${nutrition.carbsG.toInt()}g，和其他菜一起点也好控制"
-                },
-            )
-        }
-        if (preset.portionLabel.isNotBlank()) {
-            add(
-                when (wordingVariant) {
-                    0 -> "建议吃${preset.portionLabel}（约 ${preset.defaultGrams.toInt()}g），分量一眼就能看清"
-                    1 -> "点${preset.portionLabel}就够一餐，约 ${preset.defaultGrams.toInt()}g"
-                    else -> "按${preset.portionLabel}来吃，约 ${preset.defaultGrams.toInt()}g，不用特意估份量"
-                },
-            )
-        }
-        if (isEmpty()) {
-            add(
-                when (wordingVariant) {
-                    0 -> "没有明显短板，按推荐分量吃就可以"
-                    1 -> "营养信息齐全，照着一份的量吃即可"
-                    else -> "分量清楚，今天直接点一份比较合适"
-                },
-            )
-        }
-    }.take(3)
 }
 
 private fun recommendationBadge(nutrition: Nutrition): String = when {

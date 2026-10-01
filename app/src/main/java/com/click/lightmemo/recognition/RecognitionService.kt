@@ -16,6 +16,9 @@ import androidx.core.content.ContextCompat
 import com.click.lightmemo.FoodApp
 import com.click.lightmemo.MainActivity
 import com.click.lightmemo.R
+import com.click.lightmemo.BuildConfig
+import com.click.lightmemo.domain.RecognitionPath
+import com.click.lightmemo.domain.RecognitionStrategy
 import com.click.lightmemo.data.FoodImages
 import com.click.lightmemo.domain.MealRecognition
 import com.click.lightmemo.domain.Nutrition
@@ -110,22 +113,27 @@ class RecognitionService : Service() {
             if (isCurrentTask(request.id)) {
                 app.recognitionTaskStore.fail(request.id, message)
                 postFinishedNotification(request, success = false, message = message)
+                app.recordDiagnostic(com.click.lightmemo.data.LocalDiagnosticsEntity(java.time.LocalDate.now().toEpochDay(),
+                    recognitionCount = 1, failureCount = 1, fullPathCount = 1))
             }
             stopSelfResult(startId)
             return START_NOT_STICKY
         }
 
-        taskJob = serviceScope.launch {
+        val metrics = RecognitionDiagnostics()
+        taskJob = serviceScope.launch(metrics) {
             try {
                 execute(request)
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
+                metrics.outcome = false
                 val message = userFacingRecognitionError(error)
                 if (isCurrentTask(request.id)) {
                     app.recognitionTaskStore.fail(request.id, message)
                 }
             } finally {
+                metrics.completedDelta()?.let { app.diagnosticsRepository.recordSafely(it) }
                 // A canceled/replaced task must not stop the newer task that now owns the service.
                 if (isCurrentTask(request.id) &&
                     app.recognitionTaskStore.state.value?.status != RecognitionTaskStatus.RUNNING
@@ -133,6 +141,13 @@ class RecognitionService : Service() {
                     val record = app.recognitionTaskStore.state.value
                     if (record?.status == RecognitionTaskStatus.COMPLETED) {
                         retainCompletedLiveNotification(request, startId, record)
+                    } else if (record?.status == RecognitionTaskStatus.AWAITING_CACHE_CONFIRMATION) {
+                        stopForeground(STOP_FOREGROUND_REMOVE)
+                        notificationManager.notify(NOTIFICATION_ID, baseNotification(request)
+                            .setContentTitle("轻食记 · 等待选择")
+                            .setContentText("这张图片刚刚识别过，点击选择是否使用上次结果")
+                            .setAutoCancel(true).build())
+                        stopSelfResult(startId)
                     } else {
                         stopForeground(STOP_FOREGROUND_REMOVE)
                         postFinishedNotification(
@@ -149,6 +164,7 @@ class RecognitionService : Service() {
     }
 
     private suspend fun execute(request: RecognitionRequest) {
+        val metrics = kotlinx.coroutines.currentCoroutineContext()[RecognitionDiagnostics]
         val settings = app.settingsRepository.settings.first()
         if (!settings.isRecognitionConfigured) {
             throw RecognitionException("请先在设置中配置 API Key 与 Base URL")
@@ -238,9 +254,38 @@ class RecognitionService : Service() {
             }
 
             RecognitionRequestType.IMAGE -> {
+                val startedAt = android.os.SystemClock.elapsedRealtime()
                 val imageUri = request.imageUri ?: throw RecognitionException("图片地址为空")
                 updateStage(request, RecognitionStage.PREPARING)
                 val base64 = FoodImages.encode(this, android.net.Uri.parse(imageUri))
+                val cache = RecognitionImageCache(java.io.File(cacheDir, "recognition-results.json"))
+                val fingerprint = RecognitionImageCache.digest(base64)
+                val contextKey = RecognitionImageCache.digest(json.encodeToString(listOf(
+                    settings.baseUrl, settings.model, BuildConfig.VERSION_NAME,
+                    json.encodeToString(settings.promptOverrides), userDescription, request.mealType.label,
+                    request.plateSize, settings.foodDataCentralApiKey,
+                )))
+                val cached = cache.find(fingerprint, contextKey)
+                if (cached != null && request.reuseImageCache == null) {
+                    app.recognitionTaskStore.awaitCacheConfirmation(request.id)
+                    return
+                }
+                if (cached != null && request.reuseImageCache == true) {
+                    complete(request, result = cached.result.withFreshIds(),
+                        imageUri = FoodImages.persistEncoded(this, base64).toString(), path = cached.path,
+                        cacheReused = true, durationMillis = android.os.SystemClock.elapsedRealtime() - startedAt)
+                    return
+                }
+                val memories = try {
+                    app.personalFoodMemoryRepository.readAll()
+                } catch (error: CancellationException) { throw error
+                } catch (_: Exception) { emptyList() }
+                var path = RecognitionPath.FULL
+                var modelCalls = 0
+                // Custom prompts and serving descriptions retain the full requested workflow.
+                val strategy = RecognitionStrategy(memories, customPrompts = settings.promptOverrides.isNotEmpty(),
+                    multipleServings = servingCountFor(request.selectedTags) != null,
+                    explicitDescription = !request.foodName.isNullOrBlank() || request.note.isNotBlank() || request.selectedTags.isNotEmpty())
                 val visualResult = client.recognize(
                     baseUrl = settings.baseUrl,
                     apiKey = settings.apiKey,
@@ -251,17 +296,30 @@ class RecognitionService : Service() {
                     mealType = request.mealType.label,
                     plateSize = request.plateSize,
                     onStage = { stage -> updateStage(request, stage) },
+                    onModelCall = { modelCalls++ },
+                    fastResult = { visual ->
+                        try {
+                            strategy.fastResult(visual)?.also { path = RecognitionPath.FAST; metrics?.path = path }
+                        } catch (_: Exception) { null }
+                    },
                 )
                 if (!visualResult.isFoodImage || visualResult.dishes.isEmpty()) {
                     throw RecognitionException("图片中没有识别到可记录的食物")
                 }
                 updateStage(request, RecognitionStage.MATCHING)
-                val result = nutritionDatabase
-                    .enrich(visualResult, settings.foodDataCentralApiKey)
-                    .splitDishes()
+                val assisted = if (path == RecognitionPath.FAST) visualResult else try {
+                    strategy.assist(visualResult)
+                } catch (_: Exception) { visualResult }
+                if (path != RecognitionPath.FAST && assisted != visualResult) path = RecognitionPath.ASSISTED
+                metrics?.path = path
+                val enriched = if (path == RecognitionPath.FAST) assisted else nutritionDatabase.enrich(assisted, settings.foodDataCentralApiKey)
+                val result = enriched.splitDishes()
                     .scaledForServing(servingCountFor(request.selectedTags) ?: 1.0)
                 val savedImageUri = FoodImages.persistEncoded(this, base64).toString()
-                complete(request, result = result, imageUri = savedImageUri)
+                runCatching { cache.put(CachedRecognition(fingerprint, contextKey, result, System.currentTimeMillis(),
+                    settings.model, BuildConfig.VERSION_NAME, path)) }
+                complete(request, result = result, imageUri = savedImageUri, path = path,
+                    modelCallCount = modelCalls, durationMillis = android.os.SystemClock.elapsedRealtime() - startedAt)
             }
 
             RecognitionRequestType.REPLACE_DISH -> {
@@ -296,20 +354,30 @@ class RecognitionService : Service() {
         }
     }
 
-    private fun complete(
+    private suspend fun complete(
         request: RecognitionRequest,
         result: MealRecognition? = null,
         imageUri: String? = null,
         manualNutrition: com.click.lightmemo.domain.Nutrition? = null,
         estimatedPortionGrams: Double? = null,
+        path: RecognitionPath = RecognitionPath.FULL,
+        modelCallCount: Int = 0,
+        durationMillis: Long = 0,
+        cacheReused: Boolean = false,
     ) {
         if (!isCurrentTask(request.id)) return
+        val metrics = kotlinx.coroutines.currentCoroutineContext()[RecognitionDiagnostics]
+        metrics?.apply { outcome = true; this.path = path; this.cacheReused = cacheReused }
         app.recognitionTaskStore.complete(
             taskId = request.id,
             result = result,
             imageUri = imageUri,
             manualNutrition = manualNutrition,
             estimatedPortionGrams = estimatedPortionGrams,
+            path = path,
+            modelCallCount = metrics?.modelCalls ?: modelCallCount,
+            durationMillis = metrics?.elapsedMillis() ?: durationMillis,
+            cacheReused = cacheReused,
         )
     }
 

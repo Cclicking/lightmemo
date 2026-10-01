@@ -15,6 +15,27 @@ class FoodDataCentralClientTest {
         httpClient = OkHttpClient.Builder().addInterceptor { throw IOException("offline") }.build(),
     )
 
+    @Test fun matchingReportsActualSourceButBrowsingDoesNotInflateCounters() = runBlocking {
+        val sources = mutableListOf<com.click.lightmemo.domain.NutritionMatchSource>()
+        val database = FoodDataCentralClient(
+            openAsset = { File(assets, it).inputStream() }, listAssets = { assets.list().orEmpty() },
+            httpClient = OkHttpClient.Builder().addInterceptor { throw IOException("offline") }.build(),
+            onMatch = { sources += it })
+        database.lookup("rice cooked", "")
+        database.lookup("米饭", "")
+        database.lookup("zzzzunmatchedxxxx", "")
+        assertEquals(listOf(com.click.lightmemo.domain.NutritionMatchSource.USDA_OFFLINE,
+            com.click.lightmemo.domain.NutritionMatchSource.CHINA, com.click.lightmemo.domain.NutritionMatchSource.MISSING), sources)
+        database.browseOffline(query = "米饭")
+        assertEquals(3, sources.size)
+    }
+
+    @Test fun optionalMatchRecorderFailureDoesNotPreventLookup() = runBlocking {
+        val database = FoodDataCentralClient(openAsset = { File(assets, it).inputStream() },
+            listAssets = { assets.list().orEmpty() }, onMatch = { error("diagnostics unavailable") })
+        assertNotNull(database.lookup("米饭", ""))
+    }
+
     @Test fun networkFailureStillReturnsChinaFallback() = runBlocking {
         val result = client().lookup("米饭", "configured-key")
         assertNotNull(result)

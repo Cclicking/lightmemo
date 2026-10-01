@@ -28,10 +28,12 @@ class FoodDataCentralClient internal constructor(
         .readTimeout(30, TimeUnit.SECONDS)
         .build(),
     private val json: Json = Json { ignoreUnknownKeys = true },
+    private val onMatch: (com.click.lightmemo.domain.NutritionMatchSource) -> Unit = {},
 ) {
-    constructor(context: Context) : this(
+    constructor(context: Context, onMatch: (com.click.lightmemo.domain.NutritionMatchSource) -> Unit = {}) : this(
         openAsset = { context.assets.open(it) },
         listAssets = { context.assets.list("").orEmpty() },
+        onMatch = onMatch,
     )
     private val memoryCache = ConcurrentHashMap<String, NutritionReference>()
     private val usdaFoods: List<LocalFood> by lazy { loadUsdaFoods() }
@@ -64,7 +66,7 @@ class FoodDataCentralClient internal constructor(
     suspend fun enrich(meal: MealRecognition, apiKey: String): MealRecognition = withContext(Dispatchers.IO) {
         val components = meal.dishes.flatMap { it.allComponents }.distinctBy { it.id }
         val matches = components.associate { component ->
-            component.id to resolve(component, apiKey)
+            component.id to (component.nutritionReference ?: resolve(component, apiKey))
         }
         meal.copy(dishes = meal.dishes.map { it.withReferences(matches) })
     }
@@ -77,6 +79,8 @@ class FoodDataCentralClient internal constructor(
             ?: apiKey.takeIf { it.isNotBlank() }?.let { searchOnline(normalized, it, 8).firstOrNull() }
             ?: findChinaLocal(query, query)
         resolved?.also { memoryCache[cacheKey] = it }
+        runCatching { onMatch(com.click.lightmemo.domain.DiagnosticEvents.source(resolved)) }
+        resolved
     }
 
     /**
@@ -142,7 +146,9 @@ class FoodDataCentralClient internal constructor(
             ?: apiKey.takeIf { it.isNotBlank() }
                 ?.let { searchOnline(component.databaseQuery, it, 8).firstOrNull() }
             ?: findChinaLocal(component.chinaDatabaseQuery, component.databaseQuery)
-        return resolved?.also { memoryCache[key] = it }
+        resolved?.also { memoryCache[key] = it }
+        runCatching { onMatch(com.click.lightmemo.domain.DiagnosticEvents.source(resolved)) }
+        return resolved
     }
 
     private fun findUsdaLocal(query: String): NutritionReference? {

@@ -299,10 +299,16 @@ class EditFoodViewModel(app: Application) : AndroidViewModel(app) {
 
     fun save(updated: FoodLog, onSaved: () -> Unit) {
         if (_uiState.value.saving) return
+        val original = _uiState.value.entry
         _uiState.value = _uiState.value.copy(saving = true, error = null)
         viewModelScope.launch {
             try {
                 repo.update(updated)
+                original?.let { foodApp.diagnosticsRepository.recordSafely(com.click.lightmemo.domain.DiagnosticEvents.edited(
+                    java.time.LocalDate.now().toEpochDay(), it, updated)) }
+                if (original != null && com.click.lightmemo.domain.foodWasCorrected(updated, original)) {
+                    foodApp.personalFoodMemoryRepository.learnAfterSave(updated, original)
+                }
                 _uiState.value = _uiState.value.copy(entry = updated)
                 onSaved()
             } catch (e: CancellationException) {

@@ -95,6 +95,7 @@ class FoodRecognitionClient(
         .build(),
     private val json: Json = Json { ignoreUnknownKeys = true; isLenient = true },
     private val promptOverrides: suspend () -> Map<String, String> = { emptyMap() },
+    private val onCall: (nutritionEstimate: Boolean) -> Unit = {},
 ) {
     suspend fun normalizeFoodQuery(
         baseUrl: String,
@@ -168,6 +169,7 @@ class FoodRecognitionClient(
                     "食物名称：${foodName.trim()}\n当前可食用重量：${estimatedWeightG.formatForPrompt()}克",
                 ),
             ),
+            nutritionEstimate = true,
         )
         parseNutritionEstimate(extractJson(content))
     }
@@ -320,10 +322,13 @@ class FoodRecognitionClient(
         mealType: String = "",
         plateSize: String = "",
         onStage: suspend (RecognitionStage) -> Unit = {},
+        fastResult: (MealRecognition) -> MealRecognition? = { null },
+        onModelCall: () -> Unit = {},
     ): MealRecognition = withContext(Dispatchers.IO) {
         validate(baseUrl, apiKey, imageBase64)
         onStage(RecognitionStage.RECOGNIZING)
         val dataUrl = "data:$mimeType;base64,$imageBase64"
+        onModelCall()
         val initialContent = complete(
             baseUrl,
             apiKey,
@@ -342,10 +347,12 @@ class FoodRecognitionClient(
         val initialJson = extractJson(initialContent)
         val initial = parseVisualJson(initialJson)
         if (!initial.isFoodImage || initial.dishes.isEmpty()) return@withContext initial
+        fastResult(initial)?.let { return@withContext it }
 
         // 审核服务失败时保留第一阶段结果，营养查询仍可继续。
         runCatching {
             onStage(RecognitionStage.REVIEWING)
+            onModelCall()
             val reviewed = complete(
                 baseUrl,
                 apiKey,
@@ -408,6 +415,7 @@ class FoodRecognitionClient(
         apiKey: String,
         model: String,
         messages: List<ChatMessage>,
+        nutritionEstimate: Boolean = false,
     ): String {
         val body = json.encodeToString(
             ChatRequest.serializer(),
@@ -419,6 +427,8 @@ class FoodRecognitionClient(
             .addHeader("Content-Type", "application/json")
             .post(body.toRequestBody("application/json".toMediaType()))
             .build()
+        kotlinx.coroutines.currentCoroutineContext()[com.click.lightmemo.recognition.RecognitionDiagnostics]?.modelCalled()
+        runCatching { onCall(nutritionEstimate) }
         httpClient.newCall(request).awaitResponse().use { response ->
             val raw = response.body?.string().orEmpty()
             if (!response.isSuccessful) {
