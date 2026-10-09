@@ -210,7 +210,12 @@ internal fun ReviewContent(
                                 onClick = { onAcceptMemory(dish.id) }, enabled = !recognizing,
                                 modifier = Modifier.weight(1f),
                             ) { Text("使用历史建议") }
-                            Button(onClick = { onIgnoreMemory(dish.id) }, enabled = !recognizing, modifier = Modifier.weight(1f)) { Text("忽略建议") }
+                            Button(
+                                onClick = { onIgnoreMemory(dish.id) },
+                                enabled = !recognizing,
+                                modifier = Modifier.weight(1f),
+                                colors = sheetSecondaryButtonColors(enabled = !recognizing),
+                            ) { Text("忽略建议") }
                         }
                     }
                 }
