@@ -58,7 +58,7 @@ class McpProtocol(private val provider: NutritionProvider) {
             "ping" -> JSONObject()
             "tools/list" -> JSONObject().put("tools", JSONArray().put(JSONObject().apply {
                 put("name", TOOL)
-                put("description", "查询轻食记今天已记录的热量、蛋白质、碳水化合物和脂肪摄入汇总。仅包含已记录的饮食。")
+                put("description", "查询轻食记今天已记录的热量、蛋白质、碳水化合物和脂肪摄入汇总，以及对应的每日目标 targets。目标为 null 表示尚未设置且无推荐值，不代表目标为零。摄入仅包含已记录的饮食。")
                 put("inputSchema", JSONObject().put("type", "object")
                     .put("properties", JSONObject()).put("additionalProperties", false))
             }).apply { if (textRecording != null) put(ExistingTextRecordingTool.definition()) })

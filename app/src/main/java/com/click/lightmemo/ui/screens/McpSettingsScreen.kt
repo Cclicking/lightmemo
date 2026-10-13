@@ -129,7 +129,7 @@ fun McpSettingsScreen(viewModel: McpViewModel, contentPadding: PaddingValues,
             SmallTitle("使用方法", modifier = Modifier.offset(x = (-16).dp))
             Card(modifier = Modifier.fillMaxWidth(), cornerRadius = 20.dp, insideMargin = PaddingValues(0.dp)) {
                 BasicComponent(title = "连接超级小爱", summary = "开启服务后复制连接地址，在小爱的 MCP 服务设置中粘贴完整地址。随后可询问：查询轻食记里今天的营养摄入。")
-                BasicComponent(title = "可查询的数据", summary = "今天已记录的热量、蛋白质、碳水化合物和脂肪。查询不会修改或删除饮食记录。")
+                BasicComponent(title = "可查询的数据", summary = "今天已记录的热量、蛋白质、碳水化合物和脂肪，以及对应的每日目标。查询不会修改或删除饮食记录。")
                 BasicComponent(title = "用语音记录饮食", summary = "告诉小爱你吃了什么，描述会进入轻食记原有文字识别流程，并显示实时识别通知。识别完成后，打开结果核对并保存。")
             }
         }

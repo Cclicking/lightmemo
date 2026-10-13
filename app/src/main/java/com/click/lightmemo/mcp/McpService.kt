@@ -17,6 +17,7 @@ import com.click.lightmemo.R
 import com.click.lightmemo.ui.secondary.McpSettingsActivity
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import java.security.SecureRandom
 
 data class McpState(val running: Boolean = false, val starting: Boolean = false, val address: String = "", val error: String? = null)
@@ -81,7 +82,9 @@ class McpService : Service() {
                         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
                         .putExtra(com.click.lightmemo.recognition.EXTRA_OPEN_RECOGNITION, true))
                 })
-            server = McpHttpServer(McpProtocol(LocalNutritionProvider(app.foodLogRepository), recording), token,
+            server = McpHttpServer(McpProtocol(LocalNutritionProvider(app.foodLogRepository) {
+                app.settingsRepository.settings.first()
+            }, recording), token,
                 onFailure = {
                     android.os.Handler(mainLooper).post {
                         McpRuntime.mutableState.value = McpState(error = "连接已中断，请重新开启服务。")

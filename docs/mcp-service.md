@@ -20,9 +20,11 @@ MCP 页面提供电池优化豁免申请，并通过 `PowerManager.isIgnoringBat
 
 ## 查询当天营养
 
-`get_today_nutrition` 无参数，返回今天已记录的热量、蛋白质、碳水和脂肪。结果位于 `result.content[0].text`，为 JSON 字符串。
+`get_today_nutrition` 无参数，返回今天已记录的热量、蛋白质、碳水和脂肪，以及对应的每日目标。结果位于 `result.content[0].text`，为 JSON 字符串。
 
-包括 `schema_version=1`、`date`、`timezone`、`source=qingshiji`、`is_mock=false`、`status`、`calories_kcal`、`protein_g`、`carbohydrates_g`、`fat_g`、`missing_fields` 和 `message`。不包含饮水字段。
+包括 `schema_version=1`、`date`、`timezone`、`source=qingshiji`、`is_mock=false`、`status`、`calories_kcal`、`protein_g`、`carbohydrates_g`、`fat_g`、`targets`、`missing_fields` 和 `message`。不包含饮水字段。
+
+`targets` 使用相同的四个营养字段及单位，读取每次查询时的当前设置。热量使用 `dailyCalorieTarget`，三大营养素沿用目标设置的有效值：手动设置优先，否则使用已有个人资料推荐值。目标未设置且无推荐值时返回 `null`，并在 `missing_fields` 中标记如 `targets.protein_g`，不将缺失目标解释为零；没有饮食记录时仍返回目标。该字段为兼容性新增，原有摄入字段保持不变。首页图表在目标缺失时使用的展示兜底值不作为已设置目标返回。
 
 沿用现有日期口径，直接汇总已按食用份量换算的记录。无记录返回 `no_records` 和已记录总量 0；读取失败返回工具错误，不用模拟数据或零值兜底。
 
