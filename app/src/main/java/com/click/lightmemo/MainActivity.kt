@@ -638,6 +638,7 @@ fun FoodAppRoot() {
                         show = showAdd,
                         title = when (addState.step) {
                             AddStep.PickSource -> "添加食物"
+                            AddStep.Chat -> "智能识别"
                             AddStep.PresetList -> "预设食物"
                             is AddStep.PresetEdit -> "编辑预设"
                             is AddStep.Manual -> "文字录入"
@@ -647,6 +648,8 @@ fun FoodAppRoot() {
                         liquidGlassBackdrop = if (blurGlassSupported) backdrop else null,
                         dimBackground = true,
                         sheetOffsetDp = statusBarsPadding + 5.dp,
+                        resizeForIme = addState.step != AddStep.Chat,
+                        extendedTopBarBlur = addState.step == AddStep.Chat,
                         onDismissRequest = { if (!addState.saving) showAdd = false },
                         onSheetContentBackdropCreated = { sheetContentBackdrop = it },
                         startAction = {
@@ -679,7 +682,8 @@ fun FoodAppRoot() {
                     ) {
                         AddFoodRoute(
                             viewModel = addVm,
-                            contentPadding = PaddingValues(top = 61.dp, bottom = 24.dp),
+                            contentPadding = PaddingValues(top = 61.dp,
+                                bottom = 24.dp + if (addState.step == AddStep.Chat) statusBarsPadding + 5.dp else 0.dp),
                             scrollBehavior = null,
                             listState = addList,
                             onDone = { showAdd = false },

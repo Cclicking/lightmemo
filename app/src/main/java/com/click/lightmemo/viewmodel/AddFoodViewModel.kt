@@ -21,9 +21,12 @@ import com.click.lightmemo.recognition.RecognitionRequest
 import com.click.lightmemo.recognition.RecognitionRequestType
 import com.click.lightmemo.recognition.RecognitionService
 import com.click.lightmemo.recognition.RecognitionTaskStatus
+import com.click.lightmemo.network.FoodChatMessage
+import com.click.lightmemo.network.userFacingRecognitionError
 import java.time.LocalDate
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -81,6 +84,96 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun notify(message: String) {
         eventChannel.trySend(message)
+    }
+
+    private var chatJob: Job? = null
+
+    fun openFoodChat() {
+        if (_uiState.value.recognizing || _uiState.value.saving) return
+        chatJob?.cancel()
+        _uiState.value = _uiState.value.copy(
+            step = AddStep.Chat, error = null, chatInput = "", chatMessages = emptyList(),
+            chatSummary = "", chatSending = false, chatError = null,
+            chatReady = false, chatAddingFood = false,
+            secondaryHasContent = false, showLeaveConfirm = false,
+        )
+    }
+
+    fun setChatInput(value: String) {
+        _uiState.value = _uiState.value.copy(
+            chatInput = value,
+            secondaryHasContent = value.isNotBlank() || _uiState.value.chatMessages.isNotEmpty(),
+        )
+    }
+
+    fun sendChatMessage(text: String = _uiState.value.chatInput) {
+        val state = _uiState.value
+        if (state.step != AddStep.Chat || state.chatSending || text.isBlank()) return
+        if (!settings.value.isRecognitionConfigured) {
+            _uiState.value = state.copy(chatError = "请先到「我的 → 识别 API」配置服务")
+            return
+        }
+        _uiState.value = state.copy(
+            chatMessages = state.chatMessages + FoodChatMessage(text.trim(), true),
+            chatInput = "", secondaryHasContent = true,
+            chatReady = false, chatAddingFood = false,
+        )
+        requestChatReply()
+    }
+
+    fun retryChatReply() {
+        val state = _uiState.value
+        if (state.step == AddStep.Chat && !state.chatSending && state.chatMessages.lastOrNull()?.fromUser == true) {
+            requestChatReply()
+        }
+    }
+
+    private fun requestChatReply() {
+        val state = _uiState.value
+        val config = settings.value
+        _uiState.value = state.copy(chatSending = true, chatError = null)
+        chatJob = viewModelScope.launch {
+            try {
+                val reply = foodApp.recognitionClient.continueFoodChat(
+                    config.baseUrl, config.apiKey, config.model, state.chatMessages, state.mealType.label,
+                )
+                _uiState.value = _uiState.value.copy(
+                    chatMessages = state.chatMessages + FoodChatMessage(reply.reply, false, reply.question),
+                    chatSummary = reply.summary, chatSending = false,
+                    chatReady = reply.ready,
+                )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    chatSending = false, chatError = userFacingRecognitionError(e),
+                )
+            }
+        }
+    }
+
+    fun recognizeChatMeal() {
+        val state = _uiState.value
+        if (state.step != AddStep.Chat || state.chatSending || state.chatError != null ||
+            !state.chatReady || state.chatAddingFood || state.chatSummary.isBlank() || state.chatInput.isNotBlank()) return
+        // 对话已经整理为本人摄入量，不能再按多人份标签平分一次。
+        _uiState.value = state.copy(selectedTags = state.selectedTags - MealPortionTags)
+        recognizeFromText(state.chatSummary)
+    }
+
+    fun chooseChatOption(option: String) {
+        val state = _uiState.value
+        val question = state.chatMessages.lastOrNull()?.question ?: return
+        if (state.chatSending || state.chatError != null || state.chatInput.isNotBlank() ||
+            option !in question.answerOptions) return
+        sendChatMessage("${question.prompt}：$option")
+    }
+
+    fun beginChatSupplement() {
+        val state = _uiState.value
+        if (state.step != AddStep.Chat || !state.chatReady || state.chatSending || state.chatError != null) return
+        _uiState.value = state.copy(chatReady = false, chatAddingFood = true,
+            chatMessages = state.chatMessages + FoodChatMessage("好的，继续告诉我还吃了什么、大概多少，我会合并到这餐。", false))
     }
 
     fun setMealType(type: MealType) {
@@ -521,6 +614,7 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
 
     fun backToPick() {
         if (_uiState.value.saving) return
+        chatJob?.cancel()
         val task = recognitionTaskStore.state.value
         if (task?.status == RecognitionTaskStatus.RUNNING) {
             RecognitionService.cancel(foodApp, task.request.id)
@@ -540,6 +634,9 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
             showLeaveConfirm = false,
             showDeletePresetConfirm = false,
             manualDraftSnapshot = null,
+            chatInput = "", chatMessages = emptyList(), chatSummary = "",
+            chatSending = false, chatError = null,
+            chatReady = false, chatAddingFood = false,
         )
     }
 
@@ -614,7 +711,7 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
         when (_uiState.value.step) {
             is AddStep.ManualEdit -> backFromManualEdit()
             is AddStep.PresetEdit -> openPresetList()
-            is AddStep.Manual, is AddStep.Review, AddStep.PresetList -> backToPick()
+            is AddStep.Manual, is AddStep.Review, AddStep.PresetList, AddStep.Chat -> backToPick()
             AddStep.PickSource -> Unit
         }
     }

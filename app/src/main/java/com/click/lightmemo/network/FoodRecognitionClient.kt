@@ -25,6 +25,26 @@ import okhttp3.RequestBody.Companion.toRequestBody
 
 class RecognitionException(message: String, cause: Throwable? = null) : Exception(message, cause)
 
+data class FoodChatMessage(
+    val text: String,
+    val fromUser: Boolean,
+    val question: FoodChatQuestion? = null,
+)
+
+@Serializable
+data class FoodChatQuestion(val prompt: String, val options: List<String>) {
+    val answerOptions: List<String>
+        get() = options + "记不清，按常见份量估算"
+}
+
+@Serializable
+data class FoodChatReply(
+    val reply: String,
+    val summary: String,
+    val ready: Boolean,
+    val question: FoodChatQuestion? = null,
+)
+
 @Serializable
 data class ChatRequest(
     val model: String,
@@ -97,6 +117,60 @@ class FoodRecognitionClient(
     private val promptOverrides: suspend () -> Map<String, String> = { emptyMap() },
     private val onCall: (nutritionEstimate: Boolean) -> Unit = {},
 ) {
+    suspend fun continueFoodChat(
+        baseUrl: String,
+        apiKey: String,
+        model: String,
+        history: List<FoodChatMessage>,
+        mealType: String,
+    ): FoodChatReply = withContext(Dispatchers.IO) {
+        validateConfig(baseUrl, apiKey)
+        require(history.isNotEmpty() && history.last().fromUser) { "请先描述吃了什么" }
+        val content = complete(baseUrl, apiKey, model, listOf(textMessage("system", """
+            你是饮食记录助手，通过中文对话帮助用户记录本人实际吃下的一餐。当前餐次：$mealType。
+            先整理用户描述，再只追问对摄入量影响最大的缺失信息，例如本人吃的份量、饮料容量、蘸料。
+            每轮只问一个简短问题，不重复问已回答的问题。不按聚餐人数直接平分整桌菜。
+            每个问题必须提供 2 到 5 个易选择、互不重叠的具体答案选项，包含单位与适用范围。
+            例如每盘肉的份量可选“约5片/盘”“约10片/盘”“约15片/盘”。选项不要只写少量或正常。
+            应用会自动附加“记不清，按常见份量估算”，你不需要重复提供。用户也可以自行输入答案。
+            用户可以用碗、块、片、口描述份量，也可以说记不清；此时按常见个人份量估算并明确说明。
+            没有足够食物信息时继续询问，不编造食物。不提供减肥或医疗建议，不声称记录已保存。
+            必须只返回 JSON：{"reply":"简短整理或说明，不在此字段夹带问题","summary":"累计整理的本餐食物描述",
+            "ready":false,"question":{"prompt":"单个需要确认的问题","options":["答案选项1","答案选项2"]}}。
+            当本人食物与份量足够计算时，ready 必须为 true，question 必须为 null，停止追问。
+            用户选择记不清时，只对当前问题按常见份量估算，不反复追问同一份量。
+            所有必要信息齐全后，应用会询问“还有没有要补充的食物？”并提供“补充食物”和“生成记录”，无需你提问。
+            用户补充或更正食物后，合并到当前一餐，按需追问新信息；不要遗漏之前已确认的内容。
+            summary 必须反映所有轮次的最新更正，仅包括用户实际吃的食物、份量、做法及明确标注的估算。
+            summary 不得包含追问、未确认的候选食物或营养数值；尚未提到食物时返回空字符串。
+        """.trimIndent())) + history.map {
+            val question = it.question?.let { q -> "\n${q.prompt}\n选项：${q.answerOptions.joinToString("；")}" }.orEmpty()
+            textMessage(if (it.fromUser) "user" else "assistant", it.text + question)
+        })
+        parseFoodChatReply(content)
+    }
+
+    internal fun parseFoodChatReply(content: String): FoodChatReply {
+        val result = try {
+            json.decodeFromString<FoodChatReply>(extractJson(content))
+        } catch (e: Exception) {
+            throw RecognitionException("对话回复格式异常，请重试", e)
+        }
+        if (result.reply.isBlank()) throw RecognitionException("对话回复为空，请重试")
+        val question = result.question?.let {
+            FoodChatQuestion(it.prompt.trim(), it.options.map(String::trim).distinct())
+        }
+        if (result.ready) {
+            if (result.summary.isBlank() || question != null) {
+                throw RecognitionException("餐食草稿不完整，请重试")
+            }
+        } else if (question == null || question.prompt.isBlank() || question.options.size !in 2..5 ||
+            question.options.any { it.isBlank() || it.contains("记不清") }) {
+            throw RecognitionException("对话问题选项异常，请重试")
+        }
+        return result.copy(reply = result.reply.trim(), summary = result.summary.trim(), question = question)
+    }
+
     suspend fun normalizeFoodQuery(
         baseUrl: String,
         apiKey: String,

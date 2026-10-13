@@ -108,6 +108,8 @@ fun BlurBottomSheet(
     endAction: @Composable (() -> Unit)? = null,
     onSheetContentBackdropCreated: ((Backdrop?) -> Unit)? = null,
     skipEnterAnimation: Boolean = false,
+    resizeForIme: Boolean = true,
+    extendedTopBarBlur: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     val visibleState = remember { mutableStateOf(show) }
@@ -151,6 +153,8 @@ fun BlurBottomSheet(
             sheetOffsetDp = sheetOffsetDp,
             sheetMaxWidth = sheetMaxWidth,
             skipEnterAnimation = skipEnterAnimation,
+            resizeForIme = resizeForIme,
+            extendedTopBarBlur = extendedTopBarBlur,
             content = content,
         )
     }
@@ -173,6 +177,8 @@ private fun BlurBottomSheetContent(
     endAction: @Composable (() -> Unit)? = null,
     sheetContentBackdropHolder: MutableState<Backdrop?>? = null,
     skipEnterAnimation: Boolean = false,
+    resizeForIme: Boolean = true,
+    extendedTopBarBlur: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     val sheetAppDark = rememberAppSettingDark()
@@ -256,7 +262,7 @@ private fun BlurBottomSheetContent(
                                 }
                             }
                         }
-                        .imePadding()
+                        .then(if (resizeForIme) Modifier.imePadding() else Modifier)
                         .clip(ContinuousRoundedRectangle(36.dp))
                         .then(
                             // Android 12+：RenderEffect 高斯模糊 + vibrancy；无 lens 折射
@@ -400,10 +406,10 @@ private fun BlurBottomSheetContent(
 
                             ProgressiveBlurTopBar(
                                 backdrop = sheetContentBackdrop,
-                                height = 84.dp,
+                                height = if (extendedTopBarBlur) 112.dp else 84.dp,
                                 tintColor = sheetBgColor,
                                 tintIntensity = 0f,
-                                blurAlpha = backdropAlpha.value,
+                                blurAlpha = if (extendedTopBarBlur) 1f else backdropAlpha.value,
                                 modifier = Modifier.zIndex(1f)
                             ) {
                                 Box(modifier = Modifier.fillMaxWidth().height(60.dp))

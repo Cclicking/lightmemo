@@ -37,6 +37,7 @@ import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.icon.MiuixIcons
+import top.yukonga.miuix.kmp.icon.os4.AiScan
 import top.yukonga.miuix.kmp.icon.os4.Edit
 import top.yukonga.miuix.kmp.icon.os4.FavoritesFill
 import top.yukonga.miuix.kmp.icon.os4.Image
@@ -69,6 +70,7 @@ internal fun PickSourceContent(
     onCamera: () -> Unit,
     onManual: () -> Unit,
     onPreset: () -> Unit,
+    onFoodChat: () -> Unit,
     canRetryRecognition: Boolean = false,
     onRetryRecognition: () -> Unit = {},
 ) {
@@ -237,6 +239,12 @@ internal fun PickSourceContent(
             error = error,
             canRetry = canRetryRecognition,
             onRetry = onRetryRecognition,
+        )
+        MethodButton(
+            icon = { Icon(MiuixIcons.Os4.AiScan, contentDescription = null) },
+            label = "智能识别",
+            enabled = !recognizing,
+            onClick = onFoodChat,
         )
     }
 }

@@ -56,7 +56,7 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 private fun stepOrder(step: AddStep): Int = when (step) {
     AddStep.PickSource -> 0
-    is AddStep.Manual, AddStep.PresetList -> 1
+    is AddStep.Manual, AddStep.PresetList, AddStep.Chat -> 1
     is AddStep.ManualEdit, is AddStep.PresetEdit -> 2
     is AddStep.Review -> 3
 }
@@ -280,8 +280,21 @@ fun AddFoodRoute(
                     onCamera = { withNotificationPermission(::onCameraClick) },
                     onManual = { viewModel.openManual() },
                     onPreset = viewModel::openPresetList,
+                    onFoodChat = viewModel::openFoodChat,
                     canRetryRecognition = state.canRetryRecognition,
                     onRetryRecognition = viewModel::retryRecognition,
+                )
+
+                AddStep.Chat -> FoodChatContent(
+                    padding = contentPadding,
+                    state = state,
+                    configured = settings.isRecognitionConfigured,
+                    onInputChange = viewModel::setChatInput,
+                    onSend = { viewModel.sendChatMessage() },
+                    onOption = viewModel::chooseChatOption,
+                    onSupplement = viewModel::beginChatSupplement,
+                    onRetry = viewModel::retryChatReply,
+                    onRecognize = { withNotificationPermission { viewModel.recognizeChatMeal() } },
                 )
 
                 is AddStep.Manual -> ManualEntryContent(

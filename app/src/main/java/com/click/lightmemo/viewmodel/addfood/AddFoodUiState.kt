@@ -8,11 +8,13 @@ import com.click.lightmemo.domain.MealType
 import com.click.lightmemo.domain.Nutrition
 import com.click.lightmemo.domain.NutritionReference
 import com.click.lightmemo.domain.RecognitionStage
+import com.click.lightmemo.network.FoodChatMessage
 import java.time.LocalDate
 import java.time.LocalTime
 
 sealed interface AddStep {
     data object PickSource : AddStep
+    data object Chat : AddStep
     data class Review(
         val imageUri: String?,
         val result: MealRecognition,
@@ -66,6 +68,13 @@ data class AddFoodUiState(
     val photoDescription: String = "",
     val targetDateEpochDay: Long = LocalDate.now().toEpochDay(),
     val quickInput: String = "",
+    val chatInput: String = "",
+    val chatMessages: List<FoodChatMessage> = emptyList(),
+    val chatSummary: String = "",
+    val chatReady: Boolean = false,
+    val chatAddingFood: Boolean = false,
+    val chatSending: Boolean = false,
+    val chatError: String? = null,
     val selectedTags: Set<String> = emptySet(),
     val mealMinuteOfDay: Int = LocalTime.now().hour * 60 + LocalTime.now().minute,
     val note: String = "",
