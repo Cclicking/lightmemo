@@ -255,6 +255,17 @@ class DataManagementActivity : SecondarySettingsActivity() {
     }
 }
 
+class McpSettingsActivity : SecondarySettingsActivity() {
+    override val pageTitle = "MCP 服务"
+
+    @Composable
+    override fun PageContent(settingsVm: SettingsViewModel, backupVm: BackupViewModel,
+        contentPadding: PaddingValues, scrollBehavior: SharedScrollBehavior) {
+        val mcpVm: com.click.lightmemo.viewmodel.McpViewModel = viewModel()
+        com.click.lightmemo.ui.screens.McpSettingsScreen(mcpVm, contentPadding, scrollBehavior, rememberLazyListState())
+    }
+}
+
 class PersonalFoodMemoryActivity : SecondarySettingsActivity() {
     override val pageTitle = "个人食物记忆"
 

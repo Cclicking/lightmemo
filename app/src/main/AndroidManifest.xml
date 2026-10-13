@@ -10,6 +10,8 @@
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
     <uses-feature
         android:name="android.hardware.camera"
@@ -41,6 +43,13 @@
                 android:resource="@xml/shortcuts" />
         </activity>
         <service
+            android:name=".mcp.McpService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="User-enabled local MCP server for daily nutrition queries and starting the existing text food recognition flow from an assistant on the same device" />
+        </service>
+        <service
             android:name=".recognition.RecognitionService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
@@ -60,6 +69,7 @@
         <activity android:name=".ui.secondary.PromptSettingsActivity" android:exported="false" android:windowSoftInputMode="adjustResize" />
         <activity android:name=".ui.secondary.CalorieTargetActivity" android:exported="false" />
         <activity android:name=".ui.secondary.DataManagementActivity" android:exported="false" />
+        <activity android:name=".ui.secondary.McpSettingsActivity" android:exported="false" />
         <activity android:name=".ui.secondary.PersonalFoodMemoryActivity" android:exported="false" />
         <activity android:name=".ui.secondary.FoodDatabaseActivity" android:exported="false" />
         <activity android:name=".widget.WidgetSettingsActivity" android:exported="false" />

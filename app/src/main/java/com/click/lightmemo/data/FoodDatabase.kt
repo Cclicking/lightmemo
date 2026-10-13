@@ -6,6 +6,8 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 
 @Database(
     entities = [FoodLogEntity::class, PersonalFoodMemoryEntity::class, RecommendationFeedbackEntity::class, LocalDiagnosticsEntity::class],
@@ -17,6 +19,11 @@ abstract class FoodDatabase : RoomDatabase() {
     abstract fun personalFoodMemoryDao(): PersonalFoodMemoryDao
     abstract fun recommendationFeedbackDao(): RecommendationFeedbackDao
     abstract fun localDiagnosticsDao(): LocalDiagnosticsDao
+
+    /** Refresh signal only; observing widgets must not retain the entire food history. */
+    fun widgetDataChanges(): Flow<Unit> = invalidationTracker
+        .createFlow("food_logs", "recommendation_feedback")
+        .map { Unit }
 
     companion object {
         val MIGRATION_2_3 = object : Migration(2, 3) {

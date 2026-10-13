@@ -16,7 +16,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.FlowPreview
 import com.click.lightmemo.widget.FoodWidgets
@@ -61,15 +61,13 @@ class FoodApp : Application() {
         settingsRepository = SettingsRepository(this)
         appScope.launch {
             foodLogRepository.ensureMigrated()
-            combine(foodLogRepository.allLogs(), settingsRepository.settings, settingsRepository.foodPresets,
-                recommendationRepository.feedback.catch { emit(emptyList()) }) { _, _, _, _ -> Unit }
+            combine(FoodDatabase.get(this@FoodApp).widgetDataChanges(),
+                settingsRepository.settings.map { Unit }, settingsRepository.foodPresets.map { Unit }) { _, _, _ -> Unit }
                 .debounce(300).collect {
                     runCatching { FoodWidgets.updateAll(this@FoodApp) }
                         .onFailure { android.util.Log.w("FoodWidgets", "Unable to refresh widgets", it) }
                 }
         }
-        // One-time DataStore → Room migration; completes before first user action in practice.
-        appScope.launch { foodLogRepository.ensureMigrated() }
         appScope.launch {
             MealReminderScheduler.schedule(this@FoodApp, settingsRepository.settings.first())
         }
