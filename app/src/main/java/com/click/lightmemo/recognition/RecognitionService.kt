@@ -194,7 +194,7 @@ class RecognitionService : Service() {
                     foodName = foodName,
                 )
                 updateStage(request, RecognitionStage.MATCHING)
-                val reference = nutritionDatabase.lookup(query, settings.foodDataCentralApiKey)
+                val reference = nutritionDatabase.lookup(query, settings.foodDataCentralApiKey, chineseQuery = foodName)
                 complete(
                     request,
                     manualNutrition = reference?.per100g?.times(grams / 100.0) ?: Nutrition(),
@@ -220,7 +220,7 @@ class RecognitionService : Service() {
                     foodName = foodName,
                 )
                 updateStage(request, RecognitionStage.MATCHING)
-                val reference = nutritionDatabase.lookup(query, settings.foodDataCentralApiKey)
+                val reference = nutritionDatabase.lookup(query, settings.foodDataCentralApiKey, chineseQuery = foodName)
                 complete(
                     request,
                     manualNutrition = reference?.per100g?.times(grams / 100.0) ?: Nutrition(),

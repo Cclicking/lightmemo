@@ -19,7 +19,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 
-/** Offline nutrition lookup: USDA first, China Food Composition fallback, optional USDA API last. */
+/** Nutrition lookup: offline USDA, optional USDA API, then China Food Composition. */
 class FoodDataCentralClient internal constructor(
     private val openAsset: (String) -> java.io.InputStream,
     private val listAssets: () -> Array<out String>,
@@ -71,13 +71,14 @@ class FoodDataCentralClient internal constructor(
         meal.copy(dishes = meal.dishes.map { it.withReferences(matches) })
     }
 
-    suspend fun lookup(query: String, apiKey: String): NutritionReference? = withContext(Dispatchers.IO) {
+    suspend fun lookup(query: String, apiKey: String, chineseQuery: String = query): NutritionReference? = withContext(Dispatchers.IO) {
         val normalized = query.trim().lowercase()
-        if (normalized.isBlank()) return@withContext null
-        val cacheKey = "lookup:$normalized"
+        if (normalized.isBlank() && chineseQuery.isBlank()) return@withContext null
+        val cacheKey = "lookup:$normalized|${normalizeChinese(chineseQuery)}"
         val resolved = memoryCache[cacheKey] ?: findUsdaLocal(normalized)
-            ?: apiKey.takeIf { it.isNotBlank() }?.let { searchOnline(normalized, it, 8).firstOrNull() }
-            ?: findChinaLocal(query, query)
+            ?: apiKey.takeIf { it.isNotBlank() && normalized.isNotBlank() }
+                ?.let { findOnlineMatch(normalized, it) }
+            ?: findChinaLocal(chineseQuery, query)
         resolved?.also { memoryCache[cacheKey] = it }
         runCatching { onMatch(com.click.lightmemo.domain.DiagnosticEvents.source(resolved)) }
         resolved
@@ -140,12 +141,13 @@ class FoodDataCentralClient internal constructor(
     }
 
     private suspend fun resolve(component: FoodComponent, apiKey: String): NutritionReference? {
-        val key = "component:${component.databaseQuery.lowercase()}|${component.chinaDatabaseQuery}"
+        val chineseQuery = component.chinaDatabaseQuery.takeIf { it.isNotBlank() } ?: component.name
+        val key = "component:${component.databaseQuery.lowercase()}|$chineseQuery"
         val resolved = memoryCache[key]
             ?: findUsdaLocal(component.databaseQuery)
             ?: apiKey.takeIf { it.isNotBlank() }
-                ?.let { searchOnline(component.databaseQuery, it, 8).firstOrNull() }
-            ?: findChinaLocal(component.chinaDatabaseQuery, component.databaseQuery)
+                ?.let { findOnlineMatch(component.databaseQuery, it) }
+            ?: findChinaLocal(chineseQuery, component.databaseQuery)
         resolved?.also { memoryCache[key] = it }
         runCatching { onMatch(com.click.lightmemo.domain.DiagnosticEvents.source(resolved)) }
         return resolved
@@ -192,10 +194,16 @@ class FoodDataCentralClient internal constructor(
 
     private fun matchScore(query: String, terms: Set<String>, description: String): Double {
         val descriptionTerms = description.split(' ').toSet()
+        val stateWords = setOf("raw", "cooked", "fried", "boiled", "roasted", "baked", "grilled")
+        val foodTerms = terms - stateWords
+        // Cooking words alone must not turn an unrelated food into an automatic match.
+        if (foodTerms.isEmpty() || foodTerms.none { it in descriptionTerms }) return 0.0
+        if (("raw" in terms && descriptionTerms.any { it in stateWords - "raw" }) ||
+            (terms.any { it in stateWords - "raw" } && "raw" in descriptionTerms)) return 0.0
+        if (!descriptionTerms.containsAll(foodTerms)) return 0.5
         val coverage = terms.count { it in descriptionTerms }.toDouble() / terms.size
         if (coverage < 0.75) return coverage
         val phraseBonus = if (description.contains(query)) 1.0 else 0.0
-        val stateWords = setOf("raw", "cooked", "fried", "boiled", "roasted", "baked", "grilled")
         val requestedState = terms.intersect(stateWords)
         val statePenalty = if (requestedState.isNotEmpty() && requestedState.none { it in descriptionTerms }) 0.35 else 0.0
         return coverage + phraseBonus - statePenalty
@@ -338,6 +346,16 @@ class FoodDataCentralClient internal constructor(
         } catch (_: kotlinx.serialization.SerializationException) {
             emptyList()
         }
+    }
+
+    private suspend fun findOnlineMatch(query: String, apiKey: String): NutritionReference? {
+        val normalized = normalize(query)
+        val terms = normalized.split(' ').filter { it.length > 1 }.toSet()
+        if (terms.isEmpty()) return null
+        return searchOnline(query, apiKey, 8)
+            .map { it to matchScore(normalized, terms, normalize(it.description)) }
+            .filter { it.second >= 0.75 }
+            .maxByOrNull { it.second }?.first
     }
 
     private suspend fun requestOnline(query: String, apiKey: String, limit: Int): List<NutritionReference> {
