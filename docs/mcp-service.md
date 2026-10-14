@@ -1,10 +1,14 @@
 # 轻食记 MCP 服务
 
-入口：**设置 → 数据管理 → MCP 服务**，页面沿用现有 Miuix 设置规范。
+当前入口：**设置 → AI 设置 → MCP 服务**，页面沿用现有 Miuix 设置规范。
 
 ## 连接
 
-开启服务后，复制完整连接地址到小爱的 MCP 配置。本机地址为 `http://127.0.0.1:8765/mcp?token=<凭证>`，也支持 `Authorization: Bearer <凭证>`。每次开启生成新的访问凭证；关闭后撤销访问，重新开启需更新小爱中的地址。用户已确认此前签名版可连接小爱。
+开启服务后，复制完整连接地址到小爱的 MCP 配置。本机地址为 `http://127.0.0.1:8765/mcp?token=<凭证>`，也支持 `Authorization: Bearer <凭证>`。首次生成随机 256 位凭证，通过同步落盘与原子文件替换持久保存到应用私有的 `noBackupFilesDir`，不进入系统备份、设备迁移或应用导出。正常关闭、进程结束、重新开启和覆盖升级均复用原凭证。旧版凭证只存内存，首次升级本版本后需更新一次地址。
+
+“打开应用时自动启动 MCP”默认关闭。开启后，主界面进入可见状态时读取偏好并启动现有前台服务；需允许应用通知。后台广播或单独创建 Application 不会触发启动。关闭自动启动不直接停止正在运行的服务；关闭服务后再次打开主界面，若自动启动仍开启，会恢复连接。启动限制参考 [Android 前台服务后台启动限制](https://developer.android.com/develop/background-work/services/fgs/restrictions-bg-start)。
+
+关闭服务仅暂停连接，不删除凭证。“重置连接地址”需先关闭服务并确认，重置后旧凭证永久失效，开启后复制新地址更新小爱。清除数据或卸载同样需要重新配置。
 
 仅监听本机。服务运行时显示管理通知，支持设置开关和通知栏停止。“检查连接”验证握手、工具发现和营养查询，不会发起饮食识别。
 
@@ -12,9 +16,9 @@
 
 MCP 页面提供电池优化豁免申请，并通过 `PowerManager.isIgnoringBatteryOptimizations` 展示真实状态，返回页面时刷新。已豁免时可打开系统优化列表管理。仅在用户点击时申请，不在开启服务时自动弹出。
 
-自启动与后台省电策略在小米/Redmi/POCO 上尝试厂商设置入口；页面不存在或禁止外部访问时回退应用详情，其他厂商直接打开应用详情并提示手动配置。厂商设置没有统一的公开状态接口，页面不显示虚假的“已开启”。自启动许可并不表示本应用会在开机后自动开启 MCP，服务仍由用户开启，凭证仍只存内存。
+自启动与后台省电策略在小米/Redmi/POCO 上尝试厂商设置入口；页面不存在或禁止外部访问时回退应用详情，其他厂商直接打开应用详情并提示手动配置。厂商设置没有统一的公开状态接口，页面不显示虚假的“已开启”。系统自启动许可与本应用的“打开应用时自动启动 MCP”是不同设置；本应用不通过开机广播自动启动 MCP。
 
-后台权限可减少待机限制，但不能保证进程永不被终止。强行停止或重启后需要重新开启 MCP 并更新地址。参考 [Android 电池优化说明](https://developer.android.com/training/monitoring-device-state/doze-standby)、[小米后台自启动](https://www.mi.com/global/support/faq/details/KA-497677/) 与 [小米省电策略](https://dev.mi.com/xiaomihyperos/documentation/detail?pId=1628)。厂商 Activity 路径属于兼容性快捷入口，以实际启动结果为准。
+后台权限可减少待机限制，但不能保证进程永不被终止。强行停止或重启后需要重新开启 MCP，或在开启自动启动后打开应用恢复；连接地址保持不变。参考 [Android 电池优化说明](https://developer.android.com/training/monitoring-device-state/doze-standby)、[小米后台自启动](https://www.mi.com/global/support/faq/details/KA-497677/) 与 [小米省电策略](https://dev.mi.com/xiaomihyperos/documentation/detail?pId=1628)。厂商 Activity 路径属于兼容性快捷入口，以实际启动结果为准。
 
 2026-10-13 后台设置验证：Debug/Release 构建通过，Lint 0 错误、75 警告（其中新增 `BatteryLife` 提醒涉及电池豁免申请，另一项为依赖更新提示）。Android 15 模拟器验证实际系统授权弹窗、允许后状态刷新、自启动入口回退应用详情；Miuix 页面截图已检查。小米专用入口尚未实机验证。新版 Release 使用原项目签名并通过 `apksigner` 验证。当前电池豁免申请服务于用户主动开启的本机 MCP 持续连接；若发布 Google Play，需核对核心功能是否满足直接豁免申请政策。
 
@@ -60,6 +64,10 @@ MCP 构造与原有文字录入相同的 `RecognitionRequestType.TEXT` 请求，
 MCP 前台服务使用 specialUse，识别继续使用原有 dataSync 服务及权限。本机访问凭证是应用访问控制，不是 OAuth。服务不记录饮食描述、营养结果或凭证。
 
 ## 验证
+
+2026-10-14 v1.5.1 发布验证：版本码 35；Release 构建成功，APK 签名校验通过；219 项单元测试及 Android 15 模拟器上的 `McpLifecycleTest`、`McpTextRecordingFlowTest` 两项设备测试通过；Lint 无错误（79 项警告、11 项提示）。发布包为 `Lightmemo-v1.5.1.apk`。
+
+2026-10-14 固定凭证与自动启动验证：219 项单元测试通过；Lint 0 错误；Debug/Release 构建与 APK 签名核验通过。Android 15 模拟器通过两个设备测试，覆盖自动启动开启/关闭、服务重启保留原地址、重置后旧凭证返回 401、新凭证返回 200，以及原有后台文字识别与实时通知。设置开关和重置确认弹窗已截图检查。另通过真实强行停止进程并重新打开应用，检查凭证保持一致且前台 MCP 服务自动恢复。新版签名包为 `Lightmemo-v1.5.0-mcp-stable.apk`。
 
 ### 后台占用优化
 

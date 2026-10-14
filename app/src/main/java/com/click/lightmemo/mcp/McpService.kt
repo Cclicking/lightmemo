@@ -18,7 +18,6 @@ import com.click.lightmemo.ui.secondary.McpSettingsActivity
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
-import java.security.SecureRandom
 
 data class McpState(val running: Boolean = false, val starting: Boolean = false, val address: String = "", val error: String? = null)
 
@@ -65,8 +64,7 @@ class McpService : Service() {
                 .addAction(0, "停止服务", stop).build()
             ServiceCompat.startForeground(this, NOTIFICATION, notification,
                 if (Build.VERSION.SDK_INT >= 34) ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE else 0)
-            // A fresh, memory-only credential for every service lifetime; closing revokes it.
-            val token = ByteArray(32).also { SecureRandom().nextBytes(it) }.joinToString("") { "%02x".format(it) }
+            val token = McpPreferences(this).token()
             val app = application as FoodApp
             val recording = ExistingTextRecordingTool(currentTask = { app.recognitionTaskStore.state.value },
                 start = { request ->

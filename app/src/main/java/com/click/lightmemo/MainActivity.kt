@@ -58,6 +58,14 @@ import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.unit.dp
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.core.app.NotificationManagerCompat
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import com.click.lightmemo.mcp.McpPreferences
+import com.click.lightmemo.mcp.McpRuntime
 import androidx.navigationevent.OnBackInvokedDefaultInput
 import androidx.navigationevent.compose.LocalNavigationEventDispatcherOwner
 import androidx.navigationevent.compose.rememberNavigationEventDispatcherOwner
@@ -164,6 +172,19 @@ class MainActivity : ComponentActivity() {
                 LocalNavigationEventDispatcherOwner provides navigationEventOwner,
             ) {
                 FoodAppRoot()
+            }
+        }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        lifecycleScope.launch {
+            val enabled = withContext(Dispatchers.IO) {
+                runCatching { McpPreferences(this@MainActivity).autoStart() }.getOrDefault(false)
+            }
+            if (enabled && lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
+                && NotificationManagerCompat.from(this@MainActivity).areNotificationsEnabled()) {
+                McpRuntime.start(this@MainActivity)
             }
         }
     }

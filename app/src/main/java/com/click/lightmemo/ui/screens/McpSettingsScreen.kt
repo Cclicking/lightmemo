@@ -12,6 +12,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.offset
@@ -35,9 +36,12 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.click.lightmemo.mcp.BackgroundRunSettings
 import com.click.lightmemo.ui.basic.SharedScrollBehavior
+import com.click.lightmemo.ui.components.AnimatedOverlayDialog
 import com.click.lightmemo.ui.utils.overScrollVertical
 import com.click.lightmemo.viewmodel.McpViewModel
 import top.yukonga.miuix.kmp.basic.BasicComponent
+import top.yukonga.miuix.kmp.basic.Button
+import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.Text
@@ -64,9 +68,25 @@ fun McpSettingsScreen(viewModel: McpViewModel, contentPadding: PaddingValues,
     }
     val state by viewModel.state.collectAsState()
     val check by viewModel.check.collectAsState()
+    val preferences by viewModel.preferenceState.collectAsState()
+    var showResetConfirm by remember { mutableStateOf(false) }
+    fun feedback(message: String) { Toast.makeText(context, message, Toast.LENGTH_LONG).show() }
+    val autoStartPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) viewModel.setAutoStart(true, ::feedback)
+        else feedback("请先允许通知，再开启自动启动 MCP。")
+    }
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) viewModel.setEnabled(true)
         else Toast.makeText(context, "请允许通知，以便查看运行状态和随时停止服务。", Toast.LENGTH_LONG).show()
+    }
+    AnimatedOverlayDialog(show = showResetConfirm, title = "重置连接地址？",
+        summary = "原地址将永久失效。开启服务后，需要将新地址更新到小爱。",
+        onDismissRequest = { showResetConfirm = false }) {
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Button(modifier = Modifier.weight(1f), onClick = { showResetConfirm = false }) { Text("取消") }
+            Button(modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColorsPrimary(),
+                onClick = { showResetConfirm = false; viewModel.resetCredential(::feedback) }) { Text("重置") }
+        }
     }
     LazyColumn(
         modifier = Modifier.fillMaxSize().overScrollVertical().then(
@@ -82,7 +102,7 @@ fun McpSettingsScreen(viewModel: McpViewModel, contentPadding: PaddingValues,
                     title = "MCP 服务",
                     summary = "允许助手查询营养、发起文字录入识别",
                     checked = state.running,
-                    enabled = !state.starting,
+                    enabled = !state.starting && !preferences.busy,
                     onCheckedChange = { enabled ->
                         if (enabled && Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
                             permission.launch(Manifest.permission.POST_NOTIFICATIONS)
@@ -94,6 +114,15 @@ fun McpSettingsScreen(viewModel: McpViewModel, contentPadding: PaddingValues,
                     state.running -> "服务已开启，等待助手连接"
                     else -> "服务已关闭"
                 })
+                SwitchPreference(title = "打开应用时自动启动 MCP",
+                    summary = "打开轻食记时恢复服务，使用原连接地址；需允许通知",
+                    checked = preferences.autoStart, enabled = preferences.loaded && !preferences.busy,
+                    onCheckedChange = { enabled ->
+                        if (enabled && Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(context,
+                                Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                            autoStartPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        } else viewModel.setAutoStart(enabled, ::feedback)
+                    })
             }
         }
         item {
@@ -108,6 +137,10 @@ fun McpSettingsScreen(viewModel: McpViewModel, contentPadding: PaddingValues,
                     })
                 ArrowPreference(title = "检查连接", summary = if (check.checking && state.running) "正在检查…" else check.message?.takeIf { state.running } ?: "检查服务连接和营养查询是否可用",
                     enabled = state.running && !check.checking, onClick = viewModel::checkConnection)
+                ArrowPreference(title = "重置连接地址",
+                    summary = if (state.running || state.starting) "先关闭 MCP 服务，再更换访问凭证" else "让原地址失效，更换后需重新配置小爱",
+                    enabled = !state.running && !state.starting && !preferences.busy,
+                    onClick = { showResetConfirm = true })
             }
         }
         item {
@@ -121,7 +154,7 @@ fun McpSettingsScreen(viewModel: McpViewModel, contentPadding: PaddingValues,
                 ArrowPreference(title = "后台省电策略", summary = "建议选择无限制，或允许后台活动",
                     onClick = { BackgroundRunSettings.openBackgroundBattery(context) })
             }
-            Text("后台运行可能增加耗电。自启动和省电策略请在系统中确认；也可在最近任务中锁定轻食记，减少清理时被关闭。强行停止或重启手机后，需重新开启 MCP 服务并更新连接地址。",
+            Text("后台运行可能增加耗电。自启动和省电策略请在系统中确认；也可在最近任务中锁定轻食记，减少清理时被关闭。强行停止或重启手机后，需重新开启 MCP 服务；开启自动启动后，打开轻食记即可恢复，连接地址保持不变。",
                 style = MiuixTheme.textStyles.footnote2, color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
         }
@@ -134,7 +167,7 @@ fun McpSettingsScreen(viewModel: McpViewModel, contentPadding: PaddingValues,
             }
         }
         item {
-            Text("连接地址包含访问凭证，请仅提供给你信任的助手。查询结果会交给助手处理。关闭服务即撤销访问；重新开启后需更新连接地址。系统结束服务后，请回到此页面重新开启。",
+            Text("连接地址包含访问凭证，请仅提供给你信任的助手。查询结果会交给助手处理。关闭服务会暂停访问，重新开启仍使用原地址；重置连接地址后原凭证失效。清除应用数据或卸载后需重新配置连接。",
                 style = MiuixTheme.textStyles.footnote2, color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                 modifier = Modifier.padding(horizontal = 16.dp))
         }
