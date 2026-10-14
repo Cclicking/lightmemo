@@ -23,6 +23,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.health.connect.client.PermissionController
@@ -90,12 +91,13 @@ internal fun CalorieBalanceCard(
             Column(Modifier.padding(top = 12.dp).fillMaxWidth().clip(RoundedCornerShape(14.dp))
                 .background(MiuixTheme.colorScheme.primary.copy(alpha = 0.07f)).padding(12.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(LocalDate.ofEpochDay(day.dateEpochDay).format(DateTimeFormatter.ofPattern("M月d日")) +
-                    if (day.dateEpochDay == LocalDate.now().toEpochDay()) " · 今日数据更新中" else "",
-                    style = MiuixTheme.textStyles.footnote1)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text(LocalDate.ofEpochDay(day.dateEpochDay).format(DateTimeFormatter.ofPattern("M月d日")),
+                        style = MiuixTheme.textStyles.footnote1, fontWeight = FontWeight.SemiBold)
+                    Text("热量差 ${day.balanceKcal.kcalOrMissing()}", style = MiuixTheme.textStyles.footnote1)
+                }
                 Text("摄入 ${day.intakeKcal.kcalOrMissing()} · 消耗 ${day.expenditureKcal.kcalOrMissing()}",
-                    style = MiuixTheme.textStyles.footnote2)
-                Text("热量差 ${day.balanceKcal.kcalOrMissing()}（消耗 − 摄入）", style = MiuixTheme.textStyles.footnote2)
+                    style = MiuixTheme.textStyles.body2, color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
             }
         }
         val message = when (expenditure.status) {
@@ -205,7 +207,7 @@ private fun EnergyLineChart(days: List<CalorieBalanceDay>, intakeColor: Color, e
                     days.forEach { day ->
                         Text(LocalDate.ofEpochDay(day.dateEpochDay).format(DateTimeFormatter.ofPattern(if (days.size <= 7) "M/d" else "d")),
                             modifier = Modifier.width(itemWidth), style = MiuixTheme.textStyles.footnote2,
-                            color = if (day.dateEpochDay == selectedEpochDay) MiuixTheme.colorScheme.primary else labelColor,
+                            color = labelColor,
                             textAlign = TextAlign.Center, maxLines = 1)
                     }
                 }
