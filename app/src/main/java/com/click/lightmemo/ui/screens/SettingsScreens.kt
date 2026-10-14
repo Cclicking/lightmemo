@@ -305,192 +305,116 @@ fun CalorieTargetScreen(
     listState: LazyListState,
 ) {
     val settings by viewModel.settings.collectAsState()
+    val ready by viewModel.settingsReady.collectAsState()
+    val saving by viewModel.savingTargets.collectAsState()
+    val error by viewModel.error.collectAsState()
     val context = LocalContext.current
-    val kcal = settings.dailyCalorieTarget.toInt()
-    val protein = settings.effectiveProteinG
-    val fat = settings.effectiveFatG
-    val carbs = settings.effectiveCarbsG
+    if (!ready) return
+    val initial = settings.currentTargets
+    var kcal by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(initial.calories.toInt()) }
+    var protein by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(initial.proteinG.toInt().coerceAtLeast(1)) }
+    var fat by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(initial.fatG.toInt().coerceAtLeast(1)) }
+    var carbs by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(initial.carbsG.toInt().coerceAtLeast(1)) }
+    var overwriteHistory by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+    var checked by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+    var confirmOverwrite by remember { mutableStateOf(false) }
+    val draft = com.click.lightmemo.data.DailyTargets(kcal.toFloat(), protein.toFloat(), fat.toFloat(), carbs.toFloat())
+    fun save() {
+        checked = true
+        if (draft.errors().isEmpty()) viewModel.saveTargets(draft, overwriteHistory) {
+            Toast.makeText(context, if (overwriteHistory) "已保存并覆盖历史目标" else "已保存，从今天起生效", Toast.LENGTH_SHORT).show()
+        }
+    }
 
-    LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .overScrollVertical()
-            .then(
-                if (scrollBehavior != null) {
-                    Modifier.nestedScroll(scrollBehavior.nestedScrollConnection)
-                } else {
-                    Modifier
-                },
-            ),
-        state = listState,
-        contentPadding = PaddingValues(
-            start = 16.dp,
-            end = 16.dp,
-            top = contentPadding.calculateTopPadding(),
-            bottom = contentPadding.calculateBottomPadding() + 12.dp,
-        ),
-    ) {
+    AiSettingsList(contentPadding, scrollBehavior, listState) {
         item {
-            Column {
-                SmallTitle(
-                    text = "热量目标",
-                    modifier = Modifier.offset(x = (-16).dp),
-                )
-                Spacer(Modifier.height(TitleToFieldSpacing))
-                Card(
-                    cornerRadius = 20.dp,
-                    modifier = Modifier.fillMaxWidth(),
-                    insideMargin = PaddingValues(0.dp),
-                ) {
-                    var showDialog by remember { mutableStateOf(false) }
-                    var draft by remember { mutableStateOf(kcal.toString()) }
-
-                    ArrowPreference(
-                        title = "每日热量",
-                        summary = "用于进度条与达标统计",
-                        endActions = {
-                            Text(
-                                text = "$kcal kcal",
-                                fontSize = 14.5.sp,
-                                color = MiuixTheme.colorScheme.onSurfaceVariantActions,
-                            )
-                        },
-                        onClick = {
-                            draft = kcal.toString()
-                            showDialog = true
-                        },
-                    )
-                    AnimatedOverlayDialog(
-                        title = "每日热量目标",
-                        summary = "输入 500–10000 kcal",
-                        show = showDialog,
-                        onDismissRequest = { showDialog = false },
-                    ) {
-                        Column(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalArrangement = Arrangement.spacedBy(12.dp),
-                        ) {
-                            TextField(
-                                value = draft,
-                                onValueChange = { value ->
-                                    draft = value.filter { it.isDigit() }
-                                },
-                                singleLine = true,
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                modifier = Modifier.fillMaxWidth(),
-                            )
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            ) {
-                                Button(
-                                    onClick = { showDialog = false },
-                                    modifier = Modifier.weight(1f),
-                                    colors = ButtonDefaults.buttonColors(),
-                                ) {
-                                    Text("取消")
-                                }
-                                Button(
-                                    onClick = {
-                                        draft.toIntOrNull()?.let { viewModel.setTarget(it.toFloat()) }
-                                        showDialog = false
-                                    },
-                                    modifier = Modifier.weight(1f),
-                                    colors = ButtonDefaults.buttonColorsPrimary(),
-                                ) {
-                                    Text("确定")
-                                }
-                            }
-                        }
-                    }
-                }
-
-                Spacer(Modifier.height(FieldToTitleSpacing))
-                SmallTitle(
-                    text = "营养素目标",
-                    modifier = Modifier.offset(x = (-16).dp),
-                )
-                Spacer(Modifier.height(TitleToFieldSpacing))
-                Card(
-                    cornerRadius = 20.dp,
-                    modifier = Modifier.fillMaxWidth(),
-                    insideMargin = PaddingValues(0.dp),
-                ) {
-                    InputDialogPreferenceRow(
-                        title = "蛋白质",
-                        unit = "g",
-                        value = protein.toInt(),
-                        range = 20..300,
-                        summary = if (settings.proteinTargetG <= 0f) "跟随推荐" else null,
-                        onValueChange = { viewModel.setProteinTarget(it.toFloat()) },
-                    )
-                    InputDialogPreferenceRow(
-                        title = "脂肪",
-                        unit = "g",
-                        value = fat.toInt(),
-                        range = 10..200,
-                        summary = if (settings.fatTargetG <= 0f) "跟随推荐" else null,
-                        onValueChange = { viewModel.setFatTarget(it.toFloat()) },
-                    )
-                    InputDialogPreferenceRow(
-                        title = "碳水",
-                        unit = "g",
-                        value = carbs.toInt(),
-                        range = 20..600,
-                        summary = if (settings.carbsTargetG <= 0f) "跟随推荐" else null,
-                        onValueChange = { viewModel.setCarbsTarget(it.toFloat()) },
-                    )
-                }
-
-                Spacer(Modifier.height(16.dp))
-                Button(
-                    onClick = {
-                        context.startActivity(
-                            android.content.Intent(
-                                context,
-                                com.click.lightmemo.ui.secondary.PersonalInfoActivity::class.java,
-                            ),
-                        )
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColorsPrimary(),
-                ) {
-                    Text("填写个人信息")
-                }
-                Spacer(Modifier.height(12.dp))
-                Text(
-                    text = "填写个人信息，自动推荐摄入",
-                    style = MiuixTheme.textStyles.footnote2,
-                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                    modifier = Modifier.padding(horizontal = FootnoteHorizontalPadding),
+            SmallTitle("每日目标", modifier = Modifier.offset(x = (-16).dp))
+            Card(modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(0.dp)) {
+                InputDialogPreferenceRow("每日热量", "kcal", kcal, 500..10000,
+                    onValueChange = { kcal = it; checked = false })
+                InputDialogPreferenceRow("蛋白质", "g", protein, 1..500,
+                    onValueChange = { protein = it; checked = false })
+                InputDialogPreferenceRow("脂肪", "g", fat, 1..300,
+                    onValueChange = { fat = it; checked = false })
+                InputDialogPreferenceRow("碳水", "g", carbs, 1..800,
+                    onValueChange = { carbs = it; checked = false })
+            }
+            Spacer(Modifier.height(FieldToTitleSpacing))
+            SmallTitle("应用范围", modifier = Modifier.offset(x = (-16).dp))
+            Card(modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(0.dp)) {
+                SwitchPreference(
+                    title = "覆盖历史目标",
+                    summary = if (overwriteHistory) "保存时将所有历史日期的目标替换为本次目标" else "仅从今天起生效，保留今天以前的目标",
+                    checked = overwriteHistory,
+                    onCheckedChange = { overwriteHistory = it },
+                    enabled = !saving,
                 )
             }
+            Spacer(Modifier.height(16.dp))
+            Button(onClick = { checked = true }, modifier = Modifier.fillMaxWidth(), enabled = !saving) {
+                Text("校验目标")
+            }
+            if (checked) {
+                val messages = draft.errors() + draft.warnings()
+                Text(messages.takeIf { it.isNotEmpty() }?.joinToString("\n") ?: "校验通过，热量与营养素目标匹配。",
+                    style = MiuixTheme.textStyles.footnote2,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    modifier = Modifier.padding(12.dp))
+            }
+            Spacer(Modifier.height(12.dp))
+            Button(
+                onClick = { checked = true; if (draft.errors().isEmpty()) { if (overwriteHistory) confirmOverwrite = true else save() } },
+                modifier = Modifier.fillMaxWidth(), enabled = !saving,
+                colors = ButtonDefaults.buttonColorsPrimary(),
+            ) { Text(if (saving) "保存中…" else "保存目标") }
+            error?.let { Text(it, modifier = Modifier.padding(12.dp)) }
+            Spacer(Modifier.height(12.dp))
+            Button(
+                onClick = {
+                    settings.recommendedNutrients?.let {
+                        kcal = it.calories.toInt().coerceIn(500, 10000)
+                        protein = it.proteinG.toInt().coerceIn(1, 500)
+                        fat = it.fatG.toInt().coerceIn(1, 300)
+                        carbs = it.carbsG.toInt().coerceIn(1, 800)
+                        checked = false
+                    }
+                }, modifier = Modifier.fillMaxWidth(), enabled = !saving && settings.recommendedNutrients != null,
+            ) { Text("填入推荐值") }
+            Spacer(Modifier.height(12.dp))
+            Button(onClick = {
+                context.startActivity(Intent(context, com.click.lightmemo.ui.secondary.PersonalInfoActivity::class.java))
+            }, modifier = Modifier.fillMaxWidth(), enabled = !saving) { Text("修改个人信息与健身目标") }
+        }
+    }
+    AnimatedOverlayDialog(
+        title = "覆盖历史目标？", summary = "所有历史日期将使用本次目标重新统计，原有目标将被替换。",
+        show = confirmOverwrite, onDismissRequest = { confirmOverwrite = false },
+    ) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Button(onClick = { confirmOverwrite = false }, modifier = Modifier.weight(1f)) { Text("取消") }
+            Button(onClick = { confirmOverwrite = false; save() }, modifier = Modifier.weight(1f),
+                colors = ButtonDefaults.buttonColorsPrimary()) { Text("覆盖并保存") }
         }
     }
 }
 
 @Composable
-private fun NumberPickerPreferenceRow(
+private fun NumberPickerField(
     title: String,
     unit: String,
     value: Int,
     range: IntRange,
-    summary: String? = null,
+    modifier: Modifier = Modifier,
     onValueChange: (Int) -> Unit,
 ) {
     var showPicker by remember { mutableStateOf(false) }
     var draft by remember { mutableStateOf(value) }
 
-    ArrowPreference(
-        title = title,
-        summary = summary,
-        endActions = {
-            Text(
-                text = "$value $unit",
-                fontSize = 14.5.sp,
-                color = MiuixTheme.colorScheme.onSurfaceVariantActions,
-            )
-        },
+    PickerField(
+        label = "$title $unit",
+        value = value.toString(),
+        enabled = true,
+        modifier = modifier,
         onClick = {
             draft = value.coerceIn(range.first, range.last)
             showPicker = true
@@ -586,12 +510,13 @@ private fun InputDialogPreferenceRow(
                 Button(
                     onClick = {
                         draft.toIntOrNull()?.let { raw ->
-                            onValueChange(raw.coerceIn(range.first, range.last))
+                            if (raw in range) onValueChange(raw)
                         }
                         showDialog = false
                     },
                     modifier = Modifier.weight(1f),
                     colors = ButtonDefaults.buttonColorsPrimary(),
+                    enabled = draft.toIntOrNull()?.let { it in range } == true,
                 ) {
                     Text("确定")
                 }
@@ -644,30 +569,32 @@ fun PersonalInfoScreen(
                     modifier = Modifier.offset(x = (-16).dp),
                 )
                 Spacer(Modifier.height(TitleToFieldSpacing))
-                Card(
-                    cornerRadius = 20.dp,
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
                     modifier = Modifier.fillMaxWidth(),
-                    insideMargin = PaddingValues(0.dp),
                 ) {
-                    NumberPickerPreferenceRow(
+                    NumberPickerField(
                         title = "身高",
                         unit = "cm",
                         value = heightCm.toInt(),
                         range = 100..220,
+                        modifier = Modifier.weight(1f),
                         onValueChange = { viewModel.setHeight(it.toFloat()) },
                     )
-                    NumberPickerPreferenceRow(
+                    NumberPickerField(
                         title = "体重",
                         unit = "kg",
                         value = weightKg.toInt(),
                         range = 30..150,
+                        modifier = Modifier.weight(1f),
                         onValueChange = { viewModel.setWeight(it.toFloat()) },
                     )
-                    NumberPickerPreferenceRow(
+                    NumberPickerField(
                         title = "年龄",
                         unit = "岁",
                         value = ageYears,
                         range = 10..100,
+                        modifier = Modifier.weight(1f),
                         onValueChange = { viewModel.setAge(it) },
                     )
                 }
@@ -684,6 +611,17 @@ fun PersonalInfoScreen(
                     onTabSelected = { index -> viewModel.setGender(Gender.entries[index]) },
                 )
 
+                Spacer(Modifier.height(FieldToTitleSpacing))
+                SmallTitle("健身目标", modifier = Modifier.offset(x = (-16).dp))
+                Card(modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(0.dp)) {
+                    DropdownPref(
+                        title = "目标方向",
+                        summary = settings.fitnessGoal.summary,
+                        items = com.click.lightmemo.data.FitnessGoal.entries.map { it.label },
+                        selectedIndex = com.click.lightmemo.data.FitnessGoal.entries.indexOf(settings.fitnessGoal),
+                        onSelectedIndexChange = { viewModel.setFitnessGoal(com.click.lightmemo.data.FitnessGoal.entries[it]) },
+                    )
+                }
                 Spacer(Modifier.height(FieldToTitleSpacing))
                 SmallTitle(
                     text = "每周运动强度",
@@ -749,7 +687,7 @@ fun PersonalInfoScreen(
 
                 Spacer(Modifier.height(12.dp))
                 Text(
-                    text = "基于 Mifflin-St Jeor 公式与当前运动强度估算，可作为饮食计划参考",
+                    text = "基于 Mifflin-St Jeor 公式、运动强度与健身目标估算，可在每日目标页自行调整",
                     style = MiuixTheme.textStyles.footnote2,
                     color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                     modifier = Modifier.padding(horizontal = FootnoteHorizontalPadding),
@@ -772,19 +710,13 @@ fun PersonalInfoScreen(
             Spacer(Modifier.height(16.dp))
             Button(
                 onClick = {
-                    viewModel.applyRecommendedTarget {
-                        Toast.makeText(
-                            context,
-                            "已成功写入每日热量与营养目标",
-                            Toast.LENGTH_SHORT,
-                        ).show()
-                    }
+                    context.startActivity(Intent(context, com.click.lightmemo.ui.secondary.CalorieTargetActivity::class.java))
                 },
                 enabled = nutrients != null,
                 modifier = Modifier.fillMaxWidth(),
                 colors = ButtonDefaults.buttonColorsPrimary(),
             ) {
-                Text("写入每日热量与营养目标")
+                Text("前往每日目标调整与应用")
             }
         }
     }

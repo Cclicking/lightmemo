@@ -47,6 +47,7 @@ data class TodayUiState(
     val date: LocalDate = LocalDate.now(),
     val entries: List<FoodLog> = emptyList(),
     val entriesByDate: Map<Long, List<FoodLog>> = emptyMap(),
+    val targetSettings: com.click.lightmemo.data.AppSettings = com.click.lightmemo.data.AppSettings(),
     val target: Float = 1800f,
     val total: Nutrition = Nutrition(),
     val proteinTarget: Float = 120f,
@@ -99,14 +100,16 @@ class TodayViewModel(app: Application) : AndroidViewModel(app) {
         _date,
     ) { logs, settings, date ->
         val entries = logs.filter { it.dateEpochDay == date.toEpochDay() }
+        val targets = settings.targetsForDate(date.toEpochDay())
         TodayUiState(
+            targetSettings = settings,
             date = date,
             entries = entries,
             entriesByDate = logs.groupBy { it.dateEpochDay },
-            target = settings.dailyCalorieTarget,
-            proteinTarget = settings.effectiveProteinG.takeIf { it > 0 } ?: 120f,
-            carbsTarget = settings.effectiveCarbsG.takeIf { it > 0 } ?: 250f,
-            fatTarget = settings.effectiveFatG.takeIf { it > 0 } ?: 60f,
+            target = targets.calories,
+            proteinTarget = targets.proteinG,
+            carbsTarget = targets.carbsG,
+            fatTarget = targets.fatG,
             total = entries.fold(Nutrition()) { acc, item -> acc + item.nutrition },
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TodayUiState())
@@ -262,6 +265,8 @@ class StatsViewModel(app: Application) : AndroidViewModel(app) {
         val daysHitTarget: Int = 0,
         val daysOverTarget: Int = 0,
         val loggedDays: Int = 0,
+        val targetSettings: com.click.lightmemo.data.AppSettings = com.click.lightmemo.data.AppSettings(),
+        val averageTargets: com.click.lightmemo.data.DailyTargets = com.click.lightmemo.data.DailyTargets(1800f, 120f, 60f, 250f),
         val target: Float = 1800f,
         val proteinTarget: Float = 120f,
         val carbsTarget: Float = 250f,
@@ -378,8 +383,16 @@ class StatsViewModel(app: Application) : AndroidViewModel(app) {
             .map { it.name.trim() }
             .filter { it.isNotBlank() }
             .toSet()
-        val target = settings.dailyCalorieTarget.toDouble()
+        val historicalTargets = logged.map { settings.targetsForDate(it.dateEpochDay) }
+        val averageTargets = if (historicalTargets.isEmpty()) settings.currentTargets else com.click.lightmemo.data.DailyTargets(
+            historicalTargets.map { it.calories }.average().toFloat(),
+            historicalTargets.map { it.proteinG }.average().toFloat(),
+            historicalTargets.map { it.fatG }.average().toFloat(),
+            historicalTargets.map { it.carbsG }.average().toFloat(),
+        )
         StatsUiState(
+            averageTargets = averageTargets,
+            targetSettings = settings,
             rangeDays = days,
             daily = daily,
             calendarDays = calendarDays,
@@ -403,8 +416,8 @@ class StatsViewModel(app: Application) : AndroidViewModel(app) {
             averageLastMealMinute = averageLastMealMinute,
             averageEatingWindowMinutes = averageEatingWindowMinutes,
             regularityScore = calculateRegularityScore(daysWithTiming, elapsedDays),
-            daysHitTarget = logged.count { it.total.caloriesKcal in 0.0..target },
-            daysOverTarget = logged.count { it.total.caloriesKcal > target },
+            daysHitTarget = logged.count { it.total.caloriesKcal in 0.0..settings.targetsForDate(it.dateEpochDay).calories.toDouble() },
+            daysOverTarget = logged.count { it.total.caloriesKcal > settings.targetsForDate(it.dateEpochDay).calories },
             loggedDays = logged.size,
             elapsedDays = elapsedDays,
             target = settings.dailyCalorieTarget,

@@ -69,6 +69,7 @@ private val WeekdayLabels = listOf("日", "一", "二", "三", "四", "五", "�
 private fun WeekDateSelector(
     days: List<DayNutritionSummary?>,
     target: Float,
+    targetForDate: (Long) -> Float = { target },
     selectedEpochDay: Long?,
     onSelect: (Long) -> Unit,
     month: YearMonth? = null,
@@ -83,7 +84,7 @@ private fun WeekDateSelector(
             val outsideMonth = day != null && month != null && YearMonth.from(day.dateEpochDay.toLocalDate()) != month
             DayProgressItem(
                 day = day,
-                target = target,
+                target = day?.dateEpochDay?.let(targetForDate) ?: target,
                 selected = day?.dateEpochDay == selectedEpochDay,
                 selectionWeight = day?.dateEpochDay?.let(selectionWeight) ?: 0f,
                 compact = false,
@@ -101,6 +102,7 @@ private fun WeekDateSelector(
 internal fun DateCalendar(
     days: List<DayNutritionSummary>,
     target: Float,
+    targetForDate: (Long) -> Float = { target },
     selectedEpochDay: Long?,
     expanded: Boolean,
     anchor: LocalDate,
@@ -208,6 +210,7 @@ internal fun DateCalendar(
                         selectedEpochDay = selectedEpochDay,
                         summaries = summaries,
                         target = target,
+                        targetForDate = targetForDate,
                         expansion = expansion,
                         onSelect = { if (direction == 0 && displayOffset == 0f) onSelect(it) },
                         selectionWeight = selectionWeight,
@@ -239,6 +242,7 @@ private fun CalendarRows(
     selectedEpochDay: Long?,
     summaries: Map<Long, DayNutritionSummary>,
     target: Float,
+    targetForDate: (Long) -> Float = { target },
     expansion: Float,
     onSelect: (Long) -> Unit,
     selectionWeight: (Long) -> Float,
@@ -257,7 +261,7 @@ private fun CalendarRows(
                     summaries[epoch] ?: DayNutritionSummary(epoch, Nutrition())
                 }
                 Box(Modifier.graphicsLayer { alpha = if (row < weekIndex) expansion else 1f }) {
-                    WeekDateSelector(week, target, selectedEpochDay, onSelect, month, expansion, selectionWeight)
+                    WeekDateSelector(week, target, targetForDate, selectedEpochDay, onSelect, month, expansion, selectionWeight)
                 }
             }
         },

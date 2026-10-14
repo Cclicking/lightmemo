@@ -221,6 +221,7 @@ fun TodayScreen(
                 DateCalendar(
                     days = calendarDays,
                     target = state.target,
+                    targetForDate = { state.targetSettings.targetsForDate(it).calories },
                     selectedEpochDay = date.toEpochDay(),
                     expanded = calendarExpanded,
                     anchor = date,
@@ -256,6 +257,7 @@ fun TodayScreen(
                 modifier = Modifier.heightIn(min = swipeMinHeight),
             ) { direction ->
                 val displayedDate = date.plusDays(direction.toLong())
+                val pageTargets = state.targetSettings.targetsForDate(displayedDate.toEpochDay())
                 val pageEntries = state.entriesByDate[displayedDate.toEpochDay()].orEmpty()
                 val pageTotal = remember(pageEntries) {
                     pageEntries.fold(Nutrition()) { total, entry -> total + entry.nutrition }
@@ -264,10 +266,10 @@ fun TodayScreen(
                     if (!managementMode) {
                         NutritionSummaryCard(
                             total = pageTotal,
-                            calorieTarget = state.target,
-                            proteinTarget = state.proteinTarget,
-                            carbsTarget = state.carbsTarget,
-                            fatTarget = state.fatTarget,
+                            calorieTarget = pageTargets.calories,
+                            proteinTarget = pageTargets.proteinG,
+                            carbsTarget = pageTargets.carbsG,
+                            fatTarget = pageTargets.fatG,
                             palette = palette,
                         )
                         Button(onClick = onAddClick, modifier = Modifier.fillMaxWidth()) { Text("记录食物") }

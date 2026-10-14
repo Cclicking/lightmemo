@@ -140,6 +140,22 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    val savingTargets = MutableStateFlow(false)
+
+    fun setFitnessGoal(value: com.click.lightmemo.data.FitnessGoal) = saveSetting { repo.updateFitnessGoal(value) }
+
+    fun saveTargets(targets: com.click.lightmemo.data.DailyTargets, overwriteHistory: Boolean,
+        onSuccess: () -> Unit) {
+        if (savingTargets.value) return
+        savingTargets.value = true
+        saveSetting {
+            try {
+                repo.updateTargets(targets, overwriteHistory)
+                onSuccess()
+            } finally { savingTargets.value = false }
+        }
+    }
+
     fun setTarget(value: Float) = saveSetting { repo.updateDailyTarget(value) }
 
     fun setProteinTarget(value: Float) = saveSetting { repo.updateProteinTarget(value) }
@@ -267,10 +283,8 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
             weightKg = current.weightKg.takeIf { it > 0f } ?: DEFAULT_PROFILE_WEIGHT_KG,
             ageYears = current.ageYears.takeIf { it > 0 } ?: DEFAULT_PROFILE_AGE_YEARS,
         ).recommendedNutrients ?: return@saveSetting
-        repo.updateDailyTarget(nutrients.calories)
-        repo.updateProteinTarget(nutrients.proteinG)
-        repo.updateFatTarget(nutrients.fatG)
-        repo.updateCarbsTarget(nutrients.carbsG)
+        repo.updateTargets(com.click.lightmemo.data.DailyTargets(
+            nutrients.calories, nutrients.proteinG, nutrients.fatG, nutrients.carbsG))
         onSuccess()
     }
 }

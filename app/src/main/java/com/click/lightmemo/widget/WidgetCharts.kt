@@ -30,7 +30,7 @@ internal object WidgetCharts {
             } else 0xFF4D83CF.toInt()
             paint.alpha = if (inactive) 255 else
                 (RecordingHeatmap.intensity(totals[day.toEpochDay()]?.caloriesKcal ?: 0.0,
-                    settings.dailyCalorieTarget) * 255).toInt()
+                    settings.targetsForDate(day.toEpochDay()).calories) * 255).toInt()
             canvas.drawRoundRect(x, y, x + cellWidth, y + cellHeight, radius, radius, paint)
 
         }

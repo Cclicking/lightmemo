@@ -166,6 +166,7 @@ fun StatsScreen(
             DateCalendar(
                 days = state.calendarDays,
                 target = state.target,
+                targetForDate = { state.targetSettings.targetsForDate(it).calories },
                 selectedEpochDay = selectedDay?.dateEpochDay,
                 expanded = calendarExpanded,
                 anchor = anchor,
@@ -288,11 +289,8 @@ private fun SummaryCard(
             ) {
                 DailyHeatmap(
                     days = heatmapDays,
+                    targetsForDate = { state.targetSettings.targetsForDate(it) },
                     mode = mode,
-                    calorieTarget = state.target,
-                    proteinTarget = state.proteinTarget,
-                    carbsTarget = state.carbsTarget,
-                    fatTarget = state.fatTarget,
                     selectedEpochDay = selectedDay?.dateEpochDay,
                     calorieColor = palette.calorie,
                     proteinColor = palette.protein,
@@ -307,7 +305,7 @@ private fun SummaryCard(
             DayMetricDetailSummary(
                 day = day,
                 mode = mode,
-                target = dailyHeatmapTarget(mode, state),
+                target = dailyHeatmapTarget(mode, state, day.dateEpochDay),
                 color = dailyHeatmapColor(mode, palette),
             )
         }
@@ -758,16 +756,16 @@ private fun buildAdvice(state: StatsViewModel.StatsUiState): List<Advice> {
             add(Advice("热量记录稳定", "已记录的 ${state.loggedDays} 天均未超过设定目标，可继续保持当前节奏。", AdviceGlyph.CHECK, positive, 3))
         }
 
-        val averageRatio = state.averageKcal / state.target.coerceAtLeast(1f)
+        val averageRatio = state.averageKcal / state.averageTargets.calories.coerceAtLeast(1f)
         when {
-            averageRatio > 1.1 -> add(Advice("日均摄入偏高", "日均 ${state.averageKcal.toInt()} kcal，高于目标 ${state.target.toInt()} kcal。", AdviceGlyph.UP, caution, 0))
+            averageRatio > 1.1 -> add(Advice("日均摄入偏高", "日均 ${state.averageKcal.toInt()} kcal，高于记录日平均目标 ${state.averageTargets.calories.toInt()} kcal。", AdviceGlyph.UP, caution, 0))
             averageRatio < 0.8 -> add(Advice("日均摄入偏低", "日均 ${state.averageKcal.toInt()} kcal，低于目标较多，请注意摄入充足。", AdviceGlyph.DOWN, neutral, 1))
         }
 
         val nutrition = state.averageNutrition
-        val proteinRatio = nutrition.proteinG / state.proteinTarget.coerceAtLeast(1f)
-        val carbsRatio = nutrition.carbsG / state.carbsTarget.coerceAtLeast(1f)
-        val fatRatio = nutrition.fatG / state.fatTarget.coerceAtLeast(1f)
+        val proteinRatio = nutrition.proteinG / state.averageTargets.proteinG.coerceAtLeast(1f)
+        val carbsRatio = nutrition.carbsG / state.averageTargets.carbsG.coerceAtLeast(1f)
+        val fatRatio = nutrition.fatG / state.averageTargets.fatG.coerceAtLeast(1f)
         when {
             proteinRatio < 0.75 -> add(Advice("蛋白质不足", "日均约 ${nutrition.proteinG.toInt()}g，可增加蛋、奶、豆制品、鱼虾或瘦肉。", AdviceGlyph.DOWN, caution, 0))
             proteinRatio > 1.2 -> add(Advice("蛋白质偏高", "日均约 ${nutrition.proteinG.toInt()}g，已经超过目标较多，注意整体热量平衡。", AdviceGlyph.UP, neutral, 1))
@@ -810,9 +808,9 @@ private fun buildAdvice(state: StatsViewModel.StatsUiState): List<Advice> {
             }
         }
 
-        val proteinGap = (state.proteinTarget - nutrition.proteinG).coerceAtLeast(0.0)
-        val carbsGap = (state.carbsTarget - nutrition.carbsG).coerceAtLeast(0.0)
-        val fatGap = (state.fatTarget - nutrition.fatG).coerceAtLeast(0.0)
+        val proteinGap = (state.averageTargets.proteinG - nutrition.proteinG).coerceAtLeast(0.0)
+        val carbsGap = (state.averageTargets.carbsG - nutrition.carbsG).coerceAtLeast(0.0)
+        val fatGap = (state.averageTargets.fatG - nutrition.fatG).coerceAtLeast(0.0)
         when {
             proteinGap >= 20.0 -> add(Advice("补充蛋白质", "当前平均还缺约 ${proteinGap.toInt()}g，优先选择鸡蛋、牛奶、豆腐、鱼虾或瘦肉。", AdviceGlyph.ADD, positive, 2))
             carbsGap >= 30.0 -> add(Advice("补充主食", "当前平均还缺约 ${carbsGap.toInt()}g碳水，可选择燕麦、玉米、红薯或全谷物。", AdviceGlyph.ADD, positive, 2))
@@ -982,11 +980,8 @@ private fun MacroProgress(
 @Composable
 private fun DailyHeatmap(
     days: List<DayNutritionSummary>,
+    targetsForDate: (Long) -> com.click.lightmemo.data.DailyTargets,
     mode: DailyHeatmapMode,
-    calorieTarget: Float,
-    proteinTarget: Float,
-    carbsTarget: Float,
-    fatTarget: Float,
     selectedEpochDay: Long?,
     calorieColor: Color,
     proteinColor: Color,
@@ -1016,13 +1011,14 @@ private fun DailyHeatmap(
                 repeat(7) { column ->
                     val epochDay = gridStart.plusDays((row * 7 + column).toLong()).toEpochDay()
                     val day = dayMap[epochDay]
+                    val dayTargets = targetsForDate(epochDay)
                     HeatmapCell(
                         day = day,
                         mode = mode,
-                        calorieTarget = calorieTarget,
-                        proteinTarget = proteinTarget,
-                        carbsTarget = carbsTarget,
-                        fatTarget = fatTarget,
+                        calorieTarget = dayTargets.calories,
+                        proteinTarget = dayTargets.proteinG,
+                        carbsTarget = dayTargets.carbsG,
+                        fatTarget = dayTargets.fatG,
                         selected = day?.dateEpochDay == selectedEpochDay,
                         calorieColor = calorieColor,
                         proteinColor = proteinColor,
@@ -1124,11 +1120,15 @@ private fun dailyAverageValue(mode: DailyHeatmapMode, state: StatsViewModel.Stat
     else -> dailyHeatmapValue(mode, state.averageNutrition)
 }
 
-private fun dailyHeatmapTarget(mode: DailyHeatmapMode, state: StatsViewModel.StatsUiState): Float = when (mode) {
-    DailyHeatmapMode.CALORIES -> state.target
-    DailyHeatmapMode.PROTEIN -> state.proteinTarget
-    DailyHeatmapMode.CARBS -> state.carbsTarget
-    DailyHeatmapMode.FAT -> state.fatTarget
+private fun dailyHeatmapTarget(mode: DailyHeatmapMode, state: StatsViewModel.StatsUiState,
+    epochDay: Long? = null): Float {
+    val targets = epochDay?.let { state.targetSettings.targetsForDate(it) }
+    return when (mode) {
+        DailyHeatmapMode.CALORIES -> targets?.calories ?: state.target
+        DailyHeatmapMode.PROTEIN -> targets?.proteinG ?: state.proteinTarget
+        DailyHeatmapMode.CARBS -> targets?.carbsG ?: state.carbsTarget
+        DailyHeatmapMode.FAT -> targets?.fatG ?: state.fatTarget
+    }
 }
 
 private fun dailyHeatmapColor(mode: DailyHeatmapMode, palette: FoodPaletteColors): Color = when (mode) {

@@ -70,6 +70,8 @@ data class AppSettings(
     val proteinTargetG: Float = 0f,
     val fatTargetG: Float = 0f,
     val carbsTargetG: Float = 0f,
+    val fitnessGoal: FitnessGoal = FitnessGoal.MAINTAIN,
+    val targetHistory: List<TargetHistoryEntry> = emptyList(),
     val heightCm: Float = 0f,
     val weightKg: Float = 0f,
     val ageYears: Int = 0,
@@ -142,9 +144,9 @@ data class AppSettings(
             }.coerceAtLeast(800f)
         }
 
-    /** 按活动强度估算的每日总消耗 (TDEE)。 */
+    /** 按活动强度与健身目标估算的推荐每日摄入。 */
     val recommendedCalories: Float?
-        get() = basalMetabolicRate?.let { it * activityLevel.factor }
+        get() = basalMetabolicRate?.let { it * activityLevel.factor * fitnessGoal.calorieFactor }
 
     data class NutrientTargets(
         val calories: Float,
@@ -154,12 +156,12 @@ data class AppSettings(
     )
 
     /**
-     * 推荐营养素：蛋白质约 1.0–1.2 g/kg，脂肪约 25% 热量，其余给碳水。
+     * 推荐营养素：按健身目标选择蛋白质系数，脂肪约 25% 热量，其余给碳水。
      */
     val recommendedNutrients: NutrientTargets?
         get() {
             val calories = recommendedCalories ?: return null
-            val proteinPerKg = when (activityLevel) {
+            val proteinPerKg = if (fitnessGoal != FitnessGoal.MAINTAIN) fitnessGoal.proteinPerKg else when (activityLevel) {
                 ActivityLevel.LOW -> 1.0f
                 ActivityLevel.MEDIUM, ActivityLevel.HIGH -> 1.2f
             }
@@ -173,6 +175,13 @@ data class AppSettings(
                 carbsG = carbsG,
             )
         }
+
+    val currentTargets: DailyTargets
+        get() = DailyTargets(dailyCalorieTarget, effectiveProteinG.takeIf { it > 0f } ?: 120f,
+            effectiveFatG.takeIf { it > 0f } ?: 60f, effectiveCarbsG.takeIf { it > 0f } ?: 250f)
+
+    fun targetsForDate(epochDay: Long): DailyTargets = targetHistory
+        .filter { epochDay <= it.throughEpochDay }.minByOrNull { it.throughEpochDay }?.targets ?: currentTargets
 
     /** 手动营养目标；未设置时回落到推荐值 */
     val effectiveProteinG: Float
@@ -259,6 +268,8 @@ class SettingsRepository(private val store: androidx.datastore.core.DataStore<an
                 put("proteinTargetG", current.proteinTargetG.toDouble())
                 put("fatTargetG", current.fatTargetG.toDouble())
                 put("carbsTargetG", current.carbsTargetG.toDouble())
+                put("fitnessGoal", current.fitnessGoal.name)
+                put("targetHistory", JSONArray(settingsJson.encodeToString(current.targetHistory)))
                 put("heightCm", current.heightCm.toDouble())
                 put("weightKg", current.weightKg.toDouble())
                 put("ageYears", current.ageYears)
@@ -356,6 +367,11 @@ class SettingsRepository(private val store: androidx.datastore.core.DataStore<an
             prefs[Keys.PROTEIN] = floatValue("proteinTargetG", defaults.proteinTargetG)
             prefs[Keys.FAT] = floatValue("fatTargetG", defaults.fatTargetG)
             prefs[Keys.CARBS] = floatValue("carbsTargetG", defaults.carbsTargetG)
+            prefs[Keys.FITNESS_GOAL] = FitnessGoal.entries.firstOrNull {
+                it.name == settingsJsonObject.optString("fitnessGoal")
+            }?.name ?: FitnessGoal.MAINTAIN.name
+            prefs[Keys.TARGET_HISTORY] = settingsJson.encodeToString(decodeTargetHistory(
+                settingsJsonObject.optJSONArray("targetHistory")?.toString()))
             prefs[Keys.HEIGHT] = floatValue("heightCm", defaults.heightCm)
             prefs[Keys.WEIGHT] = floatValue("weightKg", defaults.weightKg)
             prefs[Keys.AGE] = settingsJsonObject.optInt("ageYears", defaults.ageYears)
@@ -405,6 +421,8 @@ class SettingsRepository(private val store: androidx.datastore.core.DataStore<an
         val BASE_URL = stringPreferencesKey("base_url")
         val API_KEY = stringPreferencesKey("api_key")
         val MODEL = stringPreferencesKey("model")
+        val FITNESS_GOAL = stringPreferencesKey("fitness_goal")
+        val TARGET_HISTORY = stringPreferencesKey("target_history")
         val TARGET = floatPreferencesKey("daily_target")
         val HEIGHT = floatPreferencesKey("height_cm")
         val WEIGHT = floatPreferencesKey("weight_kg")
@@ -441,7 +459,7 @@ class SettingsRepository(private val store: androidx.datastore.core.DataStore<an
         val DINNER_REMINDER_MINUTE = intPreferencesKey("dinner_reminder_minute")
     }
 
-    val settings: Flow<AppSettings> = store.data.map { prefs ->
+    private fun readSettings(prefs: androidx.datastore.preferences.core.Preferences): AppSettings {
         val presets = parsePresets(
             raw = prefs[Keys.PRESETS],
             legacyBaseUrl = prefs[Keys.BASE_URL],
@@ -479,7 +497,7 @@ class SettingsRepository(private val store: androidx.datastore.core.DataStore<an
             else -> FoodColorPalette.forPreset(ColorThemePreset.MULTICOLOR)
         }
 
-        AppSettings(
+        return AppSettings(
             apiPresets = presets,
             activePresetId = activeId,
             systemBackground = prefs[Keys.SYSTEM_BG] ?: "",
@@ -489,6 +507,8 @@ class SettingsRepository(private val store: androidx.datastore.core.DataStore<an
             proteinTargetG = prefs[Keys.PROTEIN] ?: 0f,
             fatTargetG = prefs[Keys.FAT] ?: 0f,
             carbsTargetG = prefs[Keys.CARBS] ?: 0f,
+            fitnessGoal = FitnessGoal.entries.firstOrNull { it.name == prefs[Keys.FITNESS_GOAL] } ?: FitnessGoal.MAINTAIN,
+            targetHistory = decodeTargetHistory(prefs[Keys.TARGET_HISTORY]),
             heightCm = prefs[Keys.HEIGHT] ?: 0f,
             weightKg = prefs[Keys.WEIGHT] ?: 0f,
             ageYears = prefs[Keys.AGE] ?: 0,
@@ -527,7 +547,9 @@ class SettingsRepository(private val store: androidx.datastore.core.DataStore<an
             dinnerReminderMinute = (prefs[Keys.DINNER_REMINDER_MINUTE]
                 ?: DEFAULT_DINNER_REMINDER_MINUTE).coerceIn(0, 1439),
         )
-    }.retryWhen { error, _ ->
+    }
+
+    val settings: Flow<AppSettings> = store.data.map { readSettings(it) }.retryWhen { error, _ ->
         readError.value = "设置读取失败，正在重试：${error.message.orEmpty()}"
         delay(5_000)
         true
@@ -695,46 +717,78 @@ class SettingsRepository(private val store: androidx.datastore.core.DataStore<an
         store.edit { it[Keys.FDC_API_KEY] = value.trim() }
     }
 
+    private fun decodeTargetHistory(raw: String?): List<TargetHistoryEntry> = runCatching {
+        settingsJson.decodeFromString<List<TargetHistoryEntry>>(raw ?: "[]")
+            .sortedBy { it.throughEpochDay }
+    }.getOrDefault(emptyList())
+
+    private fun preserveHistoricalTargets(prefs: androidx.datastore.preferences.core.MutablePreferences,
+        todayEpochDay: Long = java.time.LocalDate.now().toEpochDay()) {
+        val current = readSettings(prefs)
+        val yesterday = todayEpochDay - 1
+        if (current.targetHistory.none { it.throughEpochDay >= yesterday }) {
+            prefs[Keys.TARGET_HISTORY] = settingsJson.encodeToString(
+                current.targetHistory + TargetHistoryEntry(yesterday, current.currentTargets))
+        }
+    }
+
+    suspend fun updateTargets(targets: DailyTargets, overwriteHistory: Boolean = false,
+        todayEpochDay: Long = java.time.LocalDate.now().toEpochDay()) {
+        require(targets.errors().isEmpty()) { targets.errors().joinToString("；") }
+        store.edit { prefs ->
+            if (overwriteHistory) prefs.remove(Keys.TARGET_HISTORY)
+            else preserveHistoricalTargets(prefs, todayEpochDay)
+            prefs[Keys.TARGET] = targets.calories
+            prefs[Keys.PROTEIN] = targets.proteinG
+            prefs[Keys.FAT] = targets.fatG
+            prefs[Keys.CARBS] = targets.carbsG
+        }
+    }
+
+    suspend fun updateFitnessGoal(value: FitnessGoal) {
+        store.edit { preserveHistoricalTargets(it); it[Keys.FITNESS_GOAL] = value.name }
+    }
+
     suspend fun updateDailyTarget(value: Float) {
         require(value.isFinite()) { "请输入有效数字" }
-        store.edit { it[Keys.TARGET] = value.coerceIn(500f, 10000f) }
+        store.edit { preserveHistoricalTargets(it); it[Keys.TARGET] = value.coerceIn(500f, 10000f) }
     }
 
     suspend fun updateProteinTarget(value: Float) {
         require(value.isFinite()) { "请输入有效数字" }
-        store.edit { it[Keys.PROTEIN] = value.coerceIn(0f, 500f) }
+        store.edit { preserveHistoricalTargets(it); it[Keys.PROTEIN] = value.coerceIn(0f, 500f) }
     }
 
     suspend fun updateFatTarget(value: Float) {
         require(value.isFinite()) { "请输入有效数字" }
-        store.edit { it[Keys.FAT] = value.coerceIn(0f, 300f) }
+        store.edit { preserveHistoricalTargets(it); it[Keys.FAT] = value.coerceIn(0f, 300f) }
     }
 
     suspend fun updateCarbsTarget(value: Float) {
         require(value.isFinite()) { "请输入有效数字" }
-        store.edit { it[Keys.CARBS] = value.coerceIn(0f, 800f) }
+        store.edit { preserveHistoricalTargets(it); it[Keys.CARBS] = value.coerceIn(0f, 800f) }
     }
 
     suspend fun updateHeight(value: Float) {
         require(value.isFinite()) { "请输入有效数字" }
-        store.edit { it[Keys.HEIGHT] = value.coerceIn(50f, 250f) }
+        store.edit { preserveHistoricalTargets(it); it[Keys.HEIGHT] = value.coerceIn(50f, 250f) }
     }
 
     suspend fun updateWeight(value: Float) {
         require(value.isFinite()) { "请输入有效数字" }
-        store.edit { it[Keys.WEIGHT] = value.coerceIn(20f, 300f) }
+        store.edit { preserveHistoricalTargets(it); it[Keys.WEIGHT] = value.coerceIn(20f, 300f) }
     }
 
     suspend fun updateAge(value: Int) {
-        store.edit { it[Keys.AGE] = value.coerceIn(10, 100) }
+        store.edit { preserveHistoricalTargets(it); it[Keys.AGE] = value.coerceIn(10, 100) }
     }
 
     suspend fun updateGender(value: Gender) {
-        store.edit { it[Keys.GENDER] = value.name }
+        store.edit { preserveHistoricalTargets(it); it[Keys.GENDER] = value.name }
     }
 
     suspend fun updateActivityLevel(value: ActivityLevel) {
-        store.edit { it[Keys.ACTIVITY] = value.name }
+        store.edit { preserveHistoricalTargets(it); it[Keys.ACTIVITY] = value.name }
     }
 
     suspend fun updateProteinRingColor(value: Long) {

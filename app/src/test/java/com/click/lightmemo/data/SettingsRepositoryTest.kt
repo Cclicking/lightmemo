@@ -208,4 +208,87 @@ class SettingsRepositoryTest {
             scope.coroutineContext[Job]!!.cancelAndJoin()
         }
     }
+    @Test fun targetChangesPreserveDatesAndExplicitOverwriteReplacesHistory() = runBlocking {
+        val file = folder.newFolder().resolve("target-history.preferences_pb").toOkioPath()
+        suspend fun useStore(block: suspend (SettingsRepository) -> Unit) {
+            val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+            val store = PreferenceDataStoreFactory.create(scope = scope,
+                storage = OkioStorage(FileSystem.SYSTEM, PreferencesSerializer) { file })
+            try { block(SettingsRepository(store)) }
+            finally { scope.coroutineContext[Job]!!.cancelAndJoin() }
+        }
+        val first = DailyTargets(2000f, 120f, 60f, 245f)
+        val second = DailyTargets(2200f, 150f, 60f, 265f)
+        val third = DailyTargets(2400f, 160f, 80f, 260f)
+        useStore { repo ->
+            val baseline = repo.settings.first().currentTargets
+            repo.updateTargets(first, todayEpochDay = 100)
+            repo.updateTargets(second, todayEpochDay = 100)
+            val sameDay = repo.settings.first()
+            assertEquals(baseline, sameDay.targetsForDate(99))
+            assertEquals(second, sameDay.targetsForDate(100))
+            assertEquals(1, sameDay.targetHistory.size)
+            repo.updateTargets(third, todayEpochDay = 103)
+        }
+        useStore { repo ->
+            val saved = repo.settings.first()
+            assertEquals(second, saved.targetsForDate(102))
+            assertEquals(third, saved.targetsForDate(103))
+            val backup = repo.exportBackupJson()
+            repo.updateTargets(first, overwriteHistory = true, todayEpochDay = 104)
+            assertEquals(first, repo.settings.first().targetsForDate(99))
+            assertTrue(repo.settings.first().targetHistory.isEmpty())
+            repo.importBackupJson(backup.getJSONObject("settings"), backup.getJSONArray("foodPresets"))
+            assertEquals(saved.targetHistory, repo.settings.first().targetHistory)
+        }
+    }
+
+    @Test fun invalidTargetsDoNotPartiallySaveAndWarningsRemainOverridable() = runBlocking {
+        val file = folder.newFolder().resolve("target-validation.preferences_pb").toOkioPath()
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        val store = PreferenceDataStoreFactory.create(scope = scope,
+            storage = OkioStorage(FileSystem.SYSTEM, PreferencesSerializer) { file })
+        try {
+            val repo = SettingsRepository(store)
+            val initial = repo.settings.first()
+            for (invalid in listOf(DailyTargets(Float.NaN, 100f, 50f, 100f),
+                DailyTargets(2000f, 501f, 50f, 100f), DailyTargets(499f, 100f, 50f, 100f))) {
+                try { repo.updateTargets(invalid); fail("Expected validation failure") }
+                catch (_: IllegalArgumentException) { }
+                assertEquals(initial, repo.settings.first())
+            }
+            val intentional = DailyTargets(2000f, 100f, 50f, 100f)
+            assertTrue(intentional.warnings().isNotEmpty())
+            repo.updateTargets(intentional)
+            assertEquals(intentional, repo.settings.first().currentTargets)
+        } finally { scope.coroutineContext[Job]!!.cancelAndJoin() }
+    }
+
+    @Test fun fitnessGoalPersistsAndOnlyChangesRecommendationsUntilApplied() = runBlocking {
+        val file = folder.newFolder().resolve("fitness-goal.preferences_pb").toOkioPath()
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        val store = PreferenceDataStoreFactory.create(scope = scope,
+            storage = OkioStorage(FileSystem.SYSTEM, PreferencesSerializer) { file })
+        try {
+            val repo = SettingsRepository(store)
+            repo.updateHeight(170f)
+            repo.updateWeight(60f)
+            repo.updateAge(25)
+            val maintain = repo.settings.first()
+            repo.updateFitnessGoal(FitnessGoal.FAT_LOSS)
+            val loss = repo.settings.first()
+            assertEquals(FitnessGoal.FAT_LOSS, loss.fitnessGoal)
+            assertTrue(loss.recommendedCalories!! < maintain.recommendedCalories!!)
+            assertEquals(maintain.dailyCalorieTarget, loss.dailyCalorieTarget)
+            assertEquals(maintain.targetsForDate(java.time.LocalDate.now().toEpochDay() - 1),
+                loss.targetsForDate(java.time.LocalDate.now().toEpochDay() - 1))
+            repo.updateFitnessGoal(FitnessGoal.MUSCLE_GAIN)
+            assertTrue(repo.settings.first().recommendedCalories!! > maintain.recommendedCalories!!)
+            val backup = repo.exportBackupJson()
+            repo.updateFitnessGoal(FitnessGoal.MAINTAIN)
+            repo.importBackupJson(backup.getJSONObject("settings"), backup.getJSONArray("foodPresets"))
+            assertEquals(FitnessGoal.MUSCLE_GAIN, repo.settings.first().fitnessGoal)
+        } finally { scope.coroutineContext[Job]!!.cancelAndJoin() }
+    }
+
 }
