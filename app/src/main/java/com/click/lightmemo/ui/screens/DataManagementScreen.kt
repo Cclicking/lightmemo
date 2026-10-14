@@ -179,16 +179,6 @@ fun DataManagementScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
-            SmallTitle(text = "MCP 服务", modifier = Modifier.offset(x = (-16).dp))
-            Card(cornerRadius = 20.dp, modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(0.dp)) {
-                ArrowPreference(
-                    title = "MCP 服务",
-                    summary = "连接超级小爱，查询当天营养摄入",
-                    onClick = { context.startActivity(Intent(context, com.click.lightmemo.ui.secondary.McpSettingsActivity::class.java)) },
-                )
-            }
-        }
-        item {
             SmallTitle(text = "个人食物记忆", modifier = Modifier.offset(x = (-16).dp))
             Card(cornerRadius = 20.dp, modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(0.dp)) {
                 ArrowPreference(

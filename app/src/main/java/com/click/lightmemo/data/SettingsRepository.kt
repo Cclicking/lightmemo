@@ -60,6 +60,7 @@ data class ApiPreset(
 )
 
 data class AppSettings(
+    val statsCardLayout: StatsCardLayout = StatsCardLayout(),
     val apiPresets: List<ApiPreset> = listOf(ApiPreset()),
     val activePresetId: String = apiPresets.firstOrNull()?.id.orEmpty(),
     val systemBackground: String = "",
@@ -261,6 +262,7 @@ class SettingsRepository(private val store: androidx.datastore.core.DataStore<an
             put("settings", JSONObject().apply {
                 put("apiPresets", JSONArray(settingsJson.encodeToString(current.apiPresets)))
                 put("activePresetId", current.activePresetId)
+                put("statsCardLayout", JSONObject(settingsJson.encodeToString(current.statsCardLayout)))
                 put("systemBackground", current.systemBackground)
                 put("promptOverrides", JSONObject(settingsJson.encodeToString(current.promptOverrides)))
                 put("foodDataCentralApiKey", current.foodDataCentralApiKey)
@@ -351,6 +353,8 @@ class SettingsRepository(private val store: androidx.datastore.core.DataStore<an
             prefs[foodPresetsKey] = settingsJson.encodeToString(importedFoodPresets)
             prefs[Keys.PRESETS] = settingsJson.encodeToString(importedPresets)
             prefs[Keys.ACTIVE_PRESET] = activePresetId
+            prefs[Keys.STATS_CARD_LAYOUT] = settingsJson.encodeToString(decodeStatsCardLayout(
+                settingsJsonObject.optJSONObject("statsCardLayout")?.toString()))
             prefs[Keys.BASE_URL] = active.baseUrl
             prefs[Keys.API_KEY] = active.apiKey
             prefs[Keys.MODEL] = active.model
@@ -418,6 +422,7 @@ class SettingsRepository(private val store: androidx.datastore.core.DataStore<an
     }
 
     private object Keys {
+        val STATS_CARD_LAYOUT = stringPreferencesKey("stats_card_layout")
         val BASE_URL = stringPreferencesKey("base_url")
         val API_KEY = stringPreferencesKey("api_key")
         val MODEL = stringPreferencesKey("model")
@@ -498,6 +503,7 @@ class SettingsRepository(private val store: androidx.datastore.core.DataStore<an
         }
 
         return AppSettings(
+            statsCardLayout = decodeStatsCardLayout(prefs[Keys.STATS_CARD_LAYOUT]),
             apiPresets = presets,
             activePresetId = activeId,
             systemBackground = prefs[Keys.SYSTEM_BG] ?: "",
@@ -547,6 +553,14 @@ class SettingsRepository(private val store: androidx.datastore.core.DataStore<an
             dinnerReminderMinute = (prefs[Keys.DINNER_REMINDER_MINUTE]
                 ?: DEFAULT_DINNER_REMINDER_MINUTE).coerceIn(0, 1439),
         )
+    }
+
+    private fun decodeStatsCardLayout(raw: String?): StatsCardLayout = runCatching {
+        settingsJson.decodeFromString<StatsCardLayout>(raw.orEmpty()).normalized()
+    }.getOrDefault(StatsCardLayout())
+
+    suspend fun setStatsCardLayout(layout: StatsCardLayout) {
+        store.edit { it[Keys.STATS_CARD_LAYOUT] = settingsJson.encodeToString(layout.normalized()) }
     }
 
     val settings: Flow<AppSettings> = store.data.map { readSettings(it) }.retryWhen { error, _ ->

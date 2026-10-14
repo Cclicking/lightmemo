@@ -381,6 +381,9 @@ class PermissionManagementActivity : SecondarySettingsActivity() {
             onNotificationClick = {
                 startActivity(Intent(this@PermissionManagementActivity, NotificationSettingsActivity::class.java))
             },
+            onHealthConnectClick = {
+                startActivity(Intent(this@PermissionManagementActivity, HealthConnectSettingsActivity::class.java))
+            },
         )
     }
 }

@@ -3,6 +3,11 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.health.READ_TOTAL_CALORIES_BURNED" />
+    <uses-permission android:name="android.permission.health.READ_HEALTH_DATA_HISTORY" />
+    <queries>
+        <package android:name="com.google.android.apps.healthdata" />
+    </queries>
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS" />
@@ -64,6 +69,20 @@
             </intent-filter>
         </receiver>
         <activity android:name=".ui.secondary.PersonalInfoActivity" android:exported="false" />
+        <activity android:name=".ui.secondary.HealthConnectPrivacyActivity" android:exported="true">
+            <intent-filter>
+                <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />
+            </intent-filter>
+        </activity>
+        <activity-alias android:name="ViewHealthPermissionUsageActivity"
+            android:exported="true"
+            android:targetActivity=".ui.secondary.HealthConnectPrivacyActivity"
+            android:permission="android.permission.START_VIEW_PERMISSION_USAGE">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW_PERMISSION_USAGE" />
+                <category android:name="android.intent.category.HEALTH_PERMISSIONS" />
+            </intent-filter>
+        </activity-alias>
         <activity android:name=".ui.secondary.ApiSettingsActivity" android:exported="false" />
         <activity android:name=".ui.secondary.ApiConfigurationActivity" android:exported="false" android:windowSoftInputMode="adjustResize" />
         <activity android:name=".ui.secondary.PromptSettingsActivity" android:exported="false" android:windowSoftInputMode="adjustResize" />
@@ -122,11 +141,13 @@
         </receiver>
         <activity android:name=".ui.secondary.AppearanceSettingsActivity" android:exported="false" />
         <activity android:name=".ui.secondary.PermissionManagementActivity" android:exported="false" />
+        <activity android:name=".ui.secondary.HealthConnectSettingsActivity" android:exported="false" />
         <activity android:name=".ui.secondary.NotificationSettingsActivity" android:exported="false" />
         <activity android:name=".ui.secondary.DiagnosticsActivity" android:exported="false" />
         <activity android:name=".ui.secondary.AboutActivity" android:exported="false" />
         <activity android:name=".ui.secondary.SettingsHubActivity" android:exported="false" />
         <activity android:name=".ui.secondary.ManageFoodCardsActivity" android:exported="false" />
+        <activity android:name=".ui.secondary.ManageStatsActivity" android:exported="false" />
         <activity android:name=".ui.secondary.EditFoodActivity" android:exported="false" android:windowSoftInputMode="adjustResize" />
         <provider
             android:name="androidx.core.content.FileProvider"

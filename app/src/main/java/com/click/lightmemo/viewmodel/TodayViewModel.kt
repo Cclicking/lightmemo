@@ -224,6 +224,32 @@ class StatsViewModel(app: Application) : AndroidViewModel(app) {
     private val settingsRepo = (app as FoodApp).settingsRepository
 
     private val period = MutableStateFlow<Pair<LocalDate, LocalDate>?>(null)
+    private val healthRefresh = MutableStateFlow(0L)
+    private val healthRepository = com.click.lightmemo.health.HealthConnectRepository(app)
+    val calorieExpenditure = combine(period, currentDateFlow(), healthRefresh) { selected, today, _ ->
+        selected ?: (today.minusDays(today.dayOfWeek.value.toLong() - 1) to
+            today.minusDays(today.dayOfWeek.value.toLong() - 1).plusDays(6))
+    }.flatMapLatest { (start, end) ->
+        kotlinx.coroutines.flow.flow {
+            emit(com.click.lightmemo.health.CalorieExpenditureState())
+            try {
+                emit(healthRepository.readDailyCalories(start, end))
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: SecurityException) {
+                emit(com.click.lightmemo.health.CalorieExpenditureState(
+                    status = com.click.lightmemo.health.HealthConnectStatus.PERMISSION_REQUIRED,
+                    permissions = setOf(com.click.lightmemo.health.HealthConnectRepository.READ_CALORIES),
+                ))
+            } catch (e: Exception) {
+                emit(com.click.lightmemo.health.CalorieExpenditureState(
+                    status = com.click.lightmemo.health.HealthConnectStatus.ERROR,
+                ))
+            }
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), com.click.lightmemo.health.CalorieExpenditureState())
+
+    fun refreshCalorieExpenditure() { healthRefresh.value += 1 }
 
     data class RecommendationSession(
         val hasResult: Boolean = false,
@@ -244,6 +270,7 @@ class StatsViewModel(app: Application) : AndroidViewModel(app) {
         val rangeDays: Int = 7,
         val elapsedDays: Int = 0,
         val daily: List<DayNutritionSummary> = emptyList(),
+        val loggedEpochDays: Set<Long> = emptySet(),
         val calendarDays: List<DayNutritionSummary> = emptyList(),
         val mealTiming: List<MealTimingDay> = emptyList(),
         val averageKcal: Double = 0.0,
@@ -395,6 +422,7 @@ class StatsViewModel(app: Application) : AndroidViewModel(app) {
             targetSettings = settings,
             rangeDays = days,
             daily = daily,
+            loggedEpochDays = grouped.keys,
             calendarDays = calendarDays,
             averageKcal = if (logged.isEmpty()) 0.0 else logged.map { it.total.caloriesKcal }.average(),
             averageNutrition = logged.fold(Nutrition()) { acc, day -> acc + day.total }

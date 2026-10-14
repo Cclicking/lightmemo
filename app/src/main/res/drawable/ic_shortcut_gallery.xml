@@ -1,14 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- High-resolution circular launcher shortcut icon with the gallery glyph scaled to 85%. -->
-<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <item
-        android:width="108dp"
-        android:height="108dp"
-        android:gravity="center"
-        android:drawable="@drawable/shortcut_circle" />
-    <item
-        android:width="61.2dp"
-        android:height="61.2dp"
-        android:gravity="center"
-        android:drawable="@drawable/ic_shortcut_gallery_glyph" />
-</layer-list>
+<!-- A 40.8-unit glyph on the adaptive 108-unit canvas / 72-unit visible mask
+     preserves the original 61.2/108 visible ratio. Use fractional insets
+     so the glyph scales with the launcher's drawable bounds. -->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/shortcut_background" />
+    <foreground>
+        <inset
+            android:drawable="@drawable/ic_shortcut_gallery_glyph"
+            android:insetLeft="31.111111%"
+            android:insetTop="31.111111%"
+            android:insetRight="31.111111%"
+            android:insetBottom="31.111111%" />
+    </foreground>
+</adaptive-icon>

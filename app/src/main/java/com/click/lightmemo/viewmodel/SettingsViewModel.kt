@@ -59,6 +59,9 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
     )
 
     fun setBaseUrl(value: String) = saveSetting { repo.updateActiveBaseUrl(value) }
+    fun setStatsCardLayout(value: com.click.lightmemo.data.StatsCardLayout) = saveSetting {
+        repo.setStatsCardLayout(value)
+    }
 
     fun setApiKey(value: String) = saveSetting { repo.updateActiveApiKey(value) }
 

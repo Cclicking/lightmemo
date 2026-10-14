@@ -62,6 +62,7 @@ fun PermissionManagementScreen(
     scrollBehavior: ScrollBehavior?,
     listState: LazyListState,
     onNotificationClick: () -> Unit,
+    onHealthConnectClick: () -> Unit,
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -248,6 +249,11 @@ fun PermissionManagementScreen(
                         else -> "未允许"
                     },
                     onClick = onNotificationClick,
+                )
+                ArrowPreference(
+                    title = "Health Connect",
+                    summary = "管理健康数据权限，查看小米运动健康接入指南",
+                    onClick = onHealthConnectClick,
                 )
             }
             Text(

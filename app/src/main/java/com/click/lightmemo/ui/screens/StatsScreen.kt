@@ -48,6 +48,9 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalContext
+import com.click.lightmemo.data.StatsCard
+import com.click.lightmemo.ui.secondary.ManageStatsActivity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -112,7 +115,13 @@ fun StatsScreen(
     calendarExpanded: Boolean,
     palette: FoodPaletteColors = FoodPaletteColors.Default,
 ) {
+    val context = LocalContext.current
     val state by viewModel.uiState.collectAsState()
+    val expenditure by viewModel.calorieExpenditure.collectAsState()
+    androidx.lifecycle.compose.LifecycleResumeEffect(viewModel) {
+        viewModel.refreshCalorieExpenditure()
+        onPauseOrDispose { }
+    }
     val readError by viewModel.readError.collectAsState()
     var selectedEpochDay by rememberSaveable { mutableLongStateOf(LocalDate.now().toEpochDay()) }
     var anchorEpochDay by rememberSaveable { mutableLongStateOf(LocalDate.now().toEpochDay()) }
@@ -187,47 +196,82 @@ fun StatsScreen(
                 },
             )
         }
-        item {
-            Box(Modifier.padding(horizontal = 16.dp)) {
-                SummaryCard(
-                    state = state,
-                    selectedDay = selectedHeatmapDay,
-                    heatmapDays = monthlyHeatmapDays,
-                    palette = palette,
-                    mode = dailyHeatmapMode,
-                    onModeChange = { dailyHeatmapMode = it },
-                    onSelect = { selectedEpochDay = it },
-                )
+        state.targetSettings.statsCardLayout.normalized().visible.forEach { cardId ->
+            item(key = cardId) {
+                when (cardId) {
+                    StatsCard.SUMMARY.id -> {
+                        Box(Modifier.padding(horizontal = 16.dp)) {
+                            SummaryCard(
+                                state = state,
+                                selectedDay = selectedHeatmapDay,
+                                heatmapDays = monthlyHeatmapDays,
+                                palette = palette,
+                                mode = dailyHeatmapMode,
+                                onModeChange = { dailyHeatmapMode = it },
+                                onSelect = { selectedEpochDay = it },
+                            )
+                        }
+                    }
+                    StatsCard.MEAL_STRUCTURE.id -> {
+                        MealStructureCard(
+                            mealCalories = state.mealCalories,
+                            averageCalories = state.averageKcal,
+                            structureColors = palette.structure,
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                        )
+                    }
+                    StatsCard.MEAL_TIMING.id -> {
+                        MealTimingCard(
+                            state = state,
+                            structureColors = palette.structure,
+                            selectedEpochDay = selectedDay?.dateEpochDay,
+                            onSelect = { selectedEpochDay = it },
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                        )
+                    }
+                    StatsCard.CALORIE_BALANCE.id -> {
+                        CalorieBalanceCard(
+                            state = state,
+                            expenditure = expenditure,
+                            selectedEpochDay = selectedEpochDay,
+                            onSelect = { selectedEpochDay = it },
+                            onRefresh = viewModel::refreshCalorieExpenditure,
+                            palette = palette,
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                        )
+                    }
+                    StatsCard.ADVICE.id -> AdviceSection(state, Modifier.fillMaxWidth())
+                    StatsCard.NUTRITION.id -> {
+                        Box(Modifier.padding(horizontal = 16.dp)) {
+                            NutritionIntakeCard(
+                                nutrition = state.averageNutrition,
+                                proteinTarget = state.proteinTarget,
+                                carbsTarget = state.carbsTarget,
+                                fatTarget = state.fatTarget,
+                                proteinColor = palette.protein,
+                                carbsColor = palette.carbs,
+                                fatColor = palette.fat,
+                            )
+                        }
+                    }
+                }
             }
         }
-        item {
-            MealStructureCard(
-                mealCalories = state.mealCalories,
-                averageCalories = state.averageKcal,
-                structureColors = palette.structure,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-            )
-        }
-        item {
-            MealTimingCard(
-                state = state,
-                structureColors = palette.structure,
-                selectedEpochDay = selectedDay?.dateEpochDay,
-                onSelect = { selectedEpochDay = it },
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-            )
-        }
-        item { AdviceSection(state, Modifier.fillMaxWidth()) }
-        item {
-            Box(Modifier.padding(horizontal = 16.dp)) {
-                NutritionIntakeCard(
-                    nutrition = state.averageNutrition,
-                    proteinTarget = state.proteinTarget,
-                    carbsTarget = state.carbsTarget,
-                    fatTarget = state.fatTarget,
-                    proteinColor = palette.protein,
-                    carbsColor = palette.carbs,
-                    fatColor = palette.fat,
+        item(key = "manage_stats") {
+            val interactionSource = remember { MutableInteractionSource() }
+            val pressed by interactionSource.collectIsPressedAsState()
+            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                Text(
+                    text = "管理统计页",
+                    style = MiuixTheme.textStyles.footnote2,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary.copy(alpha = if (pressed) 0.45f else 1f),
+                    modifier = Modifier.clickable(
+                        interactionSource = interactionSource,
+                        indication = null,
+                        role = Role.Button,
+                    ) {
+                        context.startActivity(android.content.Intent(context, ManageStatsActivity::class.java))
+                    }.padding(horizontal = 24.dp, vertical = 16.dp),
                 )
             }
         }
@@ -471,7 +515,7 @@ private fun MealTimingCard(
 }
 
 @Composable
-private fun TimingMetric(
+internal fun TimingMetric(
     label: String,
     value: String,
     detail: String,

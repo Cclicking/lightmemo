@@ -15,6 +15,25 @@ import org.junit.Rule
 import org.junit.rules.TemporaryFolder
 
 class SettingsRepositoryTest {
+    @Test fun statsCardLayoutSurvivesReopeningAndBackupRestore() = runBlocking {
+        val file = folder.newFolder().resolve("stats-layout.preferences_pb").toOkioPath()
+        suspend fun useStore(block: suspend (SettingsRepository) -> Unit) {
+            val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+            val store = PreferenceDataStoreFactory.create(scope = scope,
+                storage = OkioStorage(FileSystem.SYSTEM, PreferencesSerializer) { file })
+            try { block(SettingsRepository(store)) }
+            finally { scope.coroutineContext[Job]!!.cancelAndJoin() }
+        }
+        val layout = StatsCardLayout().move("calorie_balance", false, 0).move("meal_timing", true, 0)
+        useStore { repo -> repo.setStatsCardLayout(layout) }
+        useStore { repo ->
+            assertEquals(layout, repo.settings.first().statsCardLayout)
+            val backup = repo.exportBackupJson()
+            repo.setStatsCardLayout(StatsCardLayout())
+            repo.importBackupJson(backup.getJSONObject("settings"), backup.getJSONArray("foodPresets"))
+            assertEquals(layout, repo.settings.first().statsCardLayout)
+        }
+    }
     @get:Rule val folder = TemporaryFolder()
     @Test fun emptyApiPresetUsesDeepSeekDefaults() = runBlocking {
         val file = folder.newFolder().resolve("empty-settings.preferences_pb").toOkioPath()

@@ -165,6 +165,15 @@ fun ApiSettingsScreen(
                     onClick = { context.startActivity(android.content.Intent(context, com.click.lightmemo.ui.secondary.PromptSettingsActivity::class.java)) },
                 )
             }
+            Spacer(Modifier.height(FieldToTitleSpacing))
+            SmallTitle("MCP 服务", modifier = Modifier.offset(x = (-16).dp))
+            Card(modifier = Modifier.fillMaxWidth()) {
+                ArrowPreference(
+                    title = "MCP 服务",
+                    summary = "连接超级小爱，查询当天营养摄入",
+                    onClick = { context.startActivity(Intent(context, com.click.lightmemo.ui.secondary.McpSettingsActivity::class.java)) },
+                )
+            }
         }
     }
 }
