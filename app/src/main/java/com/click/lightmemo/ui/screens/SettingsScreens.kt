@@ -213,51 +213,8 @@ fun ApiConfigurationScreen(
                 )
 
                 Spacer(Modifier.height(FieldToTitleSpacing))
-                SmallTitle(
-                    text = "Base URL",
-                    modifier = Modifier.offset(x = (-16).dp),
-                )
-                Spacer(Modifier.height(TitleToFieldSpacing))
-                TextField(
-                    value = baseUrl,
-                    onValueChange = {
-                        baseUrl = it
-                    },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-
-                Spacer(Modifier.height(FieldToTitleSpacing))
-                SmallTitle(
-                    text = "API Key",
-                    modifier = Modifier.offset(x = (-16).dp),
-                )
-                Spacer(Modifier.height(TitleToFieldSpacing))
-                TextField(
-                    value = apiKey,
-                    onValueChange = {
-                        apiKey = it
-                    },
-                    singleLine = true,
-                    visualTransformation = PasswordVisualTransformation(),
-                    modifier = Modifier.fillMaxWidth(),
-                )
-
-                Spacer(Modifier.height(FieldToTitleSpacing))
-                SmallTitle(
-                    text = "模型名",
-                    modifier = Modifier.offset(x = (-16).dp),
-                )
-                Spacer(Modifier.height(TitleToFieldSpacing))
-                TextField(
-                    value = model,
-                    onValueChange = {
-                        model = it
-                    },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-
+                ApiConnectionFields(baseUrl, apiKey, model,
+                    onBaseUrlChange = { baseUrl = it }, onApiKeyChange = { apiKey = it }, onModelChange = { model = it })
 
                 Spacer(Modifier.height(20.dp))
                 Button(
@@ -338,15 +295,12 @@ fun CalorieTargetScreen(
     AiSettingsList(contentPadding, scrollBehavior, listState) {
         item {
             SmallTitle("每日目标", modifier = Modifier.offset(x = (-16).dp))
-            Card(modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(0.dp)) {
-                InputDialogPreferenceRow("每日热量", "kcal", kcal, 500..10000,
-                    onValueChange = { kcal = it; checked = false })
-                InputDialogPreferenceRow("蛋白质", "g", protein, 1..500,
-                    onValueChange = { protein = it; checked = false })
-                InputDialogPreferenceRow("脂肪", "g", fat, 1..300,
-                    onValueChange = { fat = it; checked = false })
-                InputDialogPreferenceRow("碳水", "g", carbs, 1..800,
-                    onValueChange = { carbs = it; checked = false })
+            DailyTargetFields(draft) {
+                kcal = it.calories.toInt()
+                protein = it.proteinG.toInt()
+                fat = it.fatG.toInt()
+                carbs = it.carbsG.toInt()
+                checked = false
             }
             Spacer(Modifier.height(FieldToTitleSpacing))
             SmallTitle("应用范围", modifier = Modifier.offset(x = (-16).dp))
@@ -572,86 +526,15 @@ fun PersonalInfoScreen(
         ),
     ) {
         item {
-            Column {
-                SmallTitle(
-                    text = "身体信息",
-                    modifier = Modifier.offset(x = (-16).dp),
-                )
-                Spacer(Modifier.height(TitleToFieldSpacing))
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    NumberPickerField(
-                        title = "身高",
-                        unit = "cm",
-                        value = heightCm.toInt(),
-                        range = 100..220,
-                        modifier = Modifier.weight(1f),
-                        onValueChange = { viewModel.setHeight(it.toFloat()) },
-                    )
-                    NumberPickerField(
-                        title = "体重",
-                        unit = "kg",
-                        value = weightKg.toInt(),
-                        range = 30..150,
-                        modifier = Modifier.weight(1f),
-                        onValueChange = { viewModel.setWeight(it.toFloat()) },
-                    )
-                    NumberPickerField(
-                        title = "年龄",
-                        unit = "岁",
-                        value = ageYears,
-                        range = 10..100,
-                        modifier = Modifier.weight(1f),
-                        onValueChange = { viewModel.setAge(it) },
-                    )
+            PersonalProfileFields(settings) { updated ->
+                when {
+                    updated.heightCm != settings.heightCm -> viewModel.setHeight(updated.heightCm)
+                    updated.weightKg != settings.weightKg -> viewModel.setWeight(updated.weightKg)
+                    updated.ageYears != settings.ageYears -> viewModel.setAge(updated.ageYears)
+                    updated.gender != settings.gender -> viewModel.setGender(updated.gender)
+                    updated.fitnessGoal != settings.fitnessGoal -> viewModel.setFitnessGoal(updated.fitnessGoal)
+                    updated.activityLevel != settings.activityLevel -> viewModel.setActivityLevel(updated.activityLevel)
                 }
-
-                Spacer(Modifier.height(FieldToTitleSpacing))
-                SmallTitle(
-                    text = "性别",
-                    modifier = Modifier.offset(x = (-16).dp),
-                )
-                Spacer(Modifier.height(TitleToFieldSpacing))
-                TabRow(
-                    tabs = Gender.entries.map { it.label },
-                    selectedTabIndex = Gender.entries.indexOf(settings.gender).coerceAtLeast(0),
-                    onTabSelected = { index -> viewModel.setGender(Gender.entries[index]) },
-                )
-
-                Spacer(Modifier.height(FieldToTitleSpacing))
-                SmallTitle("健身目标", modifier = Modifier.offset(x = (-16).dp))
-                Card(modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(0.dp)) {
-                    DropdownPref(
-                        title = "目标方向",
-                        summary = settings.fitnessGoal.summary,
-                        items = com.click.lightmemo.data.FitnessGoal.entries.map { it.label },
-                        selectedIndex = com.click.lightmemo.data.FitnessGoal.entries.indexOf(settings.fitnessGoal),
-                        onSelectedIndexChange = { viewModel.setFitnessGoal(com.click.lightmemo.data.FitnessGoal.entries[it]) },
-                    )
-                }
-                Spacer(Modifier.height(FieldToTitleSpacing))
-                SmallTitle(
-                    text = "每周运动强度",
-                    modifier = Modifier.offset(x = (-16).dp),
-                )
-                Spacer(Modifier.height(TitleToFieldSpacing))
-                TabRow(
-                    tabs = ActivityLevel.entries.map { it.label },
-                    selectedTabIndex = ActivityLevel.entries.indexOf(settings.activityLevel)
-                        .coerceAtLeast(0),
-                    onTabSelected = { index ->
-                        viewModel.setActivityLevel(ActivityLevel.entries[index])
-                    },
-                )
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    text = settings.activityLevel.summary,
-                    style = MiuixTheme.textStyles.footnote2,
-                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                    modifier = Modifier.padding(horizontal = FootnoteHorizontalPadding),
-                )
             }
         }
 
@@ -1730,5 +1613,130 @@ private fun AcknowledgementRow(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
+    }
+}
+
+/** Shared controls; the host chooses whether edits are drafts or immediately persisted. */
+@Composable
+internal fun PersonalProfileFields(
+    settings: com.click.lightmemo.data.AppSettings,
+    onChange: (com.click.lightmemo.data.AppSettings) -> Unit,
+) {
+    val heightCm = settings.heightCm.takeIf { it > 0f } ?: DEFAULT_PROFILE_HEIGHT_CM
+    val weightKg = settings.weightKg.takeIf { it > 0f } ?: DEFAULT_PROFILE_WEIGHT_KG
+    val ageYears = settings.ageYears.takeIf { it > 0 } ?: DEFAULT_PROFILE_AGE_YEARS
+            Column {
+                SmallTitle(
+                    text = "身体信息",
+                    modifier = Modifier.offset(x = (-16).dp),
+                )
+                Spacer(Modifier.height(TitleToFieldSpacing))
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    NumberPickerField(
+                        title = "身高",
+                        unit = "cm",
+                        value = heightCm.toInt(),
+                        range = 100..220,
+                        modifier = Modifier.weight(1f),
+                        onValueChange = { onChange(settings.copy(heightCm = it.toFloat())) },
+                    )
+                    NumberPickerField(
+                        title = "体重",
+                        unit = "kg",
+                        value = weightKg.toInt(),
+                        range = 30..150,
+                        modifier = Modifier.weight(1f),
+                        onValueChange = { onChange(settings.copy(weightKg = it.toFloat())) },
+                    )
+                    NumberPickerField(
+                        title = "年龄",
+                        unit = "岁",
+                        value = ageYears,
+                        range = 10..100,
+                        modifier = Modifier.weight(1f),
+                        onValueChange = { onChange(settings.copy(ageYears = it)) },
+                    )
+                }
+
+                Spacer(Modifier.height(FieldToTitleSpacing))
+                SmallTitle(
+                    text = "性别",
+                    modifier = Modifier.offset(x = (-16).dp),
+                )
+                Spacer(Modifier.height(TitleToFieldSpacing))
+                TabRow(
+                    tabs = Gender.entries.map { it.label },
+                    selectedTabIndex = Gender.entries.indexOf(settings.gender).coerceAtLeast(0),
+                    onTabSelected = { index -> onChange(settings.copy(gender = Gender.entries[index])) },
+                )
+
+                Spacer(Modifier.height(FieldToTitleSpacing))
+                SmallTitle("健身目标", modifier = Modifier.offset(x = (-16).dp))
+                Card(modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(0.dp)) {
+                    DropdownPref(
+                        title = "目标方向",
+                        summary = settings.fitnessGoal.summary,
+                        items = com.click.lightmemo.data.FitnessGoal.entries.map { it.label },
+                        selectedIndex = com.click.lightmemo.data.FitnessGoal.entries.indexOf(settings.fitnessGoal),
+                        onSelectedIndexChange = { onChange(settings.copy(fitnessGoal = com.click.lightmemo.data.FitnessGoal.entries[it])) },
+                    )
+                }
+                Spacer(Modifier.height(FieldToTitleSpacing))
+                SmallTitle(
+                    text = "每周运动强度",
+                    modifier = Modifier.offset(x = (-16).dp),
+                )
+                Spacer(Modifier.height(TitleToFieldSpacing))
+                TabRow(
+                    tabs = ActivityLevel.entries.map { it.label },
+                    selectedTabIndex = ActivityLevel.entries.indexOf(settings.activityLevel)
+                        .coerceAtLeast(0),
+                    onTabSelected = { index ->
+                        onChange(settings.copy(activityLevel = ActivityLevel.entries[index]))
+                    },
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text = settings.activityLevel.summary,
+                    style = MiuixTheme.textStyles.footnote2,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    modifier = Modifier.padding(horizontal = FootnoteHorizontalPadding),
+                )
+            }
+}
+
+@Composable
+internal fun DailyTargetFields(
+    targets: com.click.lightmemo.data.DailyTargets,
+    onChange: (com.click.lightmemo.data.DailyTargets) -> Unit,
+) {
+    Card(modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(0.dp)) {
+        InputDialogPreferenceRow("每日热量", "kcal", targets.calories.toInt(), 500..10000,
+            onValueChange = { onChange(targets.copy(calories = it.toFloat())) })
+        InputDialogPreferenceRow("蛋白质", "g", targets.proteinG.toInt(), 1..500,
+            onValueChange = { onChange(targets.copy(proteinG = it.toFloat())) })
+        InputDialogPreferenceRow("脂肪", "g", targets.fatG.toInt(), 1..300,
+            onValueChange = { onChange(targets.copy(fatG = it.toFloat())) })
+        InputDialogPreferenceRow("碳水", "g", targets.carbsG.toInt(), 1..800,
+            onValueChange = { onChange(targets.copy(carbsG = it.toFloat())) })
+    }
+}
+
+@Composable
+internal fun ApiConnectionFields(
+    baseUrl: String, apiKey: String, model: String,
+    onBaseUrlChange: (String) -> Unit, onApiKeyChange: (String) -> Unit, onModelChange: (String) -> Unit,
+    enabled: Boolean = true,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        TextField(value = baseUrl, onValueChange = onBaseUrlChange, label = "服务地址 / Base URL",
+            singleLine = true, enabled = enabled, modifier = Modifier.fillMaxWidth())
+        TextField(value = apiKey, onValueChange = onApiKeyChange, label = "API Key",
+            singleLine = true, enabled = enabled, visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
+        TextField(value = model, onValueChange = onModelChange, label = "模型名",
+            singleLine = true, enabled = enabled, modifier = Modifier.fillMaxWidth())
     }
 }

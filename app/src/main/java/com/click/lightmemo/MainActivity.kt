@@ -171,7 +171,7 @@ class MainActivity : ComponentActivity() {
             CompositionLocalProvider(
                 LocalNavigationEventDispatcherOwner provides navigationEventOwner,
             ) {
-                FoodAppRoot()
+                com.click.lightmemo.ui.screens.OnboardingGate { FoodAppRoot() }
             }
         }
     }

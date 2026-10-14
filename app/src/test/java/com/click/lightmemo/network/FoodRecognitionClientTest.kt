@@ -9,6 +9,35 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class FoodRecognitionClientTest {
+    @Test fun connectionTestUsesDraftAndRejectsEmptyRepliesAndAuthenticationFailures() = kotlinx.coroutines.runBlocking {
+        var status = 200
+        var content = "OK"
+        var requestedUrl = ""
+        var authorization = ""
+        val http = okhttp3.OkHttpClient.Builder().addInterceptor { chain ->
+            requestedUrl = chain.request().url.toString()
+            authorization = chain.request().header("Authorization").orEmpty()
+            okhttp3.Response.Builder().request(chain.request()).protocol(okhttp3.Protocol.HTTP_1_1)
+                .code(status).message("test")
+                .body(okhttp3.ResponseBody.create(null, """{"choices":[{"message":{"content":"$content"}}]}"""))
+                .build()
+        }.build()
+        val testClient = FoodRecognitionClient(httpClient = http)
+        testClient.testConnection(" https://example.test/v1/ ", " draft-key ", "draft-model")
+        assertEquals("https://example.test/v1/chat/completions", requestedUrl)
+        assertEquals("Bearer draft-key", authorization)
+        content = ""
+        try {
+            testClient.testConnection("https://example.test/v1", "draft-key", "draft-model")
+            org.junit.Assert.fail("Empty reply must fail")
+        } catch (e: RecognitionException) { assertTrue(e.message.orEmpty().contains("空")) }
+        status = 401
+        try {
+            testClient.testConnection("https://example.test/v1", "draft-key", "draft-model")
+            org.junit.Assert.fail("Authentication failure must fail")
+        } catch (e: RecognitionException) { assertTrue(e.message.orEmpty().contains("鉴权")) }
+    }
+
     private val client = FoodRecognitionClient()
 
     private fun imageClient(): FoodRecognitionClient {

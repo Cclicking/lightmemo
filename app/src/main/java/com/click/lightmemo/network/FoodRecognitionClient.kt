@@ -117,6 +117,15 @@ class FoodRecognitionClient(
     private val promptOverrides: suspend () -> Map<String, String> = { emptyMap() },
     private val onCall: (nutritionEstimate: Boolean) -> Unit = {},
 ) {
+    /** Validate a draft with a small text request; this does not verify image support. */
+    suspend fun testConnection(baseUrl: String, apiKey: String, model: String) = withContext(Dispatchers.IO) {
+        validateConfig(baseUrl, apiKey)
+        require(model.isNotBlank()) { "请填写模型名" }
+        val content = complete(baseUrl.trim().trimEnd('/'), apiKey.trim(), model.trim(),
+            listOf(textMessage("user", "请只回复 OK")))
+        if (content.isBlank()) throw RecognitionException("接口返回了空内容")
+    }
+
     suspend fun continueFoodChat(
         baseUrl: String,
         apiKey: String,

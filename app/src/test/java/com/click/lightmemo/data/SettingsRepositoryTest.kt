@@ -15,6 +15,51 @@ import org.junit.Rule
 import org.junit.rules.TemporaryFolder
 
 class SettingsRepositoryTest {
+    @Test fun onboardingResumesAndDoesNotTreatItsOwnProgressAsAnUpgrade() = runBlocking {
+        val file = folder.newFolder().resolve("onboarding.preferences_pb").toOkioPath()
+        suspend fun useStore(block: suspend (SettingsRepository) -> Unit) {
+            val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+            val store = PreferenceDataStoreFactory.create(scope = scope,
+                storage = OkioStorage(FileSystem.SYSTEM, PreferencesSerializer) { file })
+            try { block(SettingsRepository(store)) }
+            finally { scope.coroutineContext[Job]!!.cancelAndJoin() }
+        }
+        useStore { repo ->
+            assertNull(repo.onboardingStep.first())
+            assertEquals(0, repo.initializeOnboarding(false))
+            repo.savePersonalProfile(AppSettings(heightCm = 175f, weightKg = 70f, ageYears = 28,
+                gender = Gender.FEMALE, activityLevel = ActivityLevel.LOW, fitnessGoal = FitnessGoal.FAT_LOSS))
+            repo.setOnboardingStep(2)
+        }
+        useStore { repo ->
+            assertEquals(2, repo.initializeOnboarding(true))
+            assertEquals(175f, repo.settings.first().heightCm)
+            assertEquals(FitnessGoal.FAT_LOSS, repo.settings.first().fitnessGoal)
+            repo.setOnboardingStep(4)
+        }
+        useStore { repo -> assertEquals(4, repo.initializeOnboarding(false)) }
+    }
+
+    @Test fun existingUsersBypassOnboardingAndInvalidProfileDoesNotPartiallySave() = runBlocking {
+        for (hasLogs in listOf(false, true)) {
+            val file = folder.newFolder().resolve("upgrade.preferences_pb").toOkioPath()
+            val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+            val store = PreferenceDataStoreFactory.create(scope = scope,
+                storage = OkioStorage(FileSystem.SYSTEM, PreferencesSerializer) { file })
+            try {
+                val repo = SettingsRepository(store)
+                if (!hasLogs) repo.updateDailyTarget(2100f)
+                assertEquals(4, repo.initializeOnboarding(hasLogs))
+                try {
+                    repo.savePersonalProfile(AppSettings(heightCm = 175f, weightKg = Float.NaN, ageYears = 28))
+                    fail("Invalid profile must be rejected")
+                } catch (_: IllegalArgumentException) { }
+                assertEquals(0f, repo.settings.first().heightCm)
+                assertEquals(0, repo.settings.first().ageYears)
+            } finally { scope.coroutineContext[Job]!!.cancelAndJoin() }
+        }
+    }
+
     @Test fun statsCardLayoutSurvivesReopeningAndBackupRestore() = runBlocking {
         val file = folder.newFolder().resolve("stats-layout.preferences_pb").toOkioPath()
         suspend fun useStore(block: suspend (SettingsRepository) -> Unit) {

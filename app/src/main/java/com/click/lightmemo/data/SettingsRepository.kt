@@ -1,6 +1,7 @@
 package com.click.lightmemo.data
 
 import android.content.Context
+import android.content.SharedPreferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
@@ -195,10 +196,65 @@ data class AppSettings(
         get() = if (carbsTargetG > 0f) carbsTargetG else (recommendedNutrients?.carbsG ?: 0f)
 }
 
-class SettingsRepository(private val store: androidx.datastore.core.DataStore<androidx.datastore.preferences.core.Preferences>) {
-    constructor(context: Context) : this(context.settingsStore)
+class SettingsRepository(
+    private val store: androidx.datastore.core.DataStore<androidx.datastore.preferences.core.Preferences>,
+    private val onboardingCache: SharedPreferences? = null,
+) {
+    constructor(context: Context) : this(
+        context.settingsStore,
+        context.getSharedPreferences("onboarding_bootstrap", Context.MODE_PRIVATE),
+    )
     val readError = MutableStateFlow<String?>(null)
     private val foodPresetsKey = stringPreferencesKey("food_presets")
+    private val onboardingStepKey = intPreferencesKey("onboarding_step")
+
+    /** This one-bit mirror lets returning users render Home before DataStore finishes loading. */
+    fun hasCompletedOnboarding(): Boolean = onboardingCache?.getBoolean("completed", false) == true
+
+    suspend fun synchronizeOnboardingCache(step: Int) {
+        val completed = step == 4
+        if (onboardingCache?.getBoolean("completed", false) == completed) return
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            onboardingCache?.edit()?.putBoolean("completed", completed)?.commit()
+        }
+    }
+
+    /** null means the first-run/upgrade decision has not been persisted yet. */
+    val onboardingStep: Flow<Int?> = store.data.map { it[onboardingStepKey] }
+
+    suspend fun initializeOnboarding(hasExistingLogs: Boolean): Int {
+        val prefs = store.edit {
+            if (!it.contains(onboardingStepKey)) {
+                // Existing preferences or records indicate an upgrade, rather than a new install.
+                it[onboardingStepKey] = if (hasExistingLogs || it.asMap().isNotEmpty()) 4 else 0
+            }
+        }
+        val step = prefs[onboardingStepKey] ?: 0
+        synchronizeOnboardingCache(step)
+        return step
+    }
+
+    suspend fun setOnboardingStep(step: Int) {
+        require(step in 0..4)
+        store.edit { it[onboardingStepKey] = step }
+        synchronizeOnboardingCache(step)
+    }
+
+    /** Save a confirmed profile together so recommendations never see a partial update. */
+    suspend fun savePersonalProfile(profile: AppSettings) {
+        require(profile.heightCm.isFinite() && profile.heightCm in 50f..250f) { "请确认身高" }
+        require(profile.weightKg.isFinite() && profile.weightKg in 20f..300f) { "请确认体重" }
+        require(profile.ageYears in 10..100) { "请确认年龄" }
+        store.edit {
+            preserveHistoricalTargets(it)
+            it[Keys.HEIGHT] = profile.heightCm
+            it[Keys.WEIGHT] = profile.weightKg
+            it[Keys.AGE] = profile.ageYears
+            it[Keys.GENDER] = profile.gender.name
+            it[Keys.ACTIVITY] = profile.activityLevel.name
+            it[Keys.FITNESS_GOAL] = profile.fitnessGoal.name
+        }
+    }
 
     /** 安全解码：损坏或空数据时回落到默认预设，避免读写整条链路失败。 */
     private fun decodeFoodPresets(raw: String?): List<PresetFood> {
