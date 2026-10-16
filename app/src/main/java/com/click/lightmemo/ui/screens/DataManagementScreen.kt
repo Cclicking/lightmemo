@@ -74,6 +74,9 @@ fun DataManagementScreen(
     val exportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/json"),
     ) { uri -> uri?.let(backupViewModel::export) }
+    val exportFoodDataLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json"),
+    ) { uri -> uri?.let(backupViewModel::exportFoodData) }
     val importLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument(),
     ) { uri -> uri?.let(backupViewModel::import) }
@@ -309,11 +312,17 @@ fun DataManagementScreen(
                             )
                         },
                     )
+                    ArrowPreference(
+                        title = "导出食物数据",
+                        summary = "仅导出饮食记录及营养数据，便于 AI 分析，不含配置和个人信息",
+                        enabled = !backupBusy,
+                        onClick = { exportFoodDataLauncher.launch("轻食记-食物数据-${LocalDate.now()}.json") },
+                    )
                 }
             }
             Spacer(Modifier.height(8.dp))
             Text(
-                text = "备份会包含模型和数据库 API Key，请妥善保存；照片不会写入备份文件。",
+                text = "完整备份包含模型和数据库 API Key，请妥善保存；导出食物数据仅包含饮食记录。两种导出均不包含照片。",
                 style = MiuixTheme.textStyles.footnote2,
                 color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                 modifier = Modifier.padding(horizontal = 16.dp),

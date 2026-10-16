@@ -21,6 +21,14 @@ class BackupViewModel(app: Application) : AndroidViewModel(app) {
     val busy = MutableStateFlow(false)
     val message = MutableStateFlow<String?>(null)
 
+    fun exportFoodData(uri: Uri) = perform {
+        val text = foodLogRepository.exportJson()
+        getApplication<Application>().contentResolver.openOutputStream(uri, "wt")?.bufferedWriter(Charsets.UTF_8)?.use {
+            it.write(text)
+        } ?: error("无法写入所选文件")
+        "食物数据已导出（不含配置、个人信息和照片）"
+    }
+
     fun export(uri: Uri) = perform {
         val logs = JSONObject(foodLogRepository.exportJson())
         val settings = settingsRepository.exportBackupJson()
