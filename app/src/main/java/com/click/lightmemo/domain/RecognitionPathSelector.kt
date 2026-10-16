@@ -24,6 +24,7 @@ object RecognitionPathSelector {
                 val reference = memory.preferredComponentReferences[normalizeFoodName(component.name)]
                     ?: memory.preferredFoodReference?.takeIf { memory.components.size == 1 }
                 reference != null && reference.sourceId.isNotBlank() &&
+                    FoodIdentitySafety.allowsReference(component, reference) &&
                     !reference.sourceId.startsWith("ai-estimate", ignoreCase = true) && reference.sourceId != "personal-memory" &&
                     listOf(reference.per100g.caloriesKcal, reference.per100g.proteinG, reference.per100g.carbsG, reference.per100g.fatG).all { it.isFinite() && it >= 0 } &&
                     reference.per100g.caloriesKcal > 0 && component.estimatedWeightG.isFinite() && component.estimatedWeightG > 0

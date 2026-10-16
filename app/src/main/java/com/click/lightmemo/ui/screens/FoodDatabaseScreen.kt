@@ -42,7 +42,7 @@ import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 
-private val databaseSources = listOf("全部离线食物", "中国食物成分表", "USDA SR Legacy")
+private val databaseSources = listOf("全部离线食物", "中国食物成分表", "USDA 全部", "USDA Foundation", "USDA SR Legacy", "USDA FNDDS")
 
 @Composable
 fun FoodDatabaseScreen(
@@ -72,6 +72,9 @@ fun FoodDatabaseScreen(
                 source = when (sourceIndex) {
                     1 -> FoodDataCentralClient.DatabaseSource.CHINA
                     2 -> FoodDataCentralClient.DatabaseSource.USDA
+                    3 -> FoodDataCentralClient.DatabaseSource.USDA_FOUNDATION
+                    4 -> FoodDataCentralClient.DatabaseSource.USDA_SR_LEGACY
+                    5 -> FoodDataCentralClient.DatabaseSource.USDA_FNDDS
                     else -> FoodDataCentralClient.DatabaseSource.ALL
                 },
                 limit = 120,

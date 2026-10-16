@@ -66,7 +66,9 @@ class PersonalFoodMatcherTest {
             estimatedWeightG = 100.0, weightMinG = 100.0, weightMaxG = 100.0, confidence = 0.9)
         val dish = RecognizedDish("dish", "番茄炒蛋", DishType.MIXED_DISH, 0.9, listOf(component))
         assertNull(dish.withPreferredReferences(memory().copy(preferredComponentReferences = mapOf("米饭" to preferred))).components.single().nutritionReference)
-        assertEquals(preferred, dish.withPreferredReferences(memory().copy(preferredComponentReferences = mapOf("鸡蛋" to preferred))).components.single().nutritionReference)
+        assertNull(dish.withPreferredReferences(memory().copy(preferredComponentReferences = mapOf("鸡蛋" to preferred))).components.single().nutritionReference)
+        val egg = preferred.copy(description = "鸡蛋")
+        assertEquals(egg, dish.withPreferredReferences(memory().copy(preferredComponentReferences = mapOf("鸡蛋" to egg))).components.single().nutritionReference)
     }
 
     @Test fun notesAndMealTimeDoNotCountAsFoodCorrections() {

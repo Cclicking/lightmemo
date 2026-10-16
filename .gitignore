@@ -23,6 +23,10 @@ captures/
 # Kotlin
 .kotlin/
 
+# Python data-import tooling
+__pycache__/
+*.pyc
+
 # Local worktrees
 .worktrees/
 

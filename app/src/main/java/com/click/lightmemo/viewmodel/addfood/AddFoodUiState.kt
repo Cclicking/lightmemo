@@ -116,6 +116,8 @@ data class DatabaseSearchState(
     val estimatedWeightG: Double? = null,
     /** 更换食物时保留原来的匹配项，并始终置于普通检索结果之前。 */
     val pinnedReference: NutritionReference? = null,
+    /** Recognition queries accompany the initial search only, never edited replacement text. */
+    val initialCompanionQueries: List<String> = emptyList(),
 )
 
 fun defaultMealType(): MealType {

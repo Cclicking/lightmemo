@@ -271,7 +271,8 @@ class RecognitionService : Service() {
                     return
                 }
                 if (cached != null && request.reuseImageCache == true) {
-                    complete(request, result = cached.result.withFreshIds(),
+                    val validated = nutritionDatabase.enrich(cached.result.withFreshIds(), settings.foodDataCentralApiKey)
+                    complete(request, result = validated,
                         imageUri = FoodImages.persistEncoded(this, base64).toString(), path = cached.path,
                         cacheReused = true, durationMillis = android.os.SystemClock.elapsedRealtime() - startedAt)
                     return

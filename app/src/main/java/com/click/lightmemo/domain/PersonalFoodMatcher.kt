@@ -78,7 +78,8 @@ fun RecognizedDish.withPreferredReferences(memory: PersonalFoodMemory): Recogniz
     components = components.map { component ->
         val reference = memory.preferredComponentReferences[normalizeFoodName(component.name)]
             ?: memory.preferredFoodReference?.takeIf { allComponents.size == 1 }
-        if (reference == null) component else component.copy(nutritionReference = reference)
+        if (reference == null || !FoodIdentitySafety.allowsReference(component, reference)) component
+        else component.copy(nutritionReference = reference)
     },
     children = children.map { it.withPreferredReferences(memory) },
 )

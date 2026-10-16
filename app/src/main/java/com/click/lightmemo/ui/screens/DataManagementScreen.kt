@@ -201,11 +201,29 @@ fun DataManagementScreen(
             ) {
                 Column(modifier = Modifier.fillMaxWidth()) {
                     StatusRow(
-                        title = "USDA 离线库",
+                        title = "USDA SR Legacy",
                         summary = "本地 SR Legacy 宏量营养素库",
                         status = when {
                             offlineStatus == null -> "检测中"
-                            offlineStatus.usdaAvailable -> "已就绪"
+                            offlineStatus.srLegacyAvailable -> "已就绪"
+                            else -> "不可用"
+                        },
+                    )
+                    StatusRow(
+                        title = "USDA Foundation",
+                        summary = "2026-04 基础食物离线库",
+                        status = when {
+                            offlineStatus == null -> "检测中"
+                            offlineStatus.foundationAvailable -> "已就绪"
+                            else -> "不可用"
+                        },
+                    )
+                    StatusRow(
+                        title = "USDA FNDDS",
+                        summary = "2021–2023 食物与饮料离线库",
+                        status = when {
+                            offlineStatus == null -> "检测中"
+                            offlineStatus.fnddsAvailable -> "已就绪"
                             else -> "不可用"
                         },
                     )
@@ -227,7 +245,7 @@ fun DataManagementScreen(
             }
             Spacer(Modifier.height(12.dp))
             Text(
-                text = "查询顺序：USDA 离线库 → USDA 在线 API → 中国食物成分离线库。",
+                text = "已内置 Foundation、SR Legacy、FNDDS 和中国食物成分表，可离线搜索食物与营养数据。",
                 style = MiuixTheme.textStyles.footnote2,
                 color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                 modifier = Modifier.padding(horizontal = 16.dp),

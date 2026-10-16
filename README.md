@@ -76,9 +76,12 @@
 - **识别**：OpenAI 兼容 `chat/completions` Vision（菜品拆解、估重、审核）
 - **营养库**：
   - USDA FoodData Central SR Legacy 离线库（约 7,793 条，确定性计算）
+  - USDA Foundation 2026-04 离线库（367 条完整宏量）
+  - USDA FNDDS 2021–2023 离线库（2024-10 发布，5,431 条完整宏量）
   - 中国食物成分表第 6 版离线回退（约 1,635 条完整宏量）
-  - 可选 USDA 在线 API；查询顺序：离线 USDA → API → 中国库
-  - 英文库无可靠匹配时，使用原中文食物名查询中国库；自动匹配校验食物关键词和生熟状态，避免无关英文结果阻断回退
+  - 三套 USDA 离线库联合检索，同分优先 Foundation → SR Legacy → FNDDS；另有可选 USDA 在线 API 和中国库回退
+  - 原名及中英文检索词共同召回；自动匹配校验食物身份、生熟和做法，FNDDS 配方含额外油脂或配料时需明确匹配
+  - 数据库页面可分别筛选三套 USDA 数据；导入来源、校验和与复现命令见 [离线营养数据库](docs/nutrition-databases.md)
 
 ### 模块结构
 

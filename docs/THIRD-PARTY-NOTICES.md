@@ -674,16 +674,22 @@ For more information on this, and how to apply and follow the GNU AGPL, see
 
 # USDA FoodData Central 数据说明
 
-本项目内置的 `fdc_sr_legacy_macros.tsv.gz` 由 FoodData Central 的 SR Legacy 2018-04 CSV 生成，
-仅保留应用计算需要的 FDC ID、食物描述以及每 100g 的能量、蛋白质、碳水化合物和脂肪。
+本项目内置的 USDA 离线资产由 FoodData Central 官方下载包生成，包括：
+
+- `fdc_sr_legacy_macros.tsv.gz`：SR Legacy 2018-04，7,793 条。
+- `fdc_foundation_macros.tsv.gz`：Foundation 2026-04 CSV，367 条完整宏量记录。
+- `fdc_fndds_macros.tsv.gz`：FNDDS 2021–2023、2024-10 发布的 JSON，5,431 条完整宏量记录。
+
+三套资产仅保留应用计算需要的 FDC ID、食物描述以及每 100g 的能量、蛋白质、碳水化合物和脂肪。
 
 - 来源：U.S. Department of Agriculture, Agricultural Research Service, FoodData Central
 - 下载页：https://fdc.nal.usda.gov/download-datasets/
-- 数据版本：SR Legacy, 2018-04（最终版）
+- 数据版本：上述各数据源的离线快照；SR Legacy 2018-04 为最终版。
 - 许可：CC0 1.0 / public domain
 
 生成方式见 `tools/generate_fdc_asset.py`。视觉模型不生成营养值；所有展示值都由数据库每 100g
 数据乘以可食用重量后计算，并由程序逐级汇总。
+下载文件、SHA-256、缺失字段处理和复现命令见 [离线营养数据库](nutrition-databases.md)。
 
 ## 中国食物成分回退库
 
@@ -694,7 +700,7 @@ For more information on this, and how to apply and follow the GNU AGPL, see
 - 上游提交：`d15675c27582748307023b7ee7aca2a63fc52756`
 - 原始条目：1,677；保留四项宏量营养完整的 1,635 条（`Tr` 按 0、带 `*` 脚注数值按其数值解析）
 - 字段：食物编码、中英文名称、每 100g 热量/蛋白质/碳水/脂肪
-- 查询优先级：USDA 离线库 → 可选 USDA API → 本回退库
+- 查询优先级：三套 USDA 离线库联合检索 → 可选 USDA API → 本回退库；中文原名优先于词典翻译后的英文回退。
 
 上游仓库没有提供开源许可证，并在 README 中声明版权归原作者、脚本仅用于个人学习研究。
 因此该数据不能视为 CC0，也不应在未取得相应授权时用于公开分发或商业发布。

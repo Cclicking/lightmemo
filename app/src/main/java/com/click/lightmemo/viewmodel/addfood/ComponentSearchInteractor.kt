@@ -97,6 +97,8 @@ internal class ComponentSearchInteractor(
                 loading = true,
                 replaceComponentName = replaceComponentName,
                 initialLookupQuery = initialLookupQuery,
+                initialCompanionQueries = if (replaceComponentName) emptyList()
+                    else listOf(component.chinaDatabaseQuery, component.name),
                 pinnedReference = pinnedReference,
                 allowAiEstimate = component.nutritionReference == null,
                 estimatedWeightG = component.estimatedWeightG,
@@ -148,6 +150,11 @@ internal class ComponentSearchInteractor(
         isDraft: Boolean,
     ) {
         searchJob?.cancel()
+        val current = if (isDraft) uiState.value.draftDatabaseSearch else uiState.value.databaseSearch
+        val companions = current?.takeIf {
+            it.componentId == componentId && it.initialLookupQuery == lookupQuery &&
+                it.query.trim() == displayQuery.trim()
+        }?.initialCompanionQueries.orEmpty()
         val trimmed = lookupQuery.trim()
         if (trimmed.isBlank()) {
             updateSlot(componentId, isDraft) {
@@ -175,6 +182,8 @@ internal class ComponentSearchInteractor(
                     query = trimmed,
                     apiKey = apiKey(),
                     limit = 20,
+                    chineseQuery = companions.firstOrNull() ?: trimmed,
+                    originalName = companions.getOrNull(1).orEmpty(),
                 )
                 val orderedResults = pinnedReference?.let { currentReference ->
                     buildList {

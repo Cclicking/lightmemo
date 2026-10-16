@@ -6,6 +6,14 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.encodeToString
 
 class RecognitionPathSelectorTest {
+    @Test fun incompatibleRememberedReferenceCannotAuthorizeFastOrAssistedReuse() {
+        val wrong = reference.copy(description = "Rice noodles, cooked")
+        val poisoned = memory.copy(preferredFoodReference = wrong,
+            components = listOf(component.copy(nutritionReference = wrong)))
+        assertFalse(RecognitionPathSelector.isStable(poisoned))
+        assertNull(RecognitionStrategy(listOf(poisoned)).fastResult(visual))
+        assertNull(RecognitionStrategy(listOf(poisoned)).assist(visual).dishes.single().components.single().nutritionReference)
+    }
     private val reference = NutritionReference("china:1", "米饭", "中国食物成分表", Nutrition(116.0, 2.6, 25.9, 0.3))
     private val component = FoodComponent("c", "米饭", "rice cooked", source = ComponentSource.VISIBLE,
         estimatedWeightG = 200.0, weightMinG = 180.0, weightMaxG = 220.0, confidence = 0.95)
