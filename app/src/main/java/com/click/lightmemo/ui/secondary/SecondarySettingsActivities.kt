@@ -122,18 +122,23 @@ abstract class SecondarySettingsActivity : ComponentActivity() {
                 FoodTheme {
                     val settingsVm: SettingsViewModel = viewModel()
                     val backupVm: BackupViewModel = viewModel()
-                    SecondaryPageShell(
-                        title = pageTitle,
-                        onBack = { finish() },
-                        endAction = if (hasPageEndAction) {
-                            { backdrop, backdropAlpha, shadowAlpha ->
-                                PageEndAction(backdrop, backdropAlpha, shadowAlpha)
-                            }
-                        } else {
-                            null
-                        },
-                    ) { padding, scroll ->
-                        PageContent(settingsVm, backupVm, padding, scroll)
+                    val settings by settingsVm.settings.collectAsState()
+                    CompositionLocalProvider(
+                        LocalGlassSupported provides (isRenderEffectSupported() && settings.glassEffectsEnabled),
+                    ) {
+                        SecondaryPageShell(
+                            title = pageTitle,
+                            onBack = { finish() },
+                            endAction = if (hasPageEndAction) {
+                                { backdrop, backdropAlpha, shadowAlpha ->
+                                    PageEndAction(backdrop, backdropAlpha, shadowAlpha)
+                                }
+                            } else {
+                                null
+                            },
+                        ) { padding, scroll ->
+                            PageContent(settingsVm, backupVm, padding, scroll)
+                        }
                     }
                 }
             }

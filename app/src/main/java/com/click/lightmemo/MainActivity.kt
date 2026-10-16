@@ -9,6 +9,7 @@ import com.click.lightmemo.ui.basic.CollapsibleTopAppBarDefaults
 import com.click.lightmemo.ui.basic.rememberCollapsibleTopAppBarState
 import com.click.lightmemo.ui.basic.rememberSharedScrollBehavior
 import com.click.lightmemo.ui.basic.LiquidTopBarButton
+import com.click.lightmemo.ui.components.LocalGlassControlsBackdrop
 import com.click.lightmemo.ui.components.LiquidAddButton
 import com.click.lightmemo.ui.components.ScheduleBottomBar
 import com.click.lightmemo.ui.overlay.BlurBottomSheet
@@ -542,7 +543,9 @@ fun FoodAppRoot() {
                         )
                         .background(MiuixTheme.colorScheme.surface),
                 ) {
-                    content()
+                    CompositionLocalProvider(LocalGlassControlsBackdrop provides miuixBackdrop) {
+                        content()
+                    }
                 }
             }
 

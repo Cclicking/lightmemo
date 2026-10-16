@@ -74,7 +74,7 @@ import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.SmallTitle
-import top.yukonga.miuix.kmp.basic.TabRow
+import com.click.lightmemo.ui.components.GlassTabs
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.os4.Ok
@@ -331,7 +331,7 @@ fun RecommendScreen(
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp),
             ) {
-                TabRow(
+                GlassTabs(
                     tabs = RecommendationMode.entries.map { it.label },
                     selectedTabIndex = RecommendationMode.entries.indexOf(selectedMode),
                     onTabSelected = { index ->

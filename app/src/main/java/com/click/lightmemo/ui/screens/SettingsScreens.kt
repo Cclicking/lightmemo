@@ -88,7 +88,7 @@ import top.yukonga.miuix.kmp.basic.BasicComponent
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.NumberPicker
 import top.yukonga.miuix.kmp.basic.SmallTitle
-import top.yukonga.miuix.kmp.basic.TabRow
+import com.click.lightmemo.ui.components.GlassTabs
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.preference.ArrowPreference
@@ -1667,7 +1667,7 @@ internal fun PersonalProfileFields(
                     modifier = Modifier.offset(x = (-16).dp),
                 )
                 Spacer(Modifier.height(TitleToFieldSpacing))
-                TabRow(
+                GlassTabs(
                     tabs = Gender.entries.map { it.label },
                     selectedTabIndex = Gender.entries.indexOf(settings.gender).coerceAtLeast(0),
                     onTabSelected = { index -> onChange(settings.copy(gender = Gender.entries[index])) },
@@ -1690,7 +1690,7 @@ internal fun PersonalProfileFields(
                     modifier = Modifier.offset(x = (-16).dp),
                 )
                 Spacer(Modifier.height(TitleToFieldSpacing))
-                TabRow(
+                GlassTabs(
                     tabs = ActivityLevel.entries.map { it.label },
                     selectedTabIndex = ActivityLevel.entries.indexOf(settings.activityLevel)
                         .coerceAtLeast(0),

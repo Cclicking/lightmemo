@@ -3,6 +3,8 @@ package com.click.lightmemo.ui.nav
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
+import com.click.lightmemo.ui.components.LocalGlassControlsBackdrop
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -97,7 +99,9 @@ fun SecondaryPageShell(
                         },
                     ),
             ) {
-                content(padding, scrollBehavior)
+                CompositionLocalProvider(LocalGlassControlsBackdrop provides backdrop) {
+                    content(padding, scrollBehavior)
+                }
             }
         }
     }

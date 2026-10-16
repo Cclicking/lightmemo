@@ -33,7 +33,7 @@ import java.time.format.DateTimeFormatter
 import top.yukonga.miuix.kmp.basic.Button
 import top.yukonga.miuix.kmp.basic.ButtonColors
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
-import top.yukonga.miuix.kmp.basic.TabRowWithContour
+import com.click.lightmemo.ui.components.GlassTabs
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextFieldColors
 import top.yukonga.miuix.kmp.basic.TextFieldDefaults
@@ -272,7 +272,8 @@ fun MealTypeSelector(
     onSelect: (MealType) -> Unit,
 ) {
     val types = MealType.entries
-    TabRowWithContour(
+    GlassTabs(
+        segmented = true,
         tabs = types.map { it.label },
         selectedTabIndex = types.indexOf(selected).coerceAtLeast(0),
         onTabSelected = { index -> onSelect(types[index]) },

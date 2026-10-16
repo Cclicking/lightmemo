@@ -61,6 +61,9 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
+import com.click.lightmemo.ui.components.LocalGlassControlsBackdrop
+import com.click.lightmemo.ui.components.glassControlsMaterialEnabled
+import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop as rememberControlsBackdrop
 import com.click.lightmemo.ui.basic.ProgressiveBlurTopBar
 import com.click.lightmemo.ui.basic.rememberCollapsibleTopAppBarState
 import com.click.lightmemo.ui.basic.rememberSharedScrollBehavior
@@ -70,6 +73,7 @@ import com.click.lightmemo.ui.utils.LocalForcedDarkTheme
 import com.click.lightmemo.ui.utils.LocalOverScrollState
 import com.click.lightmemo.ui.utils.OverScrollState
 import com.click.lightmemo.ui.utils.rememberAppSettingDark
+import top.yukonga.miuix.kmp.blur.layerBackdrop as controlsLayerBackdrop
 import com.kyant.backdrop.Backdrop
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
@@ -395,13 +399,21 @@ private fun BlurBottomSheetContent(
                                 sheetContentBackdropHolder?.value = sheetContentBackdrop
                             }
 
+                            val controlsBackdrop = rememberControlsBackdrop {
+                                drawRect(sheetBackdropColor)
+                                drawContent()
+                            }
+                            val controlsEnabled = glassControlsMaterialEnabled()
                             Box(
                                 modifier = Modifier
+                                    .then(if (controlsEnabled) Modifier.controlsLayerBackdrop(controlsBackdrop) else Modifier)
                                     .nestedScroll(proxyConnection)
                                     .wrapContentHeight()
                                     .layerBackdrop(sheetContentBackdrop)
                             ) {
-                                content()
+                                CompositionLocalProvider(LocalGlassControlsBackdrop provides controlsBackdrop) {
+                                    content()
+                                }
                             }
 
                             ProgressiveBlurTopBar(
