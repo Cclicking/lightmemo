@@ -7,6 +7,28 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class FoodIdentityRegressionTest {
+    @Test fun equivalentFoodDescriptionsResolveAgainstBundledDatabases() = runBlocking {
+        val assets = File(requireNotNull(System.getProperty("food.assets")))
+        val db = FoodDataCentralClient({ File(assets, it).inputStream() }, { assets.list().orEmpty() })
+        val cases = listOf(
+            Triple("bok choy cooked", "小白菜（煮）", "bokchoy"),
+            Triple("熟青菜", "熟青菜", "bokchoy"),
+            Triple("上海青", "上海青", "bokchoy"),
+            Triple("red bell pepper cooked", "红甜椒（煮）", "pepper"),
+            Triple("chicken chunks cooked", "熟鸡肉块", "chicken"),
+            Triple("chicken breast cooked boiled", "鸡胸肉（煮）", "chicken"),
+            Triple("clear broth soup", "清汤", "broth"),
+            Triple("chicken broth", "鸡汤", "chickenbroth"),
+            Triple("beef broth", "牛肉汤", "beefbroth"),
+        )
+        for ((query, name, expected) in cases) {
+            val reference = db.lookup(query, "", name, name)
+            assertNotNull("$query / $name", reference)
+            val actual = FoodIdentitySafety.identity(reference!!.description)
+            assertTrue("$query -> ${reference.description}", actual == expected || expected == "broth" && actual?.endsWith("broth") == true)
+            if (expected.endsWith("broth")) assertTrue(reference.per100g.caloriesKcal < 50.0)
+        }
+    }
     @Test fun beanSproutNamesAndInflectionsFindMatchingRawAndCookedReferences() = runBlocking {
         val assets = File(requireNotNull(System.getProperty("food.assets")))
         val db = FoodDataCentralClient({ File(assets, it).inputStream() }, { assets.list().orEmpty() })

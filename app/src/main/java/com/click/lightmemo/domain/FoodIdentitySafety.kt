@@ -10,6 +10,7 @@ internal object FoodIdentitySafety {
         "generic", "non", "carbonated", "drinking", "mineral", "spring", "purified", "distilled", "baby", "naya")
     private val boundary = Regex("\\b(?:with|in|on|containing|includes|made|prepared)\\b")
     private val compounds = listOf(
+        "cabbage chinese pak choi" to "bokchoy", "bok choy" to "bokchoy", "pak choi" to "bokchoy", "pakchoi" to "bokchoy",
         "sea cucumber" to "seacucumber", "sweet potato leaves" to "sweetpotatoleaf",
         "sweet potato leaf" to "sweetpotatoleaf", "sweet potato" to "sweetpotato",
         "broccoli chinese" to "chinesebroccoli", "chinese broccoli" to "chinesebroccoli",
@@ -47,6 +48,8 @@ internal object FoodIdentitySafety {
         "汉堡胚" to "bun", "汉堡面包" to "bun", "汉堡面包胚" to "bun",
         "绿豆芽" to "mungbeansprout", "黄豆芽" to "soybeansprout",
         "猪肉丸" to "porkmeatball", "猪肉丸子" to "porkmeatball", "牛肉丸" to "beefmeatball", "鱼丸" to "fishmeatball",
+        "小白菜" to "bokchoy", "青菜" to "bokchoy", "上海青" to "bokchoy",
+        "清汤" to "broth", "鸡汤" to "chickenbroth", "牛肉汤" to "beefbroth",
     )
 
     private fun normalized(value: String) = value.lowercase(java.util.Locale.ROOT)
@@ -74,6 +77,9 @@ internal object FoodIdentitySafety {
         var head = boundary.split(normalized(value), limit = 2).first()
         compounds.forEach { (phrase, id) -> head = head.replace(phrase, id) }
         val words = head.split(' ')
+        if (words.any { it == "broth" || it == "stock" }) {
+            return words.firstOrNull { it in setOf("chicken", "beef", "fish", "vegetable") }.orEmpty() + "broth"
+        }
         if (words.any { it in setOf("sprout", "sprouts", "sprouted") }) {
             if ("mung" in words && "bean" in words) return "mungbeansprout"
             if ("soybean" in words || "soy" in words && "bean" in words) return "soybeansprout"
@@ -109,6 +115,7 @@ internal object FoodIdentitySafety {
             (normalized(description).split(' ').toSet() - plainWaterWords).isNotEmpty()) return false
         // A soy sauce is a sauce, but plain soy sauce must not become an arbitrary sauce.
         return requested == actual || requested == "sauce" && actual == "soysauce" ||
+            requested == "broth" && actual.endsWith("broth") ||
             requested == "beansprout" && actual in setOf("mungbeansprout", "soybeansprout")
     }
 

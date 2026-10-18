@@ -4,6 +4,31 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class FoodSearchMatchingTest {
+    @Test fun equivalentNamesAndSimilarCookingMethodsDoNotRequireManualSelection() {
+        val pairs = listOf(
+            "bok choy cooked" to "Cabbage, chinese (pak-choi), cooked, boiled, drained, without salt",
+            "red bell peppers cooked" to "Peppers, sweet, red, cooked, boiled",
+            "red chili pepper cooked" to "Peppers, hot chili, red, cooked, boiled",
+            "chicken chunks cooked" to "Chicken, drumstick, cooked, braised",
+            "rice steamed" to "Rice, cooked, boiled",
+            "chicken grilled" to "Chicken, cooked, roasted",
+            "pork stewed" to "Pork, cooked, braised",
+            "clear broth soup" to "Soup, broth",
+            "chicken broth" to "Soup, chicken broth, ready-to-serve",
+            "beef stock" to "Soup, beef broth, canned, ready-to-serve",
+        )
+        pairs.forEach { (query, candidate) ->
+            assertTrue("$query -> $candidate", FoodSearchMatching.englishMatch(query, candidate).canAutoAccept)
+        }
+        assertTrue(FoodSearchMatching.statesAgree(listOf("rice steamed", "rice boiled"), "Rice cooked boiled"))
+        for (candidate in listOf("Soup, chicken broth, dry", "Soup, chicken broth, condensed", "Chicken with broth",
+            "Soup, chicken broth with noodles", "Soup, chicken broth, noodle")) {
+            assertFalse(candidate, FoodSearchMatching.englishMatch("chicken broth", candidate).canAutoAccept)
+        }
+        assertFalse(FoodSearchMatching.englishMatch("bok choy cooked", "Cabbage, napa, cooked").canAutoAccept)
+        assertFalse(FoodSearchMatching.englishMatch("chicken broth", "Soup, beef broth, ready-to-serve").canAutoAccept)
+        assertFalse(FoodSearchMatching.englishMatch("rice steamed", "Rice fried").canAutoAccept)
+    }
     @Test fun pluralAndAliasesKeepFoodIdentity() {
         assertTrue(FoodSearchMatching.englishMatch("fresh eggs boiled", "Egg, boiled").canAutoAccept)
         assertTrue(FoodSearchMatching.englishMatch("aubergine raw", "Eggplant, uncooked").canAutoAccept)

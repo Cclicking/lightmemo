@@ -20,6 +20,9 @@ internal object FoodSearchMatching {
     private val optionalChineseDescriptors = setOf("鲜", "新鲜", "代表值", "均值", "平均值")
     // These are distinct foods, despite sharing an English word with a common vegetable.
     private val distinctEnglishFoods = listOf(
+        Regex("\\bcabbage chinese pak choi\\b|\\b(?:bok choy|pak choi|pakchoi)\\b") to "bokchoy",
+        Regex("\\b(?:bell pepper|pepper sweet bell)\\b") to "pepper sweet",
+        Regex("\\b(?:pepper hot chili|chili pepper)\\b") to "pepper hot",
         Regex("\\bsea cucumber\\b") to "seacucumber",
         Regex("\\bbroccoli (?:raab|rabe)\\b") to "broccoliraab",
         Regex("\\bcabbage rape\\b") to "broccoliraab",
@@ -28,7 +31,10 @@ internal object FoodSearchMatching {
     )
     private val states = setOf("raw", "cooked", "steamed", "boiled", "fried", "roasted", "baked", "grilled", "dried", "braised", "stewed", "broiled", "sauteed", "microwaved")
     private val methods = states - setOf("raw", "cooked")
-    private val optionalWords = setOf("fresh", "food", "the", "and", "sliced", "diced", "chopped", "pieces", "slice", "cubed")
+    private val methodFamilies = listOf(setOf("steamed", "boiled"), setOf("braised", "stewed"),
+        setOf("roasted", "baked", "broiled", "grilled"), setOf("fried", "sauteed"))
+    private fun methodFamily(method: String) = methodFamilies.firstOrNull { method in it }?.first() ?: method
+    private val optionalWords = setOf("fresh", "food", "the", "and", "sliced", "diced", "chopped", "pieces", "slice", "slices", "cubed", "chunks", "chunk", "shredded")
     private val wordAliases = mapOf(
         "eggs" to "egg", "whites" to "white", "yolks" to "yolk", "potatoes" to "potato",
         "tomatoes" to "tomato", "noodles" to "noodle", "beans" to "bean", "peas" to "pea",
@@ -49,6 +55,7 @@ internal object FoodSearchMatching {
         "chives" to "chive", "creams" to "cream", "leaves" to "leaf", "custards" to "custard",
         "cherries" to "cherry", "rolls" to "roll", "buns" to "bun",
         "sprouts" to "sprouted", "sprout" to "sprouted", "meatballs" to "meatball",
+        "fillets" to "fillet", "stock" to "broth", "blanched" to "boiled",
     )
     private val chineseAliases = mapOf(
         "西蓝花" to "西兰花", "绿花菜" to "西兰花", "绿菜花" to "西兰花", "青花菜" to "西兰花",
@@ -83,6 +90,8 @@ internal object FoodSearchMatching {
         "汉堡胚" to "hamburger bun", "汉堡面包" to "hamburger bun",
         "绿豆芽" to "mung bean sprouted", "黄豆芽" to "soybean sprouted",
         "猪肉丸" to "pork meatball", "猪肉丸子" to "pork meatball", "牛肉丸" to "beef meatball", "鱼丸" to "fish meatball",
+        "小白菜" to "bok choy", "青菜" to "bok choy", "上海青" to "bok choy",
+        "清汤" to "broth", "鸡汤" to "chicken broth", "牛肉汤" to "beef broth",
     )
     private val transformedFoods = setOf("soup", "sauce", "flour", "powder", "juice", "bread", "pudding", "oil", "dried",
         "pickle", "pickles", "pickled", "floss", "jerky", "canned", "preserved", "syrup")
@@ -105,7 +114,9 @@ internal object FoodSearchMatching {
 
     private fun terms(value: String): Set<String> {
         val identityText = distinctEnglishFoods.fold(value) { text, (phrase, identity) -> text.replace(phrase, identity) }
-        return identityText.split(' ').filter { it.isNotBlank() }.map { if (it == "mandarin") "tangerine" else it }.toSet()
+        val words = identityText.split(' ').filter { it.isNotBlank() }.map { if (it == "mandarin") "tangerine" else it }.toSet()
+        // Broth/stock is a soup identity, including descriptions with an explicit "Soup" prefix.
+        return if ("broth" in words) (words - "clear") + "soup" else words
     }
 
     /** A positive English score requires overlap in these exact normalized identity terms. */
@@ -125,8 +136,8 @@ internal object FoodSearchMatching {
     private fun compatible(requested: Set<String>, actual: Set<String>, requireState: Boolean): Boolean {
         if ("raw" in requested && actual.any { it in states - "raw" }) return false
         if (requested.any { it in states - "raw" } && "raw" in actual) return false
-        val requestedMethods = requested.intersect(methods)
-        val actualMethods = actual.intersect(methods)
+        val requestedMethods = requested.intersect(methods).map(::methodFamily).toSet()
+        val actualMethods = actual.intersect(methods).map(::methodFamily).toSet()
         if (requestedMethods.size > 1) return false
         if (requestedMethods.isNotEmpty() && actualMethods.isNotEmpty() && requestedMethods != actualMethods) return false
         return !requireState || requested.isEmpty() || actual.isNotEmpty()
@@ -174,10 +185,11 @@ internal object FoodSearchMatching {
         val identity = wanted - states
         val overlap = identity.intersect(actual).size
         if (identity.isEmpty() || overlap == 0) return FoodSearchMatch(0.0, false)
+        val allowedProcessing = if ("broth" in wanted && "ready to serve" in normalizedDescription) setOf("canned") else emptySet()
         val safe = actual.containsAll(identity) && FoodIdentitySafety.agrees(normalizedQuery, normalizedDescription) &&
             preparationAgrees(normalizedQuery, normalizedDescription) &&
             compatible(wanted.intersect(states), actual.intersect(states), requireState = true) &&
-            (actual.intersect(transformedFoods) - wanted).isEmpty() &&
+            (actual.intersect(transformedFoods) - wanted - allowedProcessing).isEmpty() &&
             (actual.intersect(setOf("breaded", "battered", "meatless", "vegetarian", "imitation", "substitute", "spread", "custard")) - wanted).isEmpty() &&
             !("mayonnaise" in wanted && actual.any { it in setOf("tofu", "fatfree", "nonfat") }) &&
             !("cola" in wanted && "diet" in actual && "diet" !in wanted)
@@ -189,6 +201,13 @@ internal object FoodSearchMatching {
     }
 
     private fun preparationAgrees(query: String, description: String): Boolean {
+        val wanted = terms(query)
+        if ("broth" in wanted) {
+            val unwanted = setOf("dry", "dehydrated", "condensed", "concentrated", "cubes", "noodle", "pasta", "rice", "dumpling", "meatball")
+            if ((terms(description).intersect(unwanted) - wanted).isNotEmpty()) return false
+            val additions = terms(description.substringAfter(" with ", "")) - setOf("water", "salt")
+            if (!wanted.containsAll(additions)) return false
+        }
         val unwantedForms = setOf("breaded", "battered", "candied", "cured", "industrial", "platter", "restaurant", "sandwich")
         if ((terms(description).intersect(unwantedForms) - terms(query)).isNotEmpty()) return false
         if (restrictedPreparations.any { it.containsMatchIn(description) && !it.containsMatchIn(query) }) return false

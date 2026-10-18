@@ -227,7 +227,8 @@ class FoodDataCentralClientTest {
             {"nutrientNumber":"204","value":0.3}]}]}"""
         assertNull(fixtureClient(onlineResponse = online)
             .lookup("tofu white cooked boiled", "configured-key", "北豆腐"))
-        assertEquals("123", fixtureClient(onlineResponse = online)
+        // Boiled/steamed rice now has a reliable offline match, ahead of the online fallback.
+        assertEquals("cn-rice", fixtureClient(onlineResponse = online)
             .lookup("rice white cooked boiled", "configured-key", "米饭（煮）")?.sourceId)
     }
 
@@ -253,9 +254,10 @@ class FoodDataCentralClientTest {
             .any { it.sourceId == "us-raw" })
     }
 
-    @Test fun conflictingCookingMethodsAcrossLanguagesRequireReview() = runBlocking {
+    @Test fun similarCookingMethodsAcrossLanguagesCanMatchButFryingStillConflicts() = runBlocking {
         val database = fixtureClient("us-rice\tRice white cooked boiled\t130\t3\t28\t0.3\n")
-        assertNull(database.lookup("rice white cooked boiled", "", "米饭（蒸）"))
+        assertEquals("us-rice", database.lookup("rice white cooked boiled", "", "米饭（蒸）")?.sourceId)
+        assertNull(database.lookup("rice white cooked fried", "", "米饭（蒸）"))
         assertTrue(database.searchCandidates("rice white cooked boiled", "", chineseQuery = "米饭（蒸）").isNotEmpty())
     }
 

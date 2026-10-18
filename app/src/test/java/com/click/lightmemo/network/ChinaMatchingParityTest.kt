@@ -6,7 +6,7 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ChinaMatchingParityTest {
-    /** Frozen before feature precomputation; includes all recalled IDs, not just the first page. */
+    /** Reviewed name/method matching baseline; includes all recalled IDs, not just the first page. */
     @Test fun preparedMatchingKeepsRealDatabaseCandidatesRankingAndAutomaticAcceptance() = runBlocking {
         val assets = File(requireNotNull(System.getProperty("food.assets")))
         val database = FoodDataCentralClient(
