@@ -1625,87 +1625,87 @@ internal fun PersonalProfileFields(
     val heightCm = settings.heightCm.takeIf { it > 0f } ?: DEFAULT_PROFILE_HEIGHT_CM
     val weightKg = settings.weightKg.takeIf { it > 0f } ?: DEFAULT_PROFILE_WEIGHT_KG
     val ageYears = settings.ageYears.takeIf { it > 0 } ?: DEFAULT_PROFILE_AGE_YEARS
-            Column {
-                SmallTitle(
-                    text = "身体信息",
-                    modifier = Modifier.offset(x = (-16).dp),
-                )
-                Spacer(Modifier.height(TitleToFieldSpacing))
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    NumberPickerField(
-                        title = "身高",
-                        unit = "cm",
-                        value = heightCm.toInt(),
-                        range = 100..220,
-                        modifier = Modifier.weight(1f),
-                        onValueChange = { onChange(settings.copy(heightCm = it.toFloat())) },
-                    )
-                    NumberPickerField(
-                        title = "体重",
-                        unit = "kg",
-                        value = weightKg.toInt(),
-                        range = 30..150,
-                        modifier = Modifier.weight(1f),
-                        onValueChange = { onChange(settings.copy(weightKg = it.toFloat())) },
-                    )
-                    NumberPickerField(
-                        title = "年龄",
-                        unit = "岁",
-                        value = ageYears,
-                        range = 10..100,
-                        modifier = Modifier.weight(1f),
-                        onValueChange = { onChange(settings.copy(ageYears = it)) },
-                    )
-                }
+    Column {
+        SmallTitle(
+            text = "身体信息",
+            modifier = Modifier.offset(x = (-16).dp),
+        )
+        Spacer(Modifier.height(TitleToFieldSpacing))
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            NumberPickerField(
+                title = "身高",
+                unit = "cm",
+                value = heightCm.toInt(),
+                range = 100..220,
+                modifier = Modifier.weight(1f),
+                onValueChange = { onChange(settings.copy(heightCm = it.toFloat())) },
+            )
+            NumberPickerField(
+                title = "体重",
+                unit = "kg",
+                value = weightKg.toInt(),
+                range = 30..150,
+                modifier = Modifier.weight(1f),
+                onValueChange = { onChange(settings.copy(weightKg = it.toFloat())) },
+            )
+            NumberPickerField(
+                title = "年龄",
+                unit = "岁",
+                value = ageYears,
+                range = 10..100,
+                modifier = Modifier.weight(1f),
+                onValueChange = { onChange(settings.copy(ageYears = it)) },
+            )
+        }
 
-                Spacer(Modifier.height(FieldToTitleSpacing))
-                SmallTitle(
-                    text = "性别",
-                    modifier = Modifier.offset(x = (-16).dp),
-                )
-                Spacer(Modifier.height(TitleToFieldSpacing))
-                GlassTabs(
-                    tabs = Gender.entries.map { it.label },
-                    selectedTabIndex = Gender.entries.indexOf(settings.gender).coerceAtLeast(0),
-                    onTabSelected = { index -> onChange(settings.copy(gender = Gender.entries[index])) },
-                )
+        Spacer(Modifier.height(FieldToTitleSpacing))
+        SmallTitle(
+            text = "性别",
+            modifier = Modifier.offset(x = (-16).dp),
+        )
+        Spacer(Modifier.height(TitleToFieldSpacing))
+        GlassTabs(
+            tabs = Gender.entries.map { it.label },
+            selectedTabIndex = Gender.entries.indexOf(settings.gender).coerceAtLeast(0),
+            onTabSelected = { index -> onChange(settings.copy(gender = Gender.entries[index])) },
+        )
 
-                Spacer(Modifier.height(FieldToTitleSpacing))
-                SmallTitle("健身目标", modifier = Modifier.offset(x = (-16).dp))
-                Card(modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(0.dp)) {
-                    DropdownPref(
-                        title = "目标方向",
-                        summary = settings.fitnessGoal.summary,
-                        items = com.click.lightmemo.data.FitnessGoal.entries.map { it.label },
-                        selectedIndex = com.click.lightmemo.data.FitnessGoal.entries.indexOf(settings.fitnessGoal),
-                        onSelectedIndexChange = { onChange(settings.copy(fitnessGoal = com.click.lightmemo.data.FitnessGoal.entries[it])) },
-                    )
-                }
-                Spacer(Modifier.height(FieldToTitleSpacing))
-                SmallTitle(
-                    text = "每周运动强度",
-                    modifier = Modifier.offset(x = (-16).dp),
-                )
-                Spacer(Modifier.height(TitleToFieldSpacing))
-                GlassTabs(
-                    tabs = ActivityLevel.entries.map { it.label },
-                    selectedTabIndex = ActivityLevel.entries.indexOf(settings.activityLevel)
-                        .coerceAtLeast(0),
-                    onTabSelected = { index ->
-                        onChange(settings.copy(activityLevel = ActivityLevel.entries[index]))
-                    },
-                )
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    text = settings.activityLevel.summary,
-                    style = MiuixTheme.textStyles.footnote2,
-                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                    modifier = Modifier.padding(horizontal = FootnoteHorizontalPadding),
-                )
-            }
+        Spacer(Modifier.height(FieldToTitleSpacing))
+        SmallTitle("健身目标", modifier = Modifier.offset(x = (-16).dp))
+        Card(modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(0.dp)) {
+            DropdownPref(
+                title = "目标方向",
+                summary = settings.fitnessGoal.summary,
+                items = com.click.lightmemo.data.FitnessGoal.entries.map { it.label },
+                selectedIndex = com.click.lightmemo.data.FitnessGoal.entries.indexOf(settings.fitnessGoal),
+                onSelectedIndexChange = { onChange(settings.copy(fitnessGoal = com.click.lightmemo.data.FitnessGoal.entries[it])) },
+            )
+        }
+        Spacer(Modifier.height(FieldToTitleSpacing))
+        SmallTitle(
+            text = "每周运动强度",
+            modifier = Modifier.offset(x = (-16).dp),
+        )
+        Spacer(Modifier.height(TitleToFieldSpacing))
+        GlassTabs(
+            tabs = ActivityLevel.entries.map { it.label },
+            selectedTabIndex = ActivityLevel.entries.indexOf(settings.activityLevel)
+                .coerceAtLeast(0),
+            onTabSelected = { index ->
+                onChange(settings.copy(activityLevel = ActivityLevel.entries[index]))
+            },
+        )
+        Spacer(Modifier.height(6.dp))
+        Text(
+            text = settings.activityLevel.summary,
+            style = MiuixTheme.textStyles.footnote2,
+            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+            modifier = Modifier.padding(horizontal = FootnoteHorizontalPadding),
+        )
+    }
 }
 
 @Composable
