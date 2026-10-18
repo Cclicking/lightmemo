@@ -9,6 +9,7 @@ import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -159,9 +160,16 @@ fun DropdownPref(
             enableBackHandler = false,
             renderInRootScaffold = true,
         ) {
+            // PopupLayout composes its content only after opening. Start the Glass animation
+            // from closed, instead of initializing animateFloatAsState at its expanded target.
+            var entered by remember { mutableStateOf(false) }
+            LaunchedEffect(Unit) {
+                withFrameNanos { }
+                entered = true
+            }
             Box(Modifier.fillMaxSize()) {
                 GlassDropdownPopup(
-                    show = expanded,
+                    show = entered && expanded,
                     onDismissRequest = { expanded = false },
                     anchorBounds = anchorBounds,
                     anchor = anchor,

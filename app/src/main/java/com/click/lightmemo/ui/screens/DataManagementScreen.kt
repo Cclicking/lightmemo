@@ -26,7 +26,6 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import android.widget.Toast
 import com.click.lightmemo.FoodApp
 import com.click.lightmemo.ui.basic.SharedScrollBehavior as ScrollBehavior
@@ -36,7 +35,8 @@ import com.click.lightmemo.viewmodel.BackupViewModel
 import com.click.lightmemo.viewmodel.SettingsViewModel
 import android.content.Intent
 import com.click.lightmemo.ui.secondary.PersonalFoodMemoryActivity
-import top.yukonga.miuix.kmp.basic.BasicComponent
+import com.click.lightmemo.data.NutritionDatabase
+import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.basic.Button
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
@@ -203,52 +203,41 @@ fun DataManagementScreen(
                 insideMargin = PaddingValues(0.dp),
             ) {
                 Column(modifier = Modifier.fillMaxWidth()) {
-                    StatusRow(
+                    SwitchPreference(
                         title = "USDA SR Legacy",
-                        summary = "本地 SR Legacy 宏量营养素库",
-                        status = when {
-                            offlineStatus == null -> "检测中"
-                            offlineStatus.srLegacyAvailable -> "已就绪"
-                            else -> "不可用"
-                        },
+                        summary = if (offlineStatus?.srLegacyAvailable == true) "本地 SR Legacy 宏量营养素库" else "离线库不可用",
+                        checked = settings.nutritionDatabases.enabled(NutritionDatabase.SR_LEGACY),
+                        onCheckedChange = { viewModel.setNutritionDatabase(NutritionDatabase.SR_LEGACY, it) },
                     )
-                    StatusRow(
+                    SwitchPreference(
                         title = "USDA Foundation",
-                        summary = "2026-04 基础食物离线库",
-                        status = when {
-                            offlineStatus == null -> "检测中"
-                            offlineStatus.foundationAvailable -> "已就绪"
-                            else -> "不可用"
-                        },
+                        summary = if (offlineStatus?.foundationAvailable == true) "2026-04 基础食物离线库" else "离线库不可用",
+                        checked = settings.nutritionDatabases.enabled(NutritionDatabase.FOUNDATION),
+                        onCheckedChange = { viewModel.setNutritionDatabase(NutritionDatabase.FOUNDATION, it) },
                     )
-                    StatusRow(
+                    SwitchPreference(
                         title = "USDA FNDDS",
-                        summary = "2021–2023 食物与饮料离线库",
-                        status = when {
-                            offlineStatus == null -> "检测中"
-                            offlineStatus.fnddsAvailable -> "已就绪"
-                            else -> "不可用"
-                        },
+                        summary = if (offlineStatus?.fnddsAvailable == true) "2021–2023 食物与饮料离线库" else "离线库不可用",
+                        checked = settings.nutritionDatabases.enabled(NutritionDatabase.FNDDS),
+                        onCheckedChange = { viewModel.setNutritionDatabase(NutritionDatabase.FNDDS, it) },
                     )
-                    StatusRow(
+                    SwitchPreference(
                         title = "中国食物成分表",
-                        summary = "本地第 6 版离线库",
-                        status = when {
-                            offlineStatus == null -> "检测中"
-                            offlineStatus.chinaAvailable -> "已就绪"
-                            else -> "不可用"
-                        },
+                        summary = if (offlineStatus?.chinaAvailable == true) "本地第 6 版离线库" else "离线库不可用",
+                        checked = settings.nutritionDatabases.enabled(NutritionDatabase.CHINA),
+                        onCheckedChange = { viewModel.setNutritionDatabase(NutritionDatabase.CHINA, it) },
                     )
-                    StatusRow(
+                    SwitchPreference(
                         title = "USDA 在线 API",
-                        summary = "离线未命中时的可选补充",
-                        status = if (settings.foodDataCentralApiKey.isNotBlank()) "已配置" else "未配置",
+                        summary = if (settings.foodDataCentralApiKey.isNotBlank()) "离线未命中时的可选补充" else "请先在下方配置 API Key",
+                        checked = settings.nutritionDatabases.enabled(NutritionDatabase.ONLINE),
+                        onCheckedChange = { viewModel.setNutritionDatabase(NutritionDatabase.ONLINE, it) },
                     )
                 }
             }
             Spacer(Modifier.height(12.dp))
             Text(
-                text = "已内置 Foundation、SR Legacy、FNDDS 和中国食物成分表，可离线搜索食物与营养数据。",
+                text = "开关决定食物搜索与营养匹配使用哪些数据库，设置会自动保存。",
                 style = MiuixTheme.textStyles.footnote2,
                 color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                 modifier = Modifier.padding(horizontal = 16.dp),
@@ -352,24 +341,4 @@ fun DataManagementScreen(
             }
         }
     }
-}
-
-@Composable
-private fun StatusRow(
-    title: String,
-    summary: String,
-    status: String,
-) {
-    BasicComponent(
-        title = title,
-        summary = summary,
-        endActions = {
-            Text(
-                text = status,
-                fontSize = 14.5.sp,
-                color = MiuixTheme.colorScheme.onSurfaceVariantActions,
-                modifier = Modifier.padding(end = 8.dp),
-            )
-        },
-    )
 }

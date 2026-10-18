@@ -7,6 +7,7 @@ import androidx.activity.SystemBarStyle
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.viewModels
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
@@ -38,6 +39,7 @@ import com.click.lightmemo.ui.utils.OverScrollState
 import com.click.lightmemo.viewmodel.AddFoodUiState
 import com.click.lightmemo.viewmodel.TodayViewModel
 import com.kyant.backdrop.isRenderEffectSupported
+import java.time.LocalDate
 import top.yukonga.miuix.kmp.basic.Button
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Text
@@ -46,8 +48,19 @@ import top.yukonga.miuix.kmp.icon.os4.Ok
 
 /** Full-screen manage-food-cards page with the system Activity transition. */
 class ManageFoodCardsActivity : ComponentActivity() {
+    companion object {
+        const val EXTRA_DATE_EPOCH_DAY = "date_epoch_day"
+    }
+
+    private val todayVm: TodayViewModel by viewModels()
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        todayVm.selectDate(
+            LocalDate.ofEpochDay(
+                intent.getLongExtra(EXTRA_DATE_EPOCH_DAY, LocalDate.now().toEpochDay()),
+            ),
+        )
         setContent {
             val dark = isSystemInDarkTheme()
             DisposableEffect(dark) {
@@ -86,7 +99,6 @@ class ManageFoodCardsActivity : ComponentActivity() {
                 val settingsVm: com.click.lightmemo.viewmodel.SettingsViewModel = viewModel()
                 val settings by settingsVm.settings.collectAsState()
                 FoodTheme {
-                    val todayVm: TodayViewModel = viewModel()
                     val busy by todayVm.busy.collectAsState()
                     var pendingEntries by remember { mutableStateOf<Map<Long, FoodLog>>(emptyMap()) }
                     var showDiscardDialog by remember { mutableStateOf(false) }

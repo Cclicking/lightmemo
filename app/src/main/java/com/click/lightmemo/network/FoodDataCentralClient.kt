@@ -1,6 +1,7 @@
 package com.click.lightmemo.network
 
 import android.content.Context
+import com.click.lightmemo.data.NutritionDatabases
 import com.click.lightmemo.domain.FoodComponent
 import com.click.lightmemo.domain.FoodIdentitySafety
 import com.click.lightmemo.domain.MealRecognition
@@ -29,14 +30,22 @@ class FoodDataCentralClient internal constructor(
         .readTimeout(30, TimeUnit.SECONDS)
         .build(),
     private val json: Json = Json { ignoreUnknownKeys = true },
+    private val databases: suspend () -> NutritionDatabases = { NutritionDatabases() },
     private val onMatch: (com.click.lightmemo.domain.NutritionMatchSource) -> Unit = {},
 ) {
-    constructor(context: Context, onMatch: (com.click.lightmemo.domain.NutritionMatchSource) -> Unit = {}) : this(
+    constructor(context: Context, databases: suspend () -> NutritionDatabases = { NutritionDatabases() }, onMatch: (com.click.lightmemo.domain.NutritionMatchSource) -> Unit = {}) : this(
         openAsset = { context.assets.open(it) },
         listAssets = { context.assets.list("").orEmpty() },
         onMatch = onMatch,
+        databases = databases,
     )
-    private val memoryCache = ConcurrentHashMap<String, NutritionReference>()
+    private val memoryCache = ConcurrentHashMap<LookupCacheKey, NutritionReference>()
+    private data class LookupCacheKey(
+        val inputs: List<String>,
+        val databases: NutritionDatabases,
+        val onlineConfigured: Boolean,
+    )
+
     private val usdaFoods: List<LocalFood> by lazy { loadUsdaFoods() }
     private val chinaFoods: List<ChinaFood> by lazy { loadChinaFoods() }
 
@@ -77,13 +86,19 @@ class FoodDataCentralClient internal constructor(
     }
 
     suspend fun enrich(meal: MealRecognition, apiKey: String): MealRecognition = withContext(Dispatchers.IO) {
+        val enabled = databases()
         val components = meal.dishes.flatMap { it.allComponents }.distinctBy { it.id }
         val matches = components.associate { component ->
-            component.id to (component.nutritionReference?.takeIf {
-                FoodIdentitySafety.allowsReference(component, it)
-            } ?: resolve(component, apiKey))
+            val reference = component.nutritionReference?.takeIf {
+                enabled.allows(it.dataType) && FoodIdentitySafety.allowsReference(component, it)
+            } ?: resolve(component, apiKey)
+            val hasCandidates = if (reference != null) null else searchCandidates(
+                query = component.databaseQuery, apiKey = apiKey, limit = 1,
+                chineseQuery = component.chinaDatabaseQuery, originalName = component.name,
+            ).isNotEmpty()
+            component.id to component.copy(nutritionReference = reference, hasNutritionCandidates = hasCandidates)
         }
-        meal.copy(dishes = meal.dishes.map { it.withReferences(matches) })
+        meal.copy(dishes = meal.dishes.map { it.withNutritionMatches(matches) })
     }
 
     suspend fun lookup(
@@ -94,8 +109,9 @@ class FoodDataCentralClient internal constructor(
     ): NutritionReference? = withContext(Dispatchers.IO) {
         val inputs = listOf(query, chineseQuery, originalName).map { it.trim() }.filter { it.isNotBlank() }.distinct()
         if (inputs.isEmpty()) return@withContext null
-        // Length prefixes prevent different tuples from sharing a cache entry.
-        val cacheKey = inputs.joinToString("") { "${it.length}:$it" }
+        // Source preferences are part of the key so disabled sources cannot survive in cache.
+        val enabled = databases()
+        val cacheKey = LookupCacheKey(inputs, enabled, apiKey.isNotBlank())
         val englishQueries = FoodSearchMatching.englishQueries(inputs)
         val suppliedEnglish = FoodSearchMatching.englishQueries(inputs.filter { input ->
             input.none { it in '\u4e00'..'\u9fff' }
@@ -103,13 +119,13 @@ class FoodDataCentralClient internal constructor(
         val translatedEnglish = englishQueries - suppliedEnglish.toSet()
         // The original recognized food is an independent constraint; generated search terms can be wrong.
         val validationQueries = englishQueries + inputs.filter { it.any { c -> c in '\u4e00'..'\u9fff' } }
-        val resolved = memoryCache[cacheKey] ?: rankUsda(suppliedEnglish, true, validationQueries).firstOrNull()?.reference
-            ?: apiKey.takeIf { it.isNotBlank() }?.let { findOnlineMatch(suppliedEnglish, it, validationQueries) }
-            ?: findChinaLocal(inputs, englishQueries, englishRecallQueries = suppliedEnglish)
+        val resolved = memoryCache[cacheKey] ?: rankUsda(suppliedEnglish, true, validationQueries, enabled = enabled).firstOrNull()?.reference
+            ?: apiKey.takeIf { enabled.online && it.isNotBlank() }?.let { findOnlineMatch(suppliedEnglish, it, validationQueries) }
+            ?: findChinaLocal(inputs, englishQueries, englishRecallQueries = suppliedEnglish, enabled = enabled)
             // Keep exact Chinese database matches ahead of dictionary translations.
-            ?: rankUsda(translatedEnglish, true, validationQueries).firstOrNull()?.reference
-            ?: apiKey.takeIf { it.isNotBlank() }?.let { findOnlineMatch(translatedEnglish, it, validationQueries) }
-            ?: findChinaLocal(inputs, englishQueries)
+            ?: rankUsda(translatedEnglish, true, validationQueries, enabled = enabled).firstOrNull()?.reference
+            ?: apiKey.takeIf { enabled.online && it.isNotBlank() }?.let { findOnlineMatch(translatedEnglish, it, validationQueries) }
+            ?: findChinaLocal(inputs, englishQueries, enabled = enabled)
         resolved?.also { memoryCache[cacheKey] = it }
         runCatching { onMatch(com.click.lightmemo.domain.DiagnosticEvents.source(resolved)) }
         resolved
@@ -125,15 +141,16 @@ class FoodDataCentralClient internal constructor(
     ): List<NutritionReference> = withContext(Dispatchers.IO) {
         val inputs = listOf(query, chineseQuery, originalName).filter { it.isNotBlank() }.distinct()
         if (inputs.isEmpty()) return@withContext emptyList()
+        val enabled = databases()
         val englishQueries = FoodSearchMatching.englishQueries(inputs)
         val count = limit.coerceAtLeast(1)
-        val localUsda = rankUsda(englishQueries, automatic = false).take(count)
-        val online = if (apiKey.isBlank()) emptyList() else englishQueries.flatMap {
+        val localUsda = rankUsda(englishQueries, automatic = false, enabled = enabled).take(count)
+        val online = if (!enabled.online || apiKey.isBlank()) emptyList() else englishQueries.flatMap {
             searchOnline(it, apiKey, count)
         }.map { ref -> RankedReference(ref, englishQueries.maxOfOrNull {
             FoodSearchMatching.englishMatch(it, ref.description).score
         } ?: 0.0) }.filter { it.score >= 0.5 }
-        val localChina = rankChina(inputs, englishQueries, automatic = false).take(count)
+        val localChina = rankChina(inputs, englishQueries, automatic = false, enabled = enabled).take(count)
         // Rank both languages together before truncating; source priority breaks score ties.
         (localUsda + online + localChina)
             .sortedByDescending { it.score }
@@ -148,12 +165,14 @@ class FoodDataCentralClient internal constructor(
         source: DatabaseSource = DatabaseSource.ALL,
         limit: Int = 120,
     ): List<NutritionReference> = withContext(Dispatchers.IO) {
+        val enabled = databases()
         val sourceItems = buildList {
-            if (source == DatabaseSource.ALL || source == DatabaseSource.CHINA) {
+            if (enabled.china && (source == DatabaseSource.ALL || source == DatabaseSource.CHINA)) {
                 addAll(chinaFoods.map { it.reference })
             }
             if (source != DatabaseSource.CHINA) {
-                addAll(usdaFoods.filter { source == DatabaseSource.ALL || source == DatabaseSource.USDA || it.source.filter == source }
+                addAll(usdaFoods.filter { enabled.allows(it.reference.dataType) &&
+                    (source == DatabaseSource.ALL || source == DatabaseSource.USDA || it.source.filter == source) }
                     .map { it.reference })
             }
         }
@@ -165,10 +184,10 @@ class FoodDataCentralClient internal constructor(
         } else {
             val englishQueries = FoodSearchMatching.englishQueries(listOf(normalized))
             when (source) {
-                DatabaseSource.CHINA -> rankChina(listOf(normalized), englishQueries, false)
+                DatabaseSource.CHINA -> rankChina(listOf(normalized), englishQueries, false, enabled = enabled)
                     .take(limit.coerceAtLeast(1)).map { it.reference }
                 DatabaseSource.USDA, DatabaseSource.USDA_FOUNDATION,
-                DatabaseSource.USDA_SR_LEGACY, DatabaseSource.USDA_FNDDS -> rankUsda(englishQueries, false, source = source)
+                DatabaseSource.USDA_SR_LEGACY, DatabaseSource.USDA_FNDDS -> rankUsda(englishQueries, false, source = source, enabled = enabled)
                     .take(limit.coerceAtLeast(1)).map { it.reference }
                 DatabaseSource.ALL -> searchCandidates(normalized, "", limit)
             }.distinctBy { "${it.dataType}:${it.sourceId}" }
@@ -188,8 +207,9 @@ class FoodDataCentralClient internal constructor(
         automatic: Boolean,
         validationQueries: List<String> = queries,
         source: DatabaseSource = DatabaseSource.USDA,
+        enabled: NutritionDatabases,
     ): List<RankedReference> = if (queries.isEmpty()) emptyList() else usdaFoods
-        .filter { source == DatabaseSource.USDA || it.source.filter == source }
+        .filter { enabled.allows(it.reference.dataType) && (source == DatabaseSource.USDA || it.source.filter == source) }
         .mapNotNull { food ->
             val matches = queries.map { FoodSearchMatching.englishMatch(it, food.normalizedDescription) }
             val eligible = matches.filterIndexed { index, match -> !automatic ||
@@ -205,14 +225,16 @@ class FoodDataCentralClient internal constructor(
         inputs: List<String>,
         queries: List<String>,
         englishRecallQueries: List<String> = queries,
-    ): NutritionReference? = rankChina(inputs, queries, automatic = true, englishRecallQueries).firstOrNull()?.reference
+        enabled: NutritionDatabases,
+    ): NutritionReference? = rankChina(inputs, queries, automatic = true, englishRecallQueries, enabled).firstOrNull()?.reference
 
     private fun rankChina(
         inputs: List<String>,
         queries: List<String>,
         automatic: Boolean,
         englishRecallQueries: List<String> = queries,
-    ): List<RankedReference> = chinaFoods
+        enabled: NutritionDatabases,
+    ): List<RankedReference> = if (!enabled.china) emptyList() else chinaFoods
         .mapNotNull { food ->
             if (automatic && inputs.any { !FoodIdentitySafety.agrees(it, food.normalizedEnglishName.ifBlank { food.reference.description }) }) return@mapNotNull null
             val chineseMatches = inputs.map { input ->
@@ -407,10 +429,7 @@ private fun FdcFood.toReferenceOrNull(): NutritionReference? {
     )
 }
 
-private fun RecognizedDish.withReferences(matches: Map<String, NutritionReference?>): RecognizedDish = copy(
-    components = components.map { it.withReference(matches) },
-    children = children.map { it.withReferences(matches) },
+private fun RecognizedDish.withNutritionMatches(matches: Map<String, FoodComponent>): RecognizedDish = copy(
+    components = components.map { matches[it.id] ?: it },
+    children = children.map { it.withNutritionMatches(matches) },
 )
-
-private fun FoodComponent.withReference(matches: Map<String, NutritionReference?>): FoodComponent =
-    copy(nutritionReference = matches[id])

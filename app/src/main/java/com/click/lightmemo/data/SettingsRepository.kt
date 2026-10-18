@@ -67,6 +67,7 @@ data class AppSettings(
     val systemBackground: String = "",
     val promptOverrides: Map<String, String> = emptyMap(),
     val foodDataCentralApiKey: String = "",
+    val nutritionDatabases: NutritionDatabases = NutritionDatabases(),
     val dailyCalorieTarget: Float = 1800f,
     /** 营养素目标；<=0 表示跟随推荐值 */
     val proteinTargetG: Float = 0f,
@@ -322,6 +323,7 @@ class SettingsRepository(
                 put("systemBackground", current.systemBackground)
                 put("promptOverrides", JSONObject(settingsJson.encodeToString(current.promptOverrides)))
                 put("foodDataCentralApiKey", current.foodDataCentralApiKey)
+                put("nutritionDatabases", JSONObject(settingsJson.encodeToString(current.nutritionDatabases)))
                 put("dailyCalorieTarget", current.dailyCalorieTarget.toDouble())
                 put("proteinTargetG", current.proteinTargetG.toDouble())
                 put("fatTargetG", current.fatTargetG.toDouble())
@@ -423,6 +425,8 @@ class SettingsRepository(
                 }.getOrDefault(emptyMap()),
             )
             prefs[Keys.FDC_API_KEY] = settingsJsonObject.optString("foodDataCentralApiKey")
+            prefs[Keys.NUTRITION_DATABASES] = settingsJson.encodeToString(decodeNutritionDatabases(
+                settingsJsonObject.optJSONObject("nutritionDatabases")?.toString()))
             prefs[Keys.TARGET] = floatValue("dailyCalorieTarget", defaults.dailyCalorieTarget)
             prefs[Keys.PROTEIN] = floatValue("proteinTargetG", defaults.proteinTargetG)
             prefs[Keys.FAT] = floatValue("fatTargetG", defaults.fatTargetG)
@@ -494,6 +498,7 @@ class SettingsRepository(
         val ACTIVE_PRESET = stringPreferencesKey("active_preset_id")
         val SYSTEM_BG = stringPreferencesKey("system_background")
         val PROMPT_OVERRIDES = stringPreferencesKey("prompt_overrides")
+        val NUTRITION_DATABASES = stringPreferencesKey("nutrition_databases")
         val FDC_API_KEY = stringPreferencesKey("food_data_central_api_key")
         val PROTEIN = floatPreferencesKey("protein_target_g")
         val FAT = floatPreferencesKey("fat_target_g")
@@ -565,6 +570,7 @@ class SettingsRepository(
             systemBackground = prefs[Keys.SYSTEM_BG] ?: "",
             promptOverrides = decodePromptOverrides(prefs[Keys.PROMPT_OVERRIDES]),
             foodDataCentralApiKey = prefs[Keys.FDC_API_KEY] ?: "",
+            nutritionDatabases = decodeNutritionDatabases(prefs[Keys.NUTRITION_DATABASES]),
             dailyCalorieTarget = prefs[Keys.TARGET] ?: 1800f,
             proteinTargetG = prefs[Keys.PROTEIN] ?: 0f,
             fatTargetG = prefs[Keys.FAT] ?: 0f,
@@ -780,6 +786,17 @@ class SettingsRepository(
             val next = decodePromptOverrides(prefs[Keys.PROMPT_OVERRIDES]).toMutableMap()
             if (value.isNullOrBlank()) next.remove(key) else next[key] = value
             prefs[Keys.PROMPT_OVERRIDES] = settingsJson.encodeToString(next)
+        }
+    }
+
+    private fun decodeNutritionDatabases(raw: String?): NutritionDatabases = runCatching {
+        settingsJson.decodeFromString<NutritionDatabases>(raw.orEmpty())
+    }.getOrDefault(NutritionDatabases())
+
+    suspend fun updateNutritionDatabase(database: NutritionDatabase, enabled: Boolean) {
+        store.edit { prefs ->
+            val current = decodeNutritionDatabases(prefs[Keys.NUTRITION_DATABASES])
+            prefs[Keys.NUTRITION_DATABASES] = settingsJson.encodeToString(current.withEnabled(database, enabled))
         }
     }
 

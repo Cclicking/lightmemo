@@ -34,7 +34,7 @@ class FoodApp : Application() {
             java.time.LocalDate.now().toEpochDay(), llmCallCount = 1,
             aiNutritionFallbackCount = if (nutritionEstimate) 1 else 0)) },
     )
-    val nutritionDatabase by lazy { FoodDataCentralClient(this) { source ->
+    val nutritionDatabase by lazy { FoodDataCentralClient(this, databases = { settingsRepository.settings.first().nutritionDatabases }) { source ->
         recordDiagnostic(com.click.lightmemo.domain.DiagnosticEvents.match(java.time.LocalDate.now().toEpochDay(), source))
     } }
     val recognitionTaskStore by lazy { RecognitionTaskStore(this) }

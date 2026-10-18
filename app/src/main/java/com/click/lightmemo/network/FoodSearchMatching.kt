@@ -44,6 +44,7 @@ internal object FoodSearchMatching {
         "tangerines" to "tangerine", "mandarins" to "mandarin",
         "chives" to "chive", "creams" to "cream", "leaves" to "leaf", "custards" to "custard",
         "cherries" to "cherry", "rolls" to "roll", "buns" to "bun",
+        "sprouts" to "sprouted", "sprout" to "sprouted", "meatballs" to "meatball",
     )
     private val chineseAliases = mapOf(
         "西蓝花" to "西兰花", "绿花菜" to "西兰花", "绿菜花" to "西兰花", "青花菜" to "西兰花",
@@ -75,6 +76,8 @@ internal object FoodSearchMatching {
         "水" to "water", "冰块" to "water", "冰" to "water", "食用油" to "vegetable oil", "植物油" to "vegetable oil",
         "牛奶" to "milk", "纯牛奶" to "milk whole", "鹌鹑蛋" to "quail egg",
         "汉堡胚" to "hamburger bun", "汉堡面包" to "hamburger bun",
+        "绿豆芽" to "mung bean sprouted", "黄豆芽" to "soybean sprouted",
+        "猪肉丸" to "pork meatball", "猪肉丸子" to "pork meatball", "牛肉丸" to "beef meatball", "鱼丸" to "fish meatball",
     )
     private val transformedFoods = setOf("soup", "sauce", "flour", "powder", "juice", "bread", "pudding", "oil", "dried",
         "pickle", "pickles", "pickled", "floss", "jerky", "canned", "preserved", "syrup")
@@ -82,6 +85,7 @@ internal object FoodSearchMatching {
         "skim", "nonfat", "skinless", "boneless", "sweetened", "unsweetened")
 
     fun english(value: String): String = value.lowercase(java.util.Locale.ROOT)
+        .replace(Regex("\\b(pork|beef|chicken|fish) balls?\\b"), "$1 meatball")
         .replace("stir-fried", "fried").replace("stir fried", "fried")
         .replace("green onions", "scallion").replace("green onion", "scallion")
         .replace(englishPunctuation, " ").trim().split(' ')

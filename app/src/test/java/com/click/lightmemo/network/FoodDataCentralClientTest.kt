@@ -12,6 +12,76 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class FoodDataCentralClientTest {
+    @Test fun databaseSwitchesExcludeCachedMatchesCandidatesAndBrowsing() = runBlocking {
+        var enabled = com.click.lightmemo.data.NutritionDatabases()
+        val database = fixtureClient(
+            usdaRows = "sr-water\tWater, bottled, plain\t0\t0\t0\t0\n",
+            foundationRows = "foundation-water\tWater, bottled, plain\t0\t0\t0\t0\n",
+            fnddsRows = "survey-water\tWater, bottled, plain\t0\t0\t0\t0\n",
+            databases = { enabled },
+        )
+        assertEquals("foundation-water", database.lookup("water", "")?.sourceId)
+        enabled = enabled.copy(foundation = false)
+        assertEquals("sr-water", database.lookup("water", "")?.sourceId)
+        enabled = enabled.copy(srLegacy = false)
+        assertEquals("survey-water", database.lookup("water", "")?.sourceId)
+        enabled = enabled.copy(fndds = false, china = false, online = false)
+        assertNull(database.lookup("water", "configured-key"))
+        assertTrue(database.searchCandidates("water", "configured-key").isEmpty())
+        assertTrue(database.browseOffline().isEmpty())
+        assertTrue(database.browseOffline("米饭", FoodDataCentralClient.DatabaseSource.CHINA).isEmpty())
+        enabled = enabled.copy(china = true)
+        assertEquals("cn-rice", database.lookup("米饭（蒸）", "")?.sourceId)
+        enabled = enabled.copy(china = false)
+        assertNull(database.lookup("米饭（蒸）", ""))
+        enabled = enabled.copy(foundation = true)
+        assertEquals("foundation-water", database.lookup("water", "")?.sourceId)
+    }
+
+    @Test fun disablingOnlinePreventsHttpRequests() = runBlocking {
+        var requests = 0
+        var enabled = com.click.lightmemo.data.NutritionDatabases()
+        val database = FoodDataCentralClient(
+            openAsset = { throw IOException("No local assets") },
+            listAssets = { emptyArray() },
+            databases = { enabled },
+            httpClient = OkHttpClient.Builder().addInterceptor {
+                requests++
+                throw IOException("Offline test")
+            }.build(),
+        )
+        enabled = enabled.copy(online = false, china = false)
+        database.lookup("water", "configured-key")
+        database.searchCandidates("water", "configured-key")
+        assertEquals(0, requests)
+        enabled = enabled.copy(online = true)
+        database.searchCandidates("water", "configured-key")
+        assertTrue(requests > 0)
+    }
+
+    @Test fun enrichmentDistinguishesReviewCandidatesFromAnEmptySearchIncludingChildren() = runBlocking {
+        fun component(id: String, name: String, query: String) = com.click.lightmemo.domain.FoodComponent(
+            id, name, query, source = com.click.lightmemo.domain.ComponentSource.VISIBLE,
+            estimatedWeightG = 50.0, weightMinG = 40.0, weightMaxG = 60.0, confidence = 0.9,
+            hasNutritionCandidates = false,
+        )
+        val review = component("review", "猪肉丸", "pork meatball cooked")
+        val absent = component("absent", "不存在的测试食物", "xyzabc")
+        val matched = component("matched", "熟猪肉片", "pork cooked")
+        val child = com.click.lightmemo.domain.RecognizedDish("child", "配菜",
+            com.click.lightmemo.domain.DishType.SINGLE_FOOD, 0.9, listOf(absent))
+        val dish = com.click.lightmemo.domain.RecognizedDish("dish", "肉丸猪肉汤",
+            com.click.lightmemo.domain.DishType.MIXED_DISH, 0.9, listOf(review, matched), children = listOf(child))
+        val meal = com.click.lightmemo.domain.MealRecognition(true, "午餐", listOf(dish), 0.9, emptyList())
+        val result = fixtureClient("pork\tPork, cooked\t239\t27\t0\t14\n").enrich(meal, "")
+            .dishes.single().allComponents.associateBy { it.id }
+        assertNull(result.getValue("review").nutritionReference)
+        assertEquals(true, result.getValue("review").hasNutritionCandidates)
+        assertNull(result.getValue("absent").nutritionReference)
+        assertEquals(false, result.getValue("absent").hasNutritionCandidates)
+        assertEquals("pork", result.getValue("matched").nutritionReference?.sourceId)
+        assertNull(result.getValue("matched").hasNutritionCandidates)
+    }
     @Test fun enrichmentRepairsAnIncompatibleExistingReferenceInsteadOfReusingIt() = runBlocking {
         val component = com.click.lightmemo.domain.FoodComponent(
             "water", "水", "water", source = com.click.lightmemo.domain.ComponentSource.VISIBLE,
@@ -29,7 +99,9 @@ class FoodDataCentralClientTest {
     private fun fixtureClient(
         usdaRows: String = "", onlineResponse: String = "{\"foods\":[]}", chinaRows: String = "",
         foundationRows: String = "", fnddsRows: String = "",
+        databases: suspend () -> com.click.lightmemo.data.NutritionDatabases = { com.click.lightmemo.data.NutritionDatabases() },
     ) = FoodDataCentralClient(
+        databases = databases,
         openAsset = { name -> when (name) {
             "fdc_sr_legacy_macros.tsv" -> "id\tdescription\tkcal\tprotein\tcarbs\tfat\n$usdaRows".byteInputStream()
             "fdc_foundation_macros.tsv" -> "id\tdescription\tkcal\tprotein\tcarbs\tfat\n$foundationRows".byteInputStream()

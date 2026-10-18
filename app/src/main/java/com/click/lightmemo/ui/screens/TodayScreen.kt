@@ -519,8 +519,9 @@ private fun FoodCard(
     onLongPress: () -> Unit,
     onToggleSelection: () -> Unit,
 ) {
-    val portionBaseEntry = remember(entry.id, cardCacheVersion) { entry }
-    val portionScaleState = remember(entry.id, cardCacheVersion) {
+    // Edits keep the same ID, so refresh the portion baseline when record content changes.
+    val portionBaseEntry = remember(entry, cardCacheVersion) { entry }
+    val portionScaleState = remember(entry, cardCacheVersion) {
         mutableFloatStateOf(draftEntry?.portionScaleFrom(entry) ?: 1f)
     }
     val displayedEntry = portionBaseEntry.scaledForPortion(portionScaleState.floatValue)

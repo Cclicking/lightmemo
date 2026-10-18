@@ -454,6 +454,9 @@ fun FoodAppRoot() {
                                         android.content.Intent(
                                             context,
                                             com.click.lightmemo.ui.secondary.ManageFoodCardsActivity::class.java,
+                                        ).putExtra(
+                                            com.click.lightmemo.ui.secondary.ManageFoodCardsActivity.EXTRA_DATE_EPOCH_DAY,
+                                            selectedDate.toEpochDay(),
                                         ),
                                     )
                                 },

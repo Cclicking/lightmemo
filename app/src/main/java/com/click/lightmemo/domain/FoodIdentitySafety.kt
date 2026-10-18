@@ -45,6 +45,8 @@ internal object FoodIdentitySafety {
         "牛奶" to "milk", "纯牛奶" to "milk", "全脂牛奶" to "milk", "酸奶" to "yogurt", "风味酸牛奶" to "yogurt",
         "水" to "water", "冰块" to "water", "冰" to "water", "食用油" to "oil", "植物油" to "oil",
         "汉堡胚" to "bun", "汉堡面包" to "bun", "汉堡面包胚" to "bun",
+        "绿豆芽" to "mungbeansprout", "黄豆芽" to "soybeansprout",
+        "猪肉丸" to "porkmeatball", "猪肉丸子" to "porkmeatball", "牛肉丸" to "beefmeatball", "鱼丸" to "fishmeatball",
     )
 
     private fun normalized(value: String) = value.lowercase(java.util.Locale.ROOT)
@@ -72,6 +74,15 @@ internal object FoodIdentitySafety {
         var head = boundary.split(normalized(value), limit = 2).first()
         compounds.forEach { (phrase, id) -> head = head.replace(phrase, id) }
         val words = head.split(' ')
+        if (words.any { it in setOf("sprout", "sprouts", "sprouted") }) {
+            if ("mung" in words && "bean" in words) return "mungbeansprout"
+            if ("soybean" in words || "soy" in words && "bean" in words) return "soybeansprout"
+            if ("bean" in words) return "beansprout"
+        }
+        if ("meatball" in words) {
+            if (words.any { it in setOf("meatless", "vegetarian", "mock") }) return "plantbasedmeatball"
+            return words.firstOrNull { it in setOf("pork", "beef", "chicken", "fish") }.orEmpty() + "meatball"
+        }
         if ("sweetpotato" in words && "leaf" in words) return "sweetpotatoleaf"
         // Form defines the food, even when a species is also present (pork sausage, egg custard).
         if (words.any { it in setOf("sausage", "frankfurter", "bratwurst", "bologna") }) return "sausage"
@@ -97,7 +108,8 @@ internal object FoodIdentitySafety {
         if (requested == "water" && (normalized(query).split(' ').filter(String::isNotBlank).toSet() - plainWaterWords).isEmpty() &&
             (normalized(description).split(' ').toSet() - plainWaterWords).isNotEmpty()) return false
         // A soy sauce is a sauce, but plain soy sauce must not become an arbitrary sauce.
-        return requested == actual || requested == "sauce" && actual == "soysauce"
+        return requested == actual || requested == "sauce" && actual == "soysauce" ||
+            requested == "beansprout" && actual in setOf("mungbeansprout", "soybeansprout")
     }
 
     fun allowsReference(component: FoodComponent, reference: NutritionReference): Boolean {

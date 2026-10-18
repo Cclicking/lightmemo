@@ -69,6 +69,10 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setSystemBackground(value: String) = saveSetting { repo.updateSystemBackground(value) }
 
+    fun setNutritionDatabase(database: com.click.lightmemo.data.NutritionDatabase, enabled: Boolean) = saveSetting {
+        repo.updateNutritionDatabase(database, enabled)
+    }
+
     fun setFoodDataCentralApiKey(value: String) = saveSetting {
         repo.updateFoodDataCentralApiKey(value)
     }

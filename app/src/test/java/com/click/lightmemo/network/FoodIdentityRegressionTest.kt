@@ -7,6 +7,36 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class FoodIdentityRegressionTest {
+    @Test fun beanSproutNamesAndInflectionsFindMatchingRawAndCookedReferences() = runBlocking {
+        val assets = File(requireNotNull(System.getProperty("food.assets")))
+        val db = FoodDataCentralClient({ File(assets, it).inputStream() }, { assets.list().orEmpty() })
+        val cases = listOf(
+            Triple("绿豆芽", "绿豆芽", setOf("042206")),
+            Triple("mung bean sprouts raw", "绿豆芽", setOf("169957", "042206")),
+            Triple("mung bean sprouts cooked", "绿豆芽（熟）", setOf("168499", "169137", "169138")),
+            Triple("bean sprouts cooked", "绿豆芽", setOf("168499", "169137", "169138")),
+            Triple("mung bean sprouts boiled cooked", "绿豆芽（煮）", setOf("168499", "169137")),
+            Triple("mung bean sprouts stir-fried cooked", "炒绿豆芽", setOf("169138")),
+            Triple("绿豆芽（熟）", "绿豆芽（熟）", setOf("168499", "169137", "169138")),
+        )
+        cases.forEach { (query, chinese, ids) ->
+            val selected = db.lookup(query, "", chinese, "绿豆芽")
+            assertTrue("$query / $chinese -> $selected", selected?.sourceId in ids)
+        }
+        assertFalse(FoodSearchMatching.englishMatch("mung bean sprouts cooked", "Mung beans, mature seeds, cooked, boiled").canAutoAccept)
+        assertFalse(FoodSearchMatching.englishMatch("mung bean cooked", "Mung beans, sprouted, cooked").canAutoAccept)
+        assertFalse(FoodSearchMatching.englishMatch("mung bean sprouts cooked", "Soybean sprouts cooked").canAutoAccept)
+    }
+
+    @Test fun porkCannotAutomaticallyStandInForPorkMeatballs() = runBlocking {
+        assertFalse(FoodSearchMatching.englishMatch("pork", "Pork meatballs, cooked").canAutoAccept)
+        assertFalse(FoodSearchMatching.englishMatch("pork meatballs cooked", "Pork, cooked").canAutoAccept)
+        val assets = File(requireNotNull(System.getProperty("food.assets")))
+        val db = FoodDataCentralClient({ File(assets, it).inputStream() }, { assets.list().orEmpty() })
+        assertNull(db.lookup("pork meatballs cooked", "", "猪肉丸", "猪肉丸"))
+        assertNull(db.lookup("pork cooked", "", "猪肉丸", "猪肉丸"))
+        assertNotNull(db.lookup("pork cooked", "", "熟猪肉片", "熟猪肉片"))
+    }
     @Test fun ingredientMentionsAndDifferentFoodFormsNeverAuthorizeAutomaticMatching() {
         val pairs = listOf(
             "water" to "Ham, water added", "vegetable oil" to "Fast foods, potato, fried in vegetable oil",

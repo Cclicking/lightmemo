@@ -245,17 +245,22 @@ fun ComponentResultRow(
                 } ?: Modifier,
             )
             val ref = component.nutritionReference
+            val noCandidates = ref == null && component.hasNutritionCandidates == false
+            val highCalories = component.needsCalorieConfirmation
             Text(
-                text = ref?.let {
+                text = if (highCalories) "需确认" else ref?.let {
                     when {
                         it.dataType.contains("AI估算") -> "来自 AI 估算 · 仅供参考"
                         it.dataType.contains("中国") -> "来自 中国食物成分表 #${it.sourceId}"
                         else -> "来自 USDA #${it.sourceId}"
                     }
-                } ?: "未匹配到营养数据",
+                } ?: if (noCandidates) "未匹配到营养数据" else "需确认",
                 style = MiuixTheme.textStyles.footnote2,
-                color = if (ref == null) MiuixTheme.colorScheme.error
-                else MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                color = when {
+                    noCandidates -> MiuixTheme.colorScheme.error
+                    ref == null || highCalories -> MiuixTheme.colorScheme.primary
+                    else -> MiuixTheme.colorScheme.onSurfaceVariantSummary
+                },
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )

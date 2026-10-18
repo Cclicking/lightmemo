@@ -15,6 +15,33 @@ import org.junit.Rule
 import org.junit.rules.TemporaryFolder
 
 class SettingsRepositoryTest {
+    @Test fun databaseSwitchesPersistIndependentlyAndRoundTripInBackup() = runBlocking {
+        val file = folder.newFolder().resolve("database-switches.preferences_pb").toOkioPath()
+        suspend fun useStore(block: suspend (SettingsRepository) -> Unit) {
+            val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+            val store = PreferenceDataStoreFactory.create(scope = scope,
+                storage = OkioStorage(FileSystem.SYSTEM, PreferencesSerializer) { file })
+            try { block(SettingsRepository(store)) }
+            finally { scope.coroutineContext[Job]!!.cancelAndJoin() }
+        }
+        useStore { repo ->
+            assertEquals(NutritionDatabases(), repo.settings.first().nutritionDatabases)
+            repo.updateNutritionDatabase(NutritionDatabase.FOUNDATION, false)
+            repo.updateNutritionDatabase(NutritionDatabase.ONLINE, false)
+        }
+        useStore { repo ->
+            val expected = NutritionDatabases(foundation = false, online = false)
+            assertEquals(expected, repo.settings.first().nutritionDatabases)
+            val backup = repo.exportBackupJson()
+            repo.updateNutritionDatabase(NutritionDatabase.FOUNDATION, true)
+            repo.importBackupJson(backup.getJSONObject("settings"), backup.getJSONArray("foodPresets"))
+            assertEquals(expected, repo.settings.first().nutritionDatabases)
+            backup.getJSONObject("settings").remove("nutritionDatabases")
+            repo.importBackupJson(backup.getJSONObject("settings"), backup.getJSONArray("foodPresets"))
+            assertEquals(NutritionDatabases(), repo.settings.first().nutritionDatabases)
+        }
+    }
+
     @Test fun onboardingResumesAndDoesNotTreatItsOwnProgressAsAnUpgrade() = runBlocking {
         val file = folder.newFolder().resolve("onboarding.preferences_pb").toOkioPath()
         suspend fun useStore(block: suspend (SettingsRepository) -> Unit) {

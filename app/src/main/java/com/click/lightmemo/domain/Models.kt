@@ -66,9 +66,15 @@ data class FoodComponent(
     val confidence: Double,
     val needsConfirmation: Boolean = false,
     val nutritionReference: NutritionReference? = null,
+    // Only false means a completed search found no candidates; null is unverified/legacy data.
+    val hasNutritionCandidates: Boolean? = null,
 ) {
     val nutrition: Nutrition
         get() = nutritionReference?.per100g?.times(estimatedWeightG / 100.0) ?: Nutrition()
+
+    /** Check this portion's calories, recalculating after weight or reference changes. */
+    val needsCalorieConfirmation: Boolean
+        get() = nutrition.caloriesKcal > 800.0
 
     val nutritionMin: Nutrition
         get() = nutritionReference?.per100g?.times(weightMinG / 100.0) ?: Nutrition()
