@@ -69,6 +69,7 @@ data class RecognitionTaskRecord(
     val modelCallCount: Int = 0,
     val durationMillis: Long = 0,
     val cacheReused: Boolean = false,
+    val phaseDurationsMs: Map<String, Long> = emptyMap(),
 )
 
 /** Process-safe handoff between the foreground service and the screen ViewModel. */
@@ -103,6 +104,7 @@ class RecognitionTaskStore(context: Context) {
         modelCallCount: Int = 0,
         durationMillis: Long = 0,
         cacheReused: Boolean = false,
+        phaseDurationsMs: Map<String, Long> = emptyMap(),
     ) {
         update(taskId) {
             it.copy(
@@ -117,23 +119,29 @@ class RecognitionTaskStore(context: Context) {
                 modelCallCount = modelCallCount,
                 durationMillis = durationMillis,
                 cacheReused = cacheReused,
+                phaseDurationsMs = phaseDurationsMs,
                 updatedAtMillis = System.currentTimeMillis(),
             )
         }
     }
 
-    fun fail(taskId: String, message: String) {
+    fun fail(taskId: String, message: String, phaseDurationsMs: Map<String, Long> = emptyMap(), durationMillis: Long = 0) {
         update(taskId) {
             it.copy(
                 status = RecognitionTaskStatus.FAILED,
                 error = message,
+                phaseDurationsMs = phaseDurationsMs,
+                durationMillis = durationMillis,
                 updatedAtMillis = System.currentTimeMillis(),
             )
         }
     }
 
-    fun awaitCacheConfirmation(taskId: String) {
-        update(taskId) { it.copy(status = RecognitionTaskStatus.AWAITING_CACHE_CONFIRMATION) }
+    fun awaitCacheConfirmation(taskId: String, preparedImageUri: String? = null) {
+        update(taskId) { it.copy(
+            status = RecognitionTaskStatus.AWAITING_CACHE_CONFIRMATION,
+            request = if (preparedImageUri == null) it.request else it.request.copy(imageUri = preparedImageUri),
+        ) }
     }
 
     fun clear(taskId: String? = null) {

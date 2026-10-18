@@ -120,19 +120,30 @@ class RecognitionService : Service() {
             return START_NOT_STICKY
         }
 
-        val metrics = RecognitionDiagnostics()
+        val logs = app.recognitionLogRepository
+        val metrics = RecognitionDiagnostics(log = logs::record,
+            logEnabled = { logs.state.value.loading || logs.state.value.snapshot.enabled })
         taskJob = serviceScope.launch(metrics) {
+            var cancelled = false
+            metrics.logEvent(RecognitionLogKind.TASK_START)
             try {
                 execute(request)
             } catch (error: CancellationException) {
+                cancelled = true
                 throw error
             } catch (error: Exception) {
                 metrics.outcome = false
                 val message = userFacingRecognitionError(error)
                 if (isCurrentTask(request.id)) {
-                    app.recognitionTaskStore.fail(request.id, message)
+                    app.recognitionTaskStore.fail(request.id, message, metrics.phaseDurationsMillis(), metrics.elapsedMillis())
                 }
             } finally {
+                metrics.logEvent(RecognitionLogKind.TASK_END, durationMs = metrics.elapsedMillis(), result = when {
+                    cancelled -> RecognitionLogResult.CANCELLED
+                    metrics.outcome == true -> RecognitionLogResult.SUCCESS
+                    metrics.outcome == false -> RecognitionLogResult.FAILED
+                    else -> RecognitionLogResult.WAITING
+                })
                 metrics.completedDelta()?.let { app.diagnosticsRepository.recordSafely(it) }
                 // A canceled/replaced task must not stop the newer task that now owns the service.
                 if (isCurrentTask(request.id) &&
@@ -172,6 +183,16 @@ class RecognitionService : Service() {
 
         val client = app.recognitionClient
         val nutritionDatabase = app.nutritionDatabase
+        val manualResolver = ManualNutritionResolver(
+            lookupOffline = { name -> nutritionDatabase.lookupOffline(name, chineseQuery = name, originalName = name) },
+            normalize = { name -> client.normalizeFoodQuery(settings.baseUrl, settings.apiKey, settings.model, name) },
+            lookupNormalized = { query, name ->
+                nutritionDatabase.lookup(query, settings.foodDataCentralApiKey, chineseQuery = name, originalName = name)
+            },
+            estimateGrams = { name, portions, hint ->
+                client.estimatePortionGrams(settings.baseUrl, settings.apiKey, settings.model, name, portions, hint)
+            },
+        )
         val userDescription = buildList {
             settings.systemBackground.takeIf { it.isNotBlank() }?.let { add("用户背景：$it") }
             request.foodName?.takeIf { it.isNotBlank() }?.let { add("用户指定食物名称：$it") }
@@ -187,14 +208,8 @@ class RecognitionService : Service() {
                 val foodName = request.foodName ?: throw RecognitionException("食物名称为空")
                 val grams = request.grams ?: throw RecognitionException("食物重量为空")
                 updateStage(request, RecognitionStage.RECOGNIZING)
-                val query = client.normalizeFoodQuery(
-                    baseUrl = settings.baseUrl,
-                    apiKey = settings.apiKey,
-                    model = settings.model,
-                    foodName = foodName,
-                )
+                val reference = manualResolver.resolve(foodName)
                 updateStage(request, RecognitionStage.MATCHING)
-                val reference = nutritionDatabase.lookup(query, settings.foodDataCentralApiKey, chineseQuery = foodName)
                 complete(
                     request,
                     manualNutrition = reference?.per100g?.times(grams / 100.0) ?: Nutrition(),
@@ -205,22 +220,10 @@ class RecognitionService : Service() {
                 val foodName = request.foodName ?: throw RecognitionException("食物名称为空")
                 val portions = request.portions ?: throw RecognitionException("份数为空")
                 updateStage(request, RecognitionStage.RECOGNIZING)
-                val grams = client.estimatePortionGrams(
-                    baseUrl = settings.baseUrl,
-                    apiKey = settings.apiKey,
-                    model = settings.model,
-                    foodName = foodName,
-                    portions = portions,
-                    portionHint = request.portionHint,
-                )
-                val query = client.normalizeFoodQuery(
-                    baseUrl = settings.baseUrl,
-                    apiKey = settings.apiKey,
-                    model = settings.model,
-                    foodName = foodName,
-                )
+                val resolved = manualResolver.resolvePortions(foodName, portions, request.portionHint)
+                val grams = resolved.grams
                 updateStage(request, RecognitionStage.MATCHING)
-                val reference = nutritionDatabase.lookup(query, settings.foodDataCentralApiKey, chineseQuery = foodName)
+                val reference = resolved.reference
                 complete(
                     request,
                     manualNutrition = reference?.per100g?.times(grams / 100.0) ?: Nutrition(),
@@ -257,53 +260,67 @@ class RecognitionService : Service() {
                 val startedAt = android.os.SystemClock.elapsedRealtime()
                 val imageUri = request.imageUri ?: throw RecognitionException("图片地址为空")
                 updateStage(request, RecognitionStage.PREPARING)
-                val base64 = FoodImages.encode(this, android.net.Uri.parse(imageUri))
+                val preparedImage = measureRecognitionPhase(RecognitionPhase.IMAGE_PREPARE) {
+                    FoodImages.prepare(this, android.net.Uri.parse(imageUri)).also { it.recognitionFingerprint }
+                }
                 val cache = RecognitionImageCache(java.io.File(cacheDir, "recognition-results.json"))
-                val fingerprint = RecognitionImageCache.digest(base64)
+                val fingerprint = preparedImage.recognitionFingerprint
                 val contextKey = RecognitionImageCache.digest(json.encodeToString(listOf(
                     settings.baseUrl, settings.model, BuildConfig.VERSION_NAME,
                     json.encodeToString(settings.promptOverrides), userDescription, request.mealType.label,
                     request.plateSize, settings.foodDataCentralApiKey,
                 )))
-                val cached = cache.find(fingerprint, contextKey)
+                val cached = measureRecognitionPhase(RecognitionPhase.CACHE_READ) { cache.find(fingerprint, contextKey) }
                 if (cached != null && request.reuseImageCache == null) {
-                    app.recognitionTaskStore.awaitCacheConfirmation(request.id)
+                    val preparedUri = measureRecognitionPhase(RecognitionPhase.IMAGE_SAVE) {
+                        FoodImages.persistPrepared(this, preparedImage).toString()
+                    }
+                    app.recognitionTaskStore.awaitCacheConfirmation(request.id, preparedUri)
                     return
                 }
                 if (cached != null && request.reuseImageCache == true) {
                     val validated = nutritionDatabase.enrich(cached.result.withFreshIds(), settings.foodDataCentralApiKey)
                     complete(request, result = validated,
-                        imageUri = FoodImages.persistEncoded(this, base64).toString(), path = cached.path,
+                        imageUri = measureRecognitionPhase(RecognitionPhase.IMAGE_SAVE) {
+                            FoodImages.persistPrepared(this, preparedImage).toString()
+                        }, path = cached.path,
                         cacheReused = true, durationMillis = android.os.SystemClock.elapsedRealtime() - startedAt)
                     return
                 }
-                val memories = try {
-                    app.personalFoodMemoryRepository.readAll()
-                } catch (error: CancellationException) { throw error
-                } catch (_: Exception) { emptyList() }
                 var path = RecognitionPath.FULL
                 var modelCalls = 0
                 // Custom prompts and serving descriptions retain the full requested workflow.
-                val strategy = RecognitionStrategy(memories, customPrompts = settings.promptOverrides.isNotEmpty(),
-                    multipleServings = servingCountFor(request.selectedTags) != null,
-                    explicitDescription = !request.foodName.isNullOrBlank() || request.note.isNotBlank() || request.selectedTags.isNotEmpty())
-                val visualResult = client.recognize(
-                    baseUrl = settings.baseUrl,
-                    apiKey = settings.apiKey,
-                    model = settings.model,
-                    imageBase64 = base64,
-                    mimeType = "image/jpeg",
-                    userDescription = userDescription,
-                    mealType = request.mealType.label,
-                    plateSize = request.plateSize,
-                    onStage = { stage -> updateStage(request, stage) },
-                    onModelCall = { modelCalls++ },
-                    fastResult = { visual ->
-                        try {
-                            strategy.fastResult(visual)?.also { path = RecognitionPath.FAST; metrics?.path = path }
-                        } catch (_: Exception) { null }
+                val preparedRecognition = recognizeWithPreparation(
+                    loadMemories = {
+                        measureRecognitionPhase(RecognitionPhase.MEMORY_READ) { app.personalFoodMemoryRepository.readAll() }
                     },
-                )
+                    createStrategy = { memories ->
+                        RecognitionStrategy(memories,
+                            customPrompts = settings.promptOverrides.isNotEmpty(),
+                            multipleServings = servingCountFor(request.selectedTags) != null,
+                            explicitDescription = !request.foodName.isNullOrBlank() || request.note.isNotBlank() || request.selectedTags.isNotEmpty())
+                    },
+                    prefetchOffline = { initial -> nutritionDatabase.prefetchOffline(initial, settings.foodDataCentralApiKey) },
+                ) { fastResult, onInitialResult ->
+                    client.recognize(
+                        baseUrl = settings.baseUrl,
+                        apiKey = settings.apiKey,
+                        model = settings.model,
+                        imageBase64 = preparedImage.base64,
+                        mimeType = "image/jpeg",
+                        userDescription = userDescription,
+                        mealType = request.mealType.label,
+                        plateSize = request.plateSize,
+                        onStage = { stage -> updateStage(request, stage) },
+                        onModelCall = { modelCalls++ },
+                        fastResult = fastResult,
+                        onInitialResult = onInitialResult,
+                        promptSnapshot = settings.promptOverrides,
+                    )
+                }
+                val visualResult = preparedRecognition.result
+                val strategy = preparedRecognition.strategy
+                if (preparedRecognition.fast) path = RecognitionPath.FAST
                 if (!visualResult.isFoodImage || visualResult.dishes.isEmpty()) {
                     throw RecognitionException("图片中没有识别到可记录的食物")
                 }
@@ -316,9 +333,13 @@ class RecognitionService : Service() {
                 val enriched = if (path == RecognitionPath.FAST) assisted else nutritionDatabase.enrich(assisted, settings.foodDataCentralApiKey)
                 val result = enriched.splitDishes()
                     .scaledForServing(servingCountFor(request.selectedTags) ?: 1.0)
-                val savedImageUri = FoodImages.persistEncoded(this, base64).toString()
-                runCatching { cache.put(CachedRecognition(fingerprint, contextKey, result, System.currentTimeMillis(),
-                    settings.model, BuildConfig.VERSION_NAME, path)) }
+                val savedImageUri = measureRecognitionPhase(RecognitionPhase.IMAGE_SAVE) {
+                    FoodImages.persistPrepared(this, preparedImage).toString()
+                }
+                runCatching { measureRecognitionPhase(RecognitionPhase.CACHE_WRITE) {
+                    cache.put(CachedRecognition(fingerprint, contextKey, result, System.currentTimeMillis(),
+                        settings.model, BuildConfig.VERSION_NAME, path))
+                } }
                 complete(request, result = result, imageUri = savedImageUri, path = path,
                     modelCallCount = modelCalls, durationMillis = android.os.SystemClock.elapsedRealtime() - startedAt)
             }
@@ -379,6 +400,7 @@ class RecognitionService : Service() {
             modelCallCount = metrics?.modelCalls ?: modelCallCount,
             durationMillis = metrics?.elapsedMillis() ?: durationMillis,
             cacheReused = cacheReused,
+            phaseDurationsMs = metrics?.phaseDurationsMillis().orEmpty(),
         )
     }
 

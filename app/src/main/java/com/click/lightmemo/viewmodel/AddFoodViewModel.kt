@@ -364,6 +364,7 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
 
     fun selectComponentReference(componentId: String, query: String, reference: NutritionReference) {
         val step = _uiState.value.step as? AddStep.Review ?: return
+        componentSearch.cancel()
         val search = _uiState.value.databaseSearch
         val replacementName = query.trim().takeIf {
             search?.replaceComponentName == true && it.isNotBlank()

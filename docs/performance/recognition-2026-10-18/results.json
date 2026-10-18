@@ -1,0 +1,151 @@
+{
+  "javaVersion": "21.0.12.1",
+  "os": "Windows 11",
+  "processors": 20,
+  "cases": [
+    {
+      "name": "离线首次匹配（6 组，含库加载）",
+      "samples": 5,
+      "beforeMedianMs": 493.2288,
+      "afterMedianMs": 142.2686,
+      "beforeP95Ms": 511.2196,
+      "afterP95Ms": 145.9044,
+      "beforeSamplesMs": [
+        511.2196,
+        493.2288,
+        489.5967,
+        496.6164,
+        487.9291
+      ],
+      "afterSamplesMs": [
+        143.1354,
+        142.2686,
+        145.9044,
+        139.7152,
+        137.7466
+      ],
+      "beforeRequests": "0",
+      "afterRequests": "0"
+    },
+    {
+      "name": "离线候选搜索（12 组，库与索引已加载）",
+      "samples": 9,
+      "beforeMedianMs": 975.9233,
+      "afterMedianMs": 30.2066,
+      "beforeP95Ms": 985.8047,
+      "afterP95Ms": 31.5062,
+      "beforeSamplesMs": [
+        981.7164,
+        968.7602,
+        985.8047,
+        969.3187,
+        969.0528,
+        975.9233,
+        985.4315,
+        973.8665,
+        982.9966
+      ],
+      "afterSamplesMs": [
+        31.5062,
+        30.4872,
+        30.3739,
+        29.3626,
+        29.728,
+        30.2066,
+        28.9853,
+        30.1297,
+        31.5015
+      ],
+      "beforeRequests": "0",
+      "afterRequests": "0"
+    },
+    {
+      "name": "整餐离线匹配（12 组成，6 个不同查询）",
+      "samples": 9,
+      "beforeMedianMs": 503.8997,
+      "afterMedianMs": 11.3819,
+      "beforeP95Ms": 510.0326,
+      "afterP95Ms": 15.2419,
+      "beforeSamplesMs": [
+        500.3963,
+        504.7854,
+        497.9194,
+        503.8997,
+        505.0529,
+        510.0326,
+        504.4578,
+        493.0917,
+        503.4238
+      ],
+      "afterSamplesMs": [
+        11.3842,
+        15.2419,
+        11.3819,
+        10.7313,
+        13.0747,
+        10.8352,
+        10.2207,
+        11.3325,
+        12.7373
+      ],
+      "beforeRequests": "0",
+      "afterRequests": "0"
+    },
+    {
+      "name": "整餐在线回退（8 组成，每次 HTTP 模拟 120ms）",
+      "samples": 5,
+      "beforeMedianMs": 1987.618,
+      "afterMedianMs": 248.4044,
+      "beforeP95Ms": 1989.2508,
+      "afterP95Ms": 249.9582,
+      "beforeSamplesMs": [
+        1989.2508,
+        1980.3877,
+        1988.1784,
+        1980.8055,
+        1987.618
+      ],
+      "afterSamplesMs": [
+        243.3129,
+        247.2826,
+        249.9582,
+        248.5433,
+        248.4044
+      ],
+      "beforeRequests": "16",
+      "afterRequests": "4"
+    },
+    {
+      "name": "文字识别核心流程（模型 150ms＋数据库 HTTP 120ms，均模拟）",
+      "samples": 5,
+      "beforeMedianMs": 2139.628,
+      "afterMedianMs": 403.9174,
+      "beforeP95Ms": 2146.7542,
+      "afterP95Ms": 406.9051,
+      "beforeSamplesMs": [
+        2139.628,
+        2146.7542,
+        2136.7744,
+        2138.9559,
+        2141.6822
+      ],
+      "afterSamplesMs": [
+        406.9051,
+        399.7695,
+        403.9174,
+        404.7933,
+        402.425
+      ],
+      "beforeRequests": "17",
+      "afterRequests": "5"
+    }
+  ],
+  "notes": [
+    "每组先预热两轮，随后交替先运行基线/当前版；冷加载项每次新建客户端，包含离线库与索引初始化。",
+    "候选搜索没有查询结果缓存；整餐离线匹配在计时前加载库/索引，但查询缓存为空。",
+    "在线回退使用 8 个组成、4 个不同的未知查询；返回空 foods，单次 HTTP 固定等待 120ms。",
+    "文字核心流程增加一次 150ms 模型响应与真实 JSON 解析；不含 Android Service、页面展示和磁盘保存。",
+    "原版源文件由 git show 提取，仅重命名类型以与当前实现共存；数据库资产相同。"
+  ],
+  "baselineCommit": "d7c98c0f39920bfc91f76cf1048dacdd47503764"
+}

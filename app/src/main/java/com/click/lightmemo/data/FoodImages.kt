@@ -11,13 +11,22 @@ import android.util.Base64
 import androidx.core.content.FileProvider
 import java.io.ByteArrayOutputStream
 import java.io.File
-import java.security.MessageDigest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 internal object FoodImages {
     /** ImageDecoder applies EXIF orientation while decoding only the requested size. */
     suspend fun encode(context: Context, uri: Uri): String = withContext(Dispatchers.IO) {
+        prepare(context, uri).base64
+    }
+
+    suspend fun prepare(context: Context, uri: Uri): PreparedFoodImage = withContext(Dispatchers.IO) {
+        // App-private stored images are already normalized JPEGs. Re-encoding would both waste
+        // work and change their bytes, preventing an exact result-cache hit after confirmation.
+        if (isStored(context, uri)) {
+            return@withContext PreparedFoodImage(context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                ?: error("无法读取已保存的图片"))
+        }
         val bitmap = ImageDecoder.decodeBitmap(ImageDecoder.createSource(context.contentResolver, uri)) { decoder, info, _ ->
             val scale = (1024.0 / maxOf(info.size.width, info.size.height)).coerceAtMost(1.0)
             decoder.setTargetSize(
@@ -29,7 +38,7 @@ internal object FoodImages {
         try {
             val output = ByteArrayOutputStream()
             check(bitmap.compress(Bitmap.CompressFormat.JPEG, 85, output)) { "图片压缩失败" }
-            Base64.encodeToString(output.toByteArray(), Base64.NO_WRAP)
+            PreparedFoodImage(output.toByteArray())
         } finally {
             bitmap.recycle()
         }
@@ -42,7 +51,7 @@ internal object FoodImages {
      */
     suspend fun persist(context: Context, uri: Uri): Uri {
         if (isStored(context, uri)) return uri
-        return persistEncoded(context, encode(context, uri))
+        return persistPrepared(context, prepare(context, uri))
     }
 
     /** Copy a captured image into the system gallery and return its MediaStore URI. */
@@ -88,12 +97,13 @@ internal object FoodImages {
     }
 
     suspend fun persistEncoded(context: Context, encoded: String): Uri = withContext(Dispatchers.IO) {
-        val bytes = Base64.decode(encoded, Base64.NO_WRAP)
-        val digest = MessageDigest.getInstance("SHA-256").digest(bytes)
-            .joinToString("") { "%02x".format(it) }
+        persistPrepared(context, PreparedFoodImage(Base64.decode(encoded, Base64.NO_WRAP)))
+    }
+
+    suspend fun persistPrepared(context: Context, image: PreparedFoodImage): Uri = withContext(Dispatchers.IO) {
         val directory = File(context.filesDir, INTERNAL_DIRECTORY).apply { mkdirs() }
-        val file = File(directory, "$digest.jpg")
-        if (!file.exists()) file.writeBytes(bytes)
+        val file = File(directory, "${image.contentHash}.jpg")
+        if (!file.exists()) image.writeTo(file)
         FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
     }
 

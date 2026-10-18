@@ -7,6 +7,10 @@ internal data class FoodSearchMatch(val score: Double, val canAutoAccept: Boolea
 
 internal object FoodSearchMatching {
     private val englishPunctuation = Regex("[^a-z0-9]+")
+    private val meatballs = Regex("\\b(pork|beef|chicken|fish) balls?\\b")
+    private val restrictedPreparations = listOf("fat free", "nonfat", "fatfree", "low calorie", "reduced calorie", "reduced fat", "light", "diet")
+        .map { Regex("\\b$it\\b") }
+    private val saltedSkin = Regex("\\bskin (?:with|without) salt$")
     private val chinesePunctuation = Regex("[^\\p{L}\\p{N}]+")
     private val brackets = Regex("[（(【［\\[]([^）)】］\\]]+)[）)】］\\]]")
     private val aliasBrackets = setOf('[', '［', '【')
@@ -62,6 +66,7 @@ internal object FoodSearchMatching {
         "水煮" to "boiled", "炒" to "fried", "煎" to "fried", "油炸" to "fried",
         "炸" to "fried", "烤" to "roasted", "干制" to "dried",
     )
+    private val cookingPrefixes = chineseStates.keys.sortedByDescending { it.length }
     // Exact identities only: a substring such as 鸡蛋 in 鸡蛋面 must never translate to egg.
     private val bilingualNames = mapOf(
         "米饭" to "rice cooked", "白米饭" to "rice white cooked", "大米" to "rice raw",
@@ -85,7 +90,7 @@ internal object FoodSearchMatching {
         "skim", "nonfat", "skinless", "boneless", "sweetened", "unsweetened")
 
     fun english(value: String): String = value.lowercase(java.util.Locale.ROOT)
-        .replace(Regex("\\b(pork|beef|chicken|fish) balls?\\b"), "$1 meatball")
+        .replace(meatballs, "$1 meatball")
         .replace("stir-fried", "fried").replace("stir fried", "fried")
         .replace("green onions", "scallion").replace("green onion", "scallion")
         .replace(englishPunctuation, " ").trim().split(' ')
@@ -102,6 +107,9 @@ internal object FoodSearchMatching {
         val identityText = distinctEnglishFoods.fold(value) { text, (phrase, identity) -> text.replace(phrase, identity) }
         return identityText.split(' ').filter { it.isNotBlank() }.map { if (it == "mandarin") "tangerine" else it }.toSet()
     }
+
+    /** A positive English score requires overlap in these exact normalized identity terms. */
+    fun englishRecallTerms(value: String): Set<String> = terms(english(value)) - states
 
     fun englishQueries(inputs: List<String>): List<String> = inputs.flatMap { input ->
         if (input.none { it in '\u4e00'..'\u9fff' }) listOf(english(input).let { if (it == "ice") "water" else it }) else {
@@ -166,7 +174,7 @@ internal object FoodSearchMatching {
         val identity = wanted - states
         val overlap = identity.intersect(actual).size
         if (identity.isEmpty() || overlap == 0) return FoodSearchMatch(0.0, false)
-        val safe = FoodIdentitySafety.agrees(normalizedQuery, normalizedDescription) && actual.containsAll(identity) &&
+        val safe = actual.containsAll(identity) && FoodIdentitySafety.agrees(normalizedQuery, normalizedDescription) &&
             preparationAgrees(normalizedQuery, normalizedDescription) &&
             compatible(wanted.intersect(states), actual.intersect(states), requireState = true) &&
             (actual.intersect(transformedFoods) - wanted).isEmpty() &&
@@ -183,11 +191,10 @@ internal object FoodSearchMatching {
     private fun preparationAgrees(query: String, description: String): Boolean {
         val unwantedForms = setOf("breaded", "battered", "candied", "cured", "industrial", "platter", "restaurant", "sandwich")
         if ((terms(description).intersect(unwantedForms) - terms(query)).isNotEmpty()) return false
-        val restricted = listOf("fat free", "nonfat", "fatfree", "low calorie", "reduced calorie", "reduced fat", "light", "diet")
-        if (restricted.any { Regex("\\b$it\\b").containsMatchIn(description) && !Regex("\\b$it\\b").containsMatchIn(query) }) return false
+        if (restrictedPreparations.any { it.containsMatchIn(description) && !it.containsMatchIn(query) }) return false
         // USDA distinguishes the skin itself from flesh cooked in its skin.
         if ("skin" !in terms(query) && ("skin only" in description ||
-                Regex("\\bskin (?:with|without) salt$").containsMatchIn(description) && "flesh" !in terms(description))) return false
+                saltedSkin.containsMatchIn(description) && "flesh" !in terms(description))) return false
         return true
     }
 
@@ -202,7 +209,7 @@ internal object FoodSearchMatching {
 
     private fun cookingPrefix(value: String): String? {
         if (intrinsicPrefixNames.any { value.startsWith(it) }) return null
-        return chineseStates.keys.sortedByDescending { it.length }.firstOrNull {
+        return cookingPrefixes.firstOrNull {
             value.startsWith(it) && value.length > it.length
         }
     }
@@ -233,24 +240,76 @@ internal object FoodSearchMatching {
             .filter { it.isNotBlank() }.distinct()
     }
 
-    fun chineseMatch(query: String, name: String, englishQuery: String = "", englishName: String = ""): FoodSearchMatch {
-        if (query.none { it in '\u4e00'..'\u9fff' }) return FoodSearchMatch(0.0, false)
-        val requested = chineseIdentities(query, stripShape = true).flatMap { listOf(it) + chineseQueryAliases[it].orEmpty() }.distinct()
-        val actual = chineseIdentities(name)
+    data class ChineseQuery(
+        val identities: List<String>, val pairs: List<Set<String>>, val cookingStates: Set<String>, val english: String,
+    )
+
+    data class ChineseFood(
+        val identities: List<String>, val primaryPairs: Set<String>, val cookingStates: Set<String>, val english: String,
+    ) {
+        val recallKeys: Set<String> = buildSet {
+            identities.forEach { add("exact:$it") }
+            primaryPairs.forEach { add("pair:$it") }
+            val primary = identities.firstOrNull().orEmpty()
+            primary.forEach { add("char:$it") }
+            if (primary.length == 1) add("single:$primary")
+            englishRecallTerms(english).forEach { add("en:$it") }
+        }
+    }
+
+    /** Positive Chinese recall is exact identity, primary-name containment or a shared bigram.
+     * Single-character names/queries need their own postings because they have no bigrams. */
+    fun chineseRecallKeys(queries: List<ChineseQuery>, englishQueries: List<String>): Set<String> = buildSet {
+        queries.forEach { query ->
+            query.identities.forEach { identity ->
+                add("exact:$identity")
+                if (identity.length == 1) add("char:$identity")
+                else identity.forEach { add("single:$it") }
+            }
+            query.pairs.forEach { pairs -> pairs.forEach { add("pair:$it") } }
+        }
+        englishQueries.flatMap { englishRecallTerms(it) }.forEach { add("en:$it") }
+    }
+
+    fun prepareChineseQuery(query: String, englishQuery: String = ""): ChineseQuery {
+        val requested = if (query.none { it in '\u4e00'..'\u9fff' }) emptyList() else
+            chineseIdentities(query, stripShape = true).flatMap { listOf(it) + chineseQueryAliases[it].orEmpty() }.distinct()
+        return ChineseQuery(requested, requested.map { it.windowed(2).toSet() },
+            chineseState(query) + terms(english(englishQuery)).intersect(states), englishQuery)
+    }
+
+    fun prepareChineseFood(name: String, englishName: String = ""): ChineseFood {
+        val identities = chineseIdentities(name)
+        return ChineseFood(identities, identities.firstOrNull().orEmpty().windowed(2).toSet(),
+            chineseState(name) + terms(english(englishName)).intersect(states), englishName)
+    }
+
+    fun requestedChineseStates(inputs: List<String>, queries: List<String>): Set<String> =
+        inputs.flatMap { chineseState(it) }.toSet() + queries.flatMap { terms(english(it)).intersect(states) }
+
+    fun chineseStatesAgree(requested: Set<String>, food: ChineseFood): Boolean =
+        compatible(requested, food.cookingStates, requireState = true)
+
+    fun chineseMatch(query: String, name: String, englishQuery: String = "", englishName: String = ""): FoodSearchMatch =
+        chineseMatch(prepareChineseQuery(query, englishQuery), prepareChineseFood(name, englishName))
+
+    fun chineseMatch(query: ChineseQuery, food: ChineseFood): FoodSearchMatch {
+        val requested = query.identities
+        if (requested.isEmpty()) return FoodSearchMatch(0.0, false)
+        val actual = food.identities
         val exact = requested.any { it in actual }
-        val score = if (exact) 2.0 - minOf(requested.indexOfFirst { it in actual }, 3) * 0.1 else requested.maxOfOrNull { q ->
+        val score = if (exact) 2.0 - minOf(requested.indexOfFirst { it in actual }, 3) * 0.1 else requested.indices.maxOfOrNull { index ->
+            val q = requested[index]
             // Aliases are whole names: a beef cut named 黄瓜条 must not be recalled as 黄瓜.
             actual.take(1).maxOfOrNull { c ->
                 if (q.contains(c) || c.contains(q)) minOf(q.length, c.length).toDouble() / maxOf(q.length, c.length)
-                else q.windowed(2).toSet().let { pairs ->
-                    if (pairs.isEmpty()) 0.0 else pairs.intersect(c.windowed(2).toSet()).size.toDouble() / pairs.size
+                else query.pairs[index].let { pairs ->
+                    if (pairs.isEmpty()) 0.0 else pairs.intersect(food.primaryPairs).size.toDouble() / pairs.size
                 }
             } ?: 0.0
         } ?: 0.0
-        val wantedState = chineseState(query) + terms(english(englishQuery)).intersect(states)
-        val actualState = chineseState(name) + terms(english(englishName)).intersect(states)
-        val englishIdentityAgrees = englishQuery.isBlank() || englishName.isBlank() ||
-            englishMatch(englishQuery, englishName).canAutoAccept
-        return FoodSearchMatch(score, exact && englishIdentityAgrees && compatible(wantedState, actualState, requireState = true))
+        val safe = exact && compatible(query.cookingStates, food.cookingStates, requireState = true) &&
+            (query.english.isBlank() || food.english.isBlank() || englishMatch(query.english, food.english).canAutoAccept)
+        return FoodSearchMatch(score, safe)
     }
 }

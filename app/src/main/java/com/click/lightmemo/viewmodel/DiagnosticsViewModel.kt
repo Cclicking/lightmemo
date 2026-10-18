@@ -25,6 +25,8 @@ data class DiagnosticsUiState(
 
 class DiagnosticsViewModel(app: Application) : AndroidViewModel(app) {
     private val repository = (app as FoodApp).diagnosticsRepository
+    private val logs = (app as FoodApp).recognitionLogRepository
+    val logState = logs.state
     val uiState = MutableStateFlow(DiagnosticsUiState())
     private var readJob: kotlinx.coroutines.Job? = null
     init { refresh() }
@@ -52,6 +54,18 @@ class DiagnosticsViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun clear() = perform { repository.clear(); "诊断统计已清空" }
+    fun setLogEnabled(enabled: Boolean) = perform {
+        logs.setEnabled(enabled)
+        if (enabled) "日志模式已开启，请重新执行一次识别" else "日志模式已关闭"
+    }
+    fun clearLogs() = perform { logs.clear(); "识别日志已清空" }
+    fun exportLogs(uri: Uri) = perform {
+        val text = logs.exportJson()
+        getApplication<Application>().contentResolver.openOutputStream(uri, "wt")?.bufferedWriter(Charsets.UTF_8)?.use {
+            it.write(text)
+        } ?: error("无法写入所选文件")
+        "识别日志已导出"
+    }
     fun consumeMessage() { uiState.update { it.copy(message = null) } }
     private fun perform(action: suspend () -> String) {
         if (uiState.value.busy) return

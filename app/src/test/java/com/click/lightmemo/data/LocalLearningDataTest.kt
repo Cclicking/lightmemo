@@ -26,6 +26,39 @@ import org.robolectric.annotation.Config
 class LocalLearningDataTest {
     private val context get() = ApplicationProvider.getApplicationContext<Context>()
 
+    @Test fun decodedSnapshotsAreReusedButObserveExternalWritesDeletesAndClear() = withDatabase { db ->
+        val reader = PersonalFoodMemoryRepository(db)
+        val writer = PersonalFoodMemoryRepository(db)
+        writer.recordConfirmed(log(), false)
+        val first = reader.readAll()
+        assertSame(first, reader.readAll())
+        writer.recordConfirmed(log(name = "米饭"), false)
+        val added = reader.readAll()
+        assertEquals(2, added.size)
+        assertSame(first.single(), added.single { it.canonicalName == first.single().canonicalName })
+        writer.recordConfirmed(log(grams = 300.0), true)
+        val corrected = reader.readAll()
+        assertNotEquals(first.single().typicalGrams, corrected.single { it.canonicalName == first.single().canonicalName }.typicalGrams)
+        assertSame(corrected, reader.readAll())
+        val rice = db.personalFoodMemoryDao().find("米饭")!!
+        db.personalFoodMemoryDao().delete(rice.id)
+        assertEquals(1, reader.readAll().size)
+        db.personalFoodMemoryDao().clear()
+        assertTrue(reader.readAll().isEmpty())
+    }
+
+    @Test fun decodingSkipsCorruptRowsAndNoticesRepairsWithSameId() = withDatabase { db ->
+        val repo = PersonalFoodMemoryRepository(db)
+        val dao = db.personalFoodMemoryDao()
+        repo.recordConfirmed(log(), false)
+        val row = dao.getAll().single()
+        val original = repo.readAll().single()
+        dao.upsert(row.copy(memoryJson = "invalid JSON"))
+        assertTrue(repo.readAll().isEmpty())
+        dao.upsert(row)
+        assertEquals(original, repo.readAll().single())
+    }
+
     @Test fun stabilityTracksRecentCompositionAndWeightAndResetsOnChanges() = withDatabase { db ->
         val repo = PersonalFoodMemoryRepository(db)
         val reference = com.click.lightmemo.domain.NutritionReference("china:1", "米饭", "china", Nutrition(116.0))

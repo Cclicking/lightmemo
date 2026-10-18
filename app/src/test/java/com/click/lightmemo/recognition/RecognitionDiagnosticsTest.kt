@@ -4,11 +4,37 @@ import com.click.lightmemo.domain.RecognitionPath
 import com.click.lightmemo.network.FoodRecognitionClient
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
 import org.junit.Assert.*
 import org.junit.Test
 
 class RecognitionDiagnosticsTest {
+    @Test fun phaseTimingsAccumulateIncludingFailedWorkAndNullResultsRunOnce() = runBlocking {
+        var clock = 0L
+        val metrics = RecognitionDiagnostics { clock }
+        assertNull(metrics.measure(RecognitionPhase.CACHE_READ) { clock += 2_000_000; null })
+        runCatching { metrics.measure(RecognitionPhase.CACHE_READ) { clock += 3_000_000; error("failed") } }
+        metrics.measure(RecognitionPhase.IMAGE_PREPARE) { clock += 7_000_000 }
+        assertEquals(mapOf("CACHE_READ" to 5L, "IMAGE_PREPARE" to 7L), metrics.phaseDurationsMillis())
+        assertEquals(12L, metrics.elapsedMillis())
+        var invocations = 0
+        withContext(metrics) {
+            assertNull(measureRecognitionPhase(RecognitionPhase.MEMORY_READ) { invocations++; null })
+        }
+        assertEquals(1, invocations)
+    }
+
+    @Test fun concurrentModelCallsAreNotLost() = runBlocking {
+        val metrics = RecognitionDiagnostics()
+        kotlinx.coroutines.coroutineScope {
+            repeat(8) { launch(kotlinx.coroutines.Dispatchers.Default) {
+                repeat(1000) { metrics.modelCalled() }
+            } }
+        }
+        assertEquals(8000, metrics.modelCalls)
+    }
+
     @Test fun waitingOrCancelledTasksDoNotCreateFailures() {
         val metrics = RecognitionDiagnostics()
         metrics.modelCalled()

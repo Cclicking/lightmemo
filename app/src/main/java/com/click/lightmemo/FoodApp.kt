@@ -41,6 +41,8 @@ class FoodApp : Application() {
     val personalFoodMemoryRepository by lazy { PersonalFoodMemoryRepository(FoodDatabase.get(this)) }
     val recommendationRepository by lazy { RecommendationRepository(FoodDatabase.get(this)) }
     val diagnosticsRepository by lazy { DiagnosticsRepository(FoodDatabase.get(this)) }
+    val recognitionLogRepository by lazy { com.click.lightmemo.data.RecognitionLogRepository(
+        java.io.File(noBackupFilesDir, "diagnostics/recognition-log.json"), appScope) }
 
     fun recordDiagnostic(delta: com.click.lightmemo.data.LocalDiagnosticsEntity) {
         appScope.launch { diagnosticsRepository.recordSafely(delta) }

@@ -20,8 +20,10 @@ internal class ComponentSearchInteractor(
     private val apiKey: () -> String,
 ) {
     private var searchJob: Job? = null
+    private var searchVersion = 0L
 
     fun cancel() {
+        searchVersion++
         searchJob?.cancel()
     }
 
@@ -76,7 +78,7 @@ internal class ComponentSearchInteractor(
     }
 
     fun closeDraft() {
-        searchJob?.cancel()
+        cancel()
         uiState.value = uiState.value.copy(draftDatabaseSearch = null)
     }
 
@@ -128,6 +130,7 @@ internal class ComponentSearchInteractor(
     }
 
     fun closeReview() {
+        cancel()
         uiState.value = uiState.value.copy(databaseSearch = null)
     }
 
@@ -149,7 +152,8 @@ internal class ComponentSearchInteractor(
         pinnedReference: NutritionReference? = null,
         isDraft: Boolean,
     ) {
-        searchJob?.cancel()
+        cancel()
+        val version = searchVersion
         val current = if (isDraft) uiState.value.draftDatabaseSearch else uiState.value.databaseSearch
         val companions = current?.takeIf {
             it.componentId == componentId && it.initialLookupQuery == lookupQuery &&
@@ -178,31 +182,35 @@ internal class ComponentSearchInteractor(
         }
         searchJob = scope.launch {
             try {
-                val results = database.searchCandidates(
+                database.candidateUpdates(
                     query = trimmed,
                     apiKey = apiKey(),
                     limit = 20,
                     chineseQuery = companions.firstOrNull() ?: trimmed,
                     originalName = companions.getOrNull(1).orEmpty(),
-                )
-                val orderedResults = pinnedReference?.let { currentReference ->
-                    buildList {
-                        add(currentReference)
-                        addAll(results.filterNot { it.sameDatabaseEntryAs(currentReference) })
+                ).collect { update ->
+                    if (version != searchVersion) return@collect
+                    val results = update.results
+                    val orderedResults = pinnedReference?.let { currentReference ->
+                        buildList {
+                            add(currentReference)
+                            addAll(results.filterNot { it.sameDatabaseEntryAs(currentReference) })
+                        }
+                    } ?: results
+                    updateSlot(componentId, isDraft) {
+                        it.copy(
+                            loading = update.searchingOnline,
+                            results = orderedResults,
+                            error = if (!update.searchingOnline && results.isEmpty()) "没有找到相近的食物" else null,
+                        )
                     }
-                } ?: results
-                updateSlot(componentId, isDraft) {
-                    it.copy(
-                        loading = false,
-                        results = orderedResults,
-                        error = if (results.isEmpty()) "没有找到相近的食物" else null,
-                    )
                 }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                if (version != searchVersion) return@launch
                 updateSlot(componentId, isDraft) {
-                    it.copy(loading = false, results = emptyList(), error = e.message ?: "数据库查询失败")
+                    it.copy(loading = false, error = e.message ?: "数据库查询失败")
                 }
             }
         }

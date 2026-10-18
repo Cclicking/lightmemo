@@ -19,16 +19,23 @@ import top.yukonga.miuix.kmp.basic.*
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.os4.Delete
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import top.yukonga.miuix.kmp.preference.SwitchPreference
 import java.util.Locale
 
 @Composable
 fun DiagnosticsScreen(viewModel: DiagnosticsViewModel, contentPadding: PaddingValues,
     scrollBehavior: SharedScrollBehavior, listState: LazyListState) {
     val state by viewModel.uiState.collectAsState()
+    val logState by viewModel.logState.collectAsState()
+    val logs = logState.snapshot
     val context = LocalContext.current
     val summary = state.summary
     val totals = summary.totals
     var showClear by remember { mutableStateOf(false) }
+    var showClearLogs by remember { mutableStateOf(false) }
+    val exportLogs = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) {
+        it?.let(viewModel::exportLogs)
+    }
     val export = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) {
         it?.let(viewModel::export)
     }
@@ -44,10 +51,33 @@ fun DiagnosticsScreen(viewModel: DiagnosticsViewModel, contentPadding: PaddingVa
                 modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColorsPrimary()) { Text("清空") }
         }
     }
+    AnimatedOverlayDialog(show = showClearLogs, title = "清空识别日志？",
+        summary = "删除已记录的阶段和请求日志。日志模式开启时，新事件仍会继续记录。",
+        onDismissRequest = { if (!state.busy) showClearLogs = false }) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Button(onClick = { showClearLogs = false }, enabled = !state.busy, modifier = Modifier.weight(1f)) { Text("取消") }
+            Button(onClick = { viewModel.clearLogs(); showClearLogs = false }, enabled = !state.busy,
+                modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColorsPrimary()) { Text("清空") }
+        }
+    }
     LazyColumn(modifier = Modifier.fillMaxSize().overScrollVertical().nestedScroll(scrollBehavior.nestedScrollConnection),
         state = listState, contentPadding = PaddingValues(start = 16.dp, end = 16.dp,
             top = contentPadding.calculateTopPadding(), bottom = contentPadding.calculateBottomPadding() + 12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        item {
+            DiagnosticSection("识别日志") {
+                SwitchPreference(title = "日志模式", checked = logs.enabled,
+                    enabled = !state.busy && !logState.loading, onCheckedChange = viewModel::setLogEnabled,
+                    summary = "开启后重新识别，记录各阶段与模型请求耗时；关闭后保留已有日志")
+                if (logState.storageError) BasicComponent(title = "日志文件读写失败",
+                    summary = "当前日志仍可尝试导出，请检查存储空间；重启后可能无法保留")
+                BasicComponent(title = "导出识别日志", summary = "导出全部日志 JSON，最多保留最新 300 条",
+                    enabled = !state.busy && !logState.loading && logs.events.isNotEmpty(),
+                    onClick = { exportLogs.launch("LightMemo-recognition-log-${state.endDate}.json") })
+                BasicComponent(title = "清空识别日志", enabled = !state.busy && !logState.loading && logs.events.isNotEmpty(),
+                    onClick = { showClearLogs = true })
+            }
+        }
         item {
             SmallTitle("最近 30 天", modifier = Modifier.offset(x = (-16).dp))
             DiagnosticCard {
@@ -121,7 +151,7 @@ fun DiagnosticsScreen(viewModel: DiagnosticsViewModel, contentPadding: PaddingVa
                     })
             }
         }
-        item { Text("仅保存在本机，不自动上传。导出文件只包含数值，不含 API 密钥、照片、提示词或食物名称。",
+        item { Text("仅保存在本机，不自动上传。统计与日志均不含 API 密钥、照片、提示词、食物名称或接口原文。请求等待时间包含连接、上传、服务端处理和网络传输。",
             style = MiuixTheme.textStyles.footnote2, color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
             modifier = Modifier.padding(horizontal = 16.dp)) }
     }

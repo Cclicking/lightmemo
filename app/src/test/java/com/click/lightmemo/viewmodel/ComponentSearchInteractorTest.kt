@@ -6,10 +6,59 @@ import com.click.lightmemo.network.FoodDataCentralClient
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.Dispatchers
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
+import okhttp3.Call
+import okhttp3.OkHttpClient
+import okhttp3.Protocol
+import okhttp3.Response
+import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.Assert.*
 import org.junit.Test
 
 class ComponentSearchInteractorTest {
+    @Test fun localCandidatesAppearDuringSlowOnlineSearchAndClosingCancelsRequest() = runBlocking {
+        val started = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val call = AtomicReference<Call>()
+        val database = FoodDataCentralClient(
+            openAsset = { "id\tdescription\tkcal\tprotein\tcarbs\tfat\nrice\tRice cooked\t130\t3\t28\t0\n".byteInputStream() },
+            listAssets = { arrayOf("fdc_sr_legacy_macros.tsv") },
+            databases = { com.click.lightmemo.data.NutritionDatabases(china = false) },
+            httpClient = OkHttpClient.Builder().addInterceptor { chain ->
+                call.set(chain.call())
+                started.countDown()
+                check(release.await(10, TimeUnit.SECONDS))
+                Response.Builder().request(chain.request()).protocol(Protocol.HTTP_1_1)
+                    .code(200).message("OK").body("{\"foods\":[]}".toResponseBody()).build()
+            }.build(),
+        )
+        val state = MutableStateFlow(AddFoodUiState())
+        val search = ComponentSearchInteractor(database, state, this) { "key" }
+        try {
+            search.openReview(component("rice"), replaceComponentName = true)
+            val partial = withTimeout(5_000) {
+                state.first { it.databaseSearch?.results?.isNotEmpty() == true }.databaseSearch!!
+            }
+            assertTrue(partial.loading)
+            assertEquals("rice", partial.results.first().sourceId)
+            assertTrue(withContext(Dispatchers.IO) { started.await(5, TimeUnit.SECONDS) })
+            search.closeReview()
+            assertNull(state.value.databaseSearch)
+            // Coroutine cancellation invokes OkHttp cancellation immediately.
+            kotlinx.coroutines.yield()
+            assertTrue(call.get().isCanceled())
+        } finally {
+            search.closeReview()
+            release.countDown()
+        }
+    }
+
     private fun database() = FoodDataCentralClient(
         openAsset = { name -> when (name) {
             "fdc_sr_legacy_macros.tsv" -> "id\tdescription\tkcal\tprotein\tcarbs\tfat\n".byteInputStream()

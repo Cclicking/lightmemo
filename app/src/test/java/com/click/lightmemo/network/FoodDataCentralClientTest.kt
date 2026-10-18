@@ -12,6 +12,45 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class FoodDataCentralClientTest {
+    @Test fun automaticQueriesSendEightCandidatesAndExplicitDatabaseTypesOnTheWire() = runBlocking {
+        val requests = mutableListOf<org.json.JSONObject>()
+        val database = FoodDataCentralClient(
+            openAsset = { error("No local assets") }, listAssets = { emptyArray() },
+            databases = { com.click.lightmemo.data.NutritionDatabases(china = false) },
+            httpClient = OkHttpClient.Builder().addInterceptor { chain ->
+                val buffer = okio.Buffer()
+                chain.request().body!!.writeTo(buffer)
+                requests += org.json.JSONObject(buffer.readUtf8())
+                Response.Builder().request(chain.request()).protocol(Protocol.HTTP_1_1).code(200).message("OK")
+                    .body("""{"foods":[{"fdcId":123,"description":"Rice white cooked","dataType":"SR Legacy","foodNutrients":[{"nutrientId":1008,"unitName":"KCAL","value":130},{"nutrientId":1003,"value":2.7},{"nutrientId":1005,"value":28},{"nutrientId":1004,"value":0.3}]}]}""".toResponseBody()).build()
+            }.build(),
+        )
+        assertEquals("123", database.lookup("rice white cooked", "key")?.sourceId)
+        assertEquals(1, requests.size)
+        assertEquals(8, requests.single().getInt("pageSize"))
+        val types = requests.single().getJSONArray("dataType")
+        assertEquals(listOf("Foundation", "SR Legacy", "Survey (FNDDS)"), (0 until types.length()).map(types::getString))
+        database.searchCandidates("rice white cooked", "key", limit = 20)
+        assertEquals(20, requests.last().getInt("pageSize"))
+    }
+
+    @Test fun reliableOfflineMatchDoesNotWaitForOnlineSearch() = runBlocking {
+        var requests = 0
+        val database = FoodDataCentralClient(
+            openAsset = { name ->
+                assertEquals("china_food_composition.tsv", name)
+                "id\tname\tenglish\tkcal\tprotein\tcarbs\tfat\ncn-rice\t米饭（蒸）\t\t116\t2.6\t25.9\t0.3\n".byteInputStream()
+            },
+            listAssets = { emptyArray() },
+            httpClient = OkHttpClient.Builder().addInterceptor {
+                requests++
+                throw IOException("Online must not delay a local match")
+            }.build(),
+        )
+        assertEquals("cn-rice", database.lookup("rice cooked", "configured-key", "米饭（蒸）")?.sourceId)
+        assertEquals(0, requests)
+    }
+
     @Test fun databaseSwitchesExcludeCachedMatchesCandidatesAndBrowsing() = runBlocking {
         var enabled = com.click.lightmemo.data.NutritionDatabases()
         val database = fixtureClient(
@@ -81,6 +120,35 @@ class FoodDataCentralClientTest {
         assertEquals(false, result.getValue("absent").hasNutritionCandidates)
         assertEquals("pork", result.getValue("matched").nutritionReference?.sourceId)
         assertNull(result.getValue("matched").hasNutritionCandidates)
+    }
+
+    @Test fun enrichmentDoesNotRepeatOnlineSearchWhenLocalReviewCandidatesExist() = runBlocking {
+        var requests = 0
+        val database = FoodDataCentralClient(
+            openAsset = { "id\tdescription\tkcal\tprotein\tcarbs\tfat\npork\tPork cooked\t239\t27\t0\t14\n".byteInputStream() },
+            listAssets = { arrayOf("fdc_sr_legacy_macros.tsv") },
+            databases = { com.click.lightmemo.data.NutritionDatabases(china = false) },
+            httpClient = OkHttpClient.Builder().addInterceptor { chain ->
+                requests++
+                Response.Builder().request(chain.request()).protocol(Protocol.HTTP_1_1)
+                    .code(200).message("OK").body("{\"foods\":[]}".toResponseBody()).build()
+            }.build(),
+        )
+        val query = "pork meatball cooked"
+        assertNull(database.lookup(query, "configured-key", query, query))
+        val lookupRequests = requests
+        assertTrue(lookupRequests > 0)
+        requests = 0
+        val component = com.click.lightmemo.domain.FoodComponent("review", query, query,
+            source = com.click.lightmemo.domain.ComponentSource.VISIBLE,
+            estimatedWeightG = 50.0, weightMinG = 40.0, weightMaxG = 60.0, confidence = 0.9)
+        val meal = com.click.lightmemo.domain.MealRecognition(true, query, listOf(
+            com.click.lightmemo.domain.RecognizedDish("dish", query,
+                com.click.lightmemo.domain.DishType.SINGLE_FOOD, 0.9, listOf(component))), 0.9, emptyList())
+        val result = database.enrich(meal, "configured-key").dishes.single().components.single()
+        assertNull(result.nutritionReference)
+        assertEquals(true, result.hasNutritionCandidates)
+        assertEquals(lookupRequests, requests)
     }
     @Test fun enrichmentRepairsAnIncompatibleExistingReferenceInsteadOfReusingIt() = runBlocking {
         val component = com.click.lightmemo.domain.FoodComponent(
@@ -242,6 +310,36 @@ class FoodDataCentralClientTest {
         listAssets = { assets.list().orEmpty() },
         httpClient = OkHttpClient.Builder().addInterceptor { throw IOException("offline") }.build(),
     )
+
+    @Test fun indexedBundledCandidatesKeepFullScanRanking() = runBlocking {
+        val database = client()
+        val foods = database.browseOffline(source = FoodDataCentralClient.DatabaseSource.USDA, limit = 20000)
+        val index = FoodSearchIndex(foods) { FoodSearchMatching.englishRecallTerms(it.description) }
+        var fullScanNanos = 0L
+        var indexedNanos = 0L
+        var recalled = 0
+        val queries = listOf("rice cooked", "egg boiled", "chicken breast cooked", "broccoli raw",
+            "sea cucumber", "mandarin orange", "pork meatball", "scallions raw", "unknown food")
+        fun rank(items: List<com.click.lightmemo.domain.NutritionReference>, query: String) = items
+            .map { it to FoodSearchMatching.englishMatch(query, it.description) }
+            .filter { it.second.score >= 0.5 }
+            .sortedByDescending { it.second.score }
+        for (query in queries) {
+            val fullStart = System.nanoTime()
+            val expected = rank(foods, query)
+            fullScanNanos += System.nanoTime() - fullStart
+            val indexStart = System.nanoTime()
+            val candidates = index.candidates(FoodSearchMatching.englishRecallTerms(query))
+            val actual = rank(candidates, query)
+            indexedNanos += System.nanoTime() - indexStart
+            recalled += candidates.size
+            assertEquals(query, expected, actual)
+            assertEquals(query, expected.take(20).map { it.first },
+                database.browseOffline(query, FoodDataCentralClient.DatabaseSource.USDA, limit = 20))
+        }
+        println("Bundled candidate scoring: full=${fullScanNanos / 1_000_000}ms, indexed=${indexedNanos / 1_000_000}ms; " +
+            "scored $recalled of ${foods.size * queries.size} rows (index already loaded)")
+    }
 
     @Test fun matchingReportsActualSourceButBrowsingDoesNotInflateCounters() = runBlocking {
         val sources = mutableListOf<com.click.lightmemo.domain.NutritionMatchSource>()

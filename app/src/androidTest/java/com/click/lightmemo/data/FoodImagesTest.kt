@@ -51,4 +51,20 @@ class FoodImagesTest {
             assertEquals(40 to 80, size(file))
         } finally { file.delete() }
     }
+
+    @Test fun preparedImagePersistsWithoutChangingUploadBytesOrCacheIdentity() = runBlocking {
+        val file = jpeg(120, 80)
+        var saved: File? = null
+        try {
+            val image = FoodImages.prepare(context, Uri.fromFile(file))
+            val uri = FoodImages.persistPrepared(context, image)
+            saved = File(context.filesDir, "images/${image.contentHash}.jpg")
+            assertArrayEquals(Base64.decode(image.base64, Base64.NO_WRAP), saved.readBytes())
+            val restored = FoodImages.prepare(context, uri)
+            assertEquals(image.base64, restored.base64)
+            assertEquals(image.recognitionFingerprint, restored.recognitionFingerprint)
+            assertEquals(uri, FoodImages.persistPrepared(context, restored))
+            assertEquals(uri, FoodImages.persist(context, uri))
+        } finally { file.delete(); saved?.delete() }
+    }
 }

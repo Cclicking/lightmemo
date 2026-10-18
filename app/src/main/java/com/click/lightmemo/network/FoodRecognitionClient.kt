@@ -1,5 +1,15 @@
 package com.click.lightmemo.network
 
+import com.click.lightmemo.recognition.RecognitionLogProvider
+
+import com.click.lightmemo.recognition.RecognitionLogModel
+
+import com.click.lightmemo.recognition.RecognitionLogKind
+
+import com.click.lightmemo.recognition.RecognitionDiagnostics
+
+import com.click.lightmemo.recognition.logCategory
+
 import com.click.lightmemo.data.DEFAULT_API_MODEL
 import com.click.lightmemo.domain.ComponentSource
 import com.click.lightmemo.domain.DishType
@@ -7,6 +17,8 @@ import com.click.lightmemo.domain.FoodComponent
 import com.click.lightmemo.domain.MealRecognition
 import com.click.lightmemo.domain.RecognizedDish
 import com.click.lightmemo.domain.RecognitionStage
+import com.click.lightmemo.recognition.RecognitionPhase
+import com.click.lightmemo.recognition.measureRecognitionPhase
 import java.io.IOException
 import java.util.UUID
 import java.util.concurrent.TimeUnit
@@ -19,6 +31,7 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -49,9 +62,13 @@ data class FoodChatReply(
 data class ChatRequest(
     val model: String,
     val messages: List<ChatMessage>,
-    val temperature: Double = 0.1,
-    val max_tokens: Int = 3000,
+    val temperature: Double,
+    val max_tokens: Int,
+    val thinking: ChatThinking? = null,
 )
+
+@Serializable
+data class ChatThinking(val type: String)
 
 @Serializable
 data class ChatMessage(val role: String, val content: List<ContentPart>)
@@ -194,6 +211,7 @@ class FoodRecognitionClient(
                 promptMessage(RecognitionPrompt.NORMALIZE),
                 textMessage("user", foodName),
             ),
+            phase = RecognitionPhase.MODEL_NORMALIZE,
         )
         json.parseToJsonElement(extractJson(content)).jsonObject["database_query"]
             ?.jsonPrimitive?.content?.takeIf { it.isNotBlank() }
@@ -221,6 +239,7 @@ class FoodRecognitionClient(
                     "食物：$foodName\n份数：$portions 份\n补充说明：${portionHint.ifBlank { "无" }}",
                 ),
             ),
+            phase = RecognitionPhase.MODEL_PORTION,
         )
         json.parseToJsonElement(extractJson(content)).jsonObject["estimated_weight_g"]
             ?.jsonPrimitive?.content?.toDoubleOrNull()
@@ -405,10 +424,13 @@ class FoodRecognitionClient(
         mealType: String = "",
         plateSize: String = "",
         onStage: suspend (RecognitionStage) -> Unit = {},
-        fastResult: (MealRecognition) -> MealRecognition? = { null },
+        fastResult: suspend (MealRecognition) -> MealRecognition? = { null },
         onModelCall: () -> Unit = {},
+        onInitialResult: (MealRecognition) -> Unit = {},
+        promptSnapshot: Map<String, String>? = null,
     ): MealRecognition = withContext(Dispatchers.IO) {
         validate(baseUrl, apiKey, imageBase64)
+        val prompts = promptSnapshot ?: promptOverrides()
         onStage(RecognitionStage.RECOGNIZING)
         val dataUrl = "data:$mimeType;base64,$imageBase64"
         onModelCall()
@@ -417,7 +439,7 @@ class FoodRecognitionClient(
             apiKey,
             model,
             listOf(
-                promptMessage(RecognitionPrompt.IMAGE),
+                textMessage("system", RecognitionPrompt.IMAGE.resolve(prompts)),
                 ChatMessage(
                     "user",
                     listOf(
@@ -426,11 +448,13 @@ class FoodRecognitionClient(
                     ),
                 ),
             ),
+            phase = RecognitionPhase.MODEL_RECOGNITION,
         )
         val initialJson = extractJson(initialContent)
         val initial = parseVisualJson(initialJson)
         if (!initial.isFoodImage || initial.dishes.isEmpty()) return@withContext initial
         fastResult(initial)?.let { return@withContext it }
+        onInitialResult(initial)
 
         // 审核服务失败时保留第一阶段结果，营养查询仍可继续。
         runCatching {
@@ -441,7 +465,7 @@ class FoodRecognitionClient(
                 apiKey,
                 model,
                 listOf(
-                    promptMessage(RecognitionPrompt.REVIEW),
+                    textMessage("system", RecognitionPrompt.REVIEW.resolve(prompts)),
                     ChatMessage(
                         "user",
                         listOf(
@@ -453,6 +477,7 @@ class FoodRecognitionClient(
                         ),
                     ),
                 ),
+                phase = RecognitionPhase.MODEL_REVIEW,
             )
             parseVisualJson(extractJson(reviewed))
         }.getOrElse { error ->
@@ -499,25 +524,73 @@ class FoodRecognitionClient(
         model: String,
         messages: List<ChatMessage>,
         nutritionEstimate: Boolean = false,
-    ): String {
+        phase: RecognitionPhase = RecognitionPhase.MODEL_TEXT,
+    ): String = measureRecognitionPhase(phase) {
+        val url = (baseUrl.trimEnd('/') + "/chat/completions").toHttpUrl()
+        val effectiveModel = model.trim().ifBlank { DEFAULT_API_MODEL }
+        val chatRequest = ChatRequest(model = effectiveModel, messages = messages,
+            temperature = 0.1, max_tokens = 3000,
+            thinking = if (url.isHttps && url.host == "api.deepseek.com" && effectiveModel == "deepseek-flash")
+                ChatThinking(type = "disabled") else null)
         val body = json.encodeToString(
             ChatRequest.serializer(),
-            ChatRequest(model = model.ifBlank { DEFAULT_API_MODEL }, messages = messages),
+            chatRequest,
         )
         val request = Request.Builder()
-            .url(baseUrl.trimEnd('/') + "/chat/completions")
+            .url(url)
             .addHeader("Authorization", "Bearer $apiKey")
             .addHeader("Content-Type", "application/json")
             .post(body.toRequestBody("application/json".toMediaType()))
             .build()
-        kotlinx.coroutines.currentCoroutineContext()[com.click.lightmemo.recognition.RecognitionDiagnostics]?.modelCalled()
+        val metrics = kotlinx.coroutines.currentCoroutineContext()[RecognitionDiagnostics]
+        metrics?.modelCalled()
+        val call = metrics?.nextNetworkRequest()
+        val started = System.nanoTime()
+        fun elapsed() = ((System.nanoTime() - started) / 1_000_000).coerceAtLeast(0)
+        metrics?.logEvent(RecognitionLogKind.HTTP_START, phase,
+            request = call, bytes = request.body?.contentLength(),
+            thinkingDisabled = chatRequest.thinking?.let { it.type == "disabled" },
+            model = when (effectiveModel.lowercase(java.util.Locale.ROOT)) {
+                "deepseek-flash" -> RecognitionLogModel.DEEPSEEK_FLASH
+                "deepseek-chat" -> RecognitionLogModel.DEEPSEEK_CHAT
+                "deepseek-reasoner" -> RecognitionLogModel.DEEPSEEK_REASONER
+                else -> RecognitionLogModel.OTHER
+            }, provider = if (request.url.host == "api.deepseek.com")
+                RecognitionLogProvider.DEEPSEEK_OFFICIAL
+                else RecognitionLogProvider.OTHER)
         runCatching { onCall(nutritionEstimate) }
-        httpClient.newCall(request).awaitResponse().use { response ->
-            val raw = response.body?.string().orEmpty()
-            if (!response.isSuccessful) {
-                throw RecognitionException(recognitionHttpErrorMessage(response.code))
+        try {
+            httpClient.newCall(request).awaitResponse().use { response ->
+                metrics?.logEvent(RecognitionLogKind.HTTP_HEADERS, phase,
+                    durationMs = elapsed(), request = call, httpStatus = response.code)
+                val raw = response.body?.string().orEmpty()
+                val bodyElapsed = elapsed()
+                if (metrics?.loggingEnabled == true) {
+                    // Parse only optional numeric metadata. Never retain model content in diagnostics.
+                    val metadata = runCatching { json.parseToJsonElement(raw).jsonObject }.getOrNull()
+                    val usage = metadata?.get("usage") as? kotlinx.serialization.json.JsonObject
+                    fun tokens(key: String): Long? = (usage?.get(key) as? kotlinx.serialization.json.JsonPrimitive)
+                        ?.content?.toLongOrNull()?.takeIf { it >= 0 }
+                    val details = usage?.get("completion_tokens_details") as? kotlinx.serialization.json.JsonObject
+                    val reasoning = (details?.get("reasoning_tokens") as? kotlinx.serialization.json.JsonPrimitive)
+                        ?.content?.toLongOrNull()?.takeIf { it >= 0 }
+                    val hasReasoning = runCatching { metadata?.get("choices")?.jsonArray?.firstOrNull()?.jsonObject
+                        ?.get("message")?.jsonObject?.get("reasoning_content")
+                        ?.takeUnless { it is kotlinx.serialization.json.JsonNull }?.jsonPrimitive?.content?.isNotBlank() }.getOrNull()
+                    metrics.logEvent(RecognitionLogKind.HTTP_BODY, phase,
+                        durationMs = bodyElapsed, request = call, httpStatus = response.code,
+                        bytes = raw.toByteArray(Charsets.UTF_8).size.toLong(), promptTokens = tokens("prompt_tokens"),
+                        completionTokens = tokens("completion_tokens"), reasoningTokens = reasoning, reasoningPresent = hasReasoning)
+                }
+                if (!response.isSuccessful) {
+                    throw RecognitionException(recognitionHttpErrorMessage(response.code))
+                }
+                chatContent(raw)
             }
-            return chatContent(raw)
+        } catch (error: Exception) {
+            metrics?.logEvent(RecognitionLogKind.HTTP_ERROR, phase,
+                durationMs = elapsed(), request = call, error = error.logCategory())
+            throw error
         }
     }
 

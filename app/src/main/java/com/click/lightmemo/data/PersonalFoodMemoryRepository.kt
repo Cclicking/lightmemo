@@ -9,6 +9,7 @@ import com.click.lightmemo.domain.PersonalFoodMatcher
 import com.click.lightmemo.domain.PersonalFoodMatch
 import com.click.lightmemo.domain.foodWasCorrected
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.encodeToString
@@ -18,13 +19,30 @@ import kotlinx.serialization.json.Json
 class PersonalFoodMemoryRepository(private val database: FoodDatabase) {
     private val dao = database.personalFoodMemoryDao()
     private val json = Json { ignoreUnknownKeys = true }
+    private data class DecodedSnapshot(
+        val rows: List<PersonalFoodMemoryEntity>,
+        val byRow: Map<PersonalFoodMemoryEntity, PersonalFoodMemory>,
+        val memories: List<PersonalFoodMemory>,
+    )
+    @Volatile private var decodedSnapshot: DecodedSnapshot? = null
     val memories = dao.observeAll().map { rows -> rows.map { it.id to decode(it) } }
 
     suspend fun findExact(name: String): PersonalFoodMemory? =
         dao.find(normalizeFoodName(name))?.let(::decode)
 
-    suspend fun readAll(): List<PersonalFoodMemory> = dao.getAll().mapNotNull { row ->
-        runCatching { decode(row) }.getOrNull()
+    suspend fun readAll(): List<PersonalFoodMemory> = withContext(Dispatchers.IO) {
+        // Read the current rows even when another repository/import wrote them. Only JSON decoding
+        // is cached, keyed by complete row contents, so invalidation callbacks cannot race a read.
+        val rows = dao.getAll()
+        val previous = decodedSnapshot
+        if (previous != null && previous.rows == rows) return@withContext previous.memories
+        val byRow = rows.mapNotNull { row ->
+            val memory = previous?.byRow?.get(row) ?: runCatching { decode(row) }.getOrNull()
+            memory?.let { row to it }
+        }.toMap()
+        val snapshot = DecodedSnapshot(rows, byRow, byRow.values.toList())
+        decodedSnapshot = snapshot
+        snapshot.memories
     }
 
     suspend fun match(name: String): PersonalFoodMatch? = PersonalFoodMatcher.match(name, readAll())
@@ -111,5 +129,6 @@ class PersonalFoodMemoryRepository(private val database: FoodDatabase) {
 
     suspend fun delete(id: Long) = dao.delete(id)
     suspend fun clear() = dao.clear()
-    private fun decode(row: PersonalFoodMemoryEntity) = json.decodeFromString<PersonalFoodMemory>(row.memoryJson)
+    private fun decode(row: PersonalFoodMemoryEntity): PersonalFoodMemory = decodedSnapshot?.byRow?.get(row)
+        ?: json.decodeFromString<PersonalFoodMemory>(row.memoryJson)
 }

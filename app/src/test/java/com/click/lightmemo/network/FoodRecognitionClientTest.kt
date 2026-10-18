@@ -9,6 +9,47 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class FoodRecognitionClientTest {
+    @Test fun officialFlashDisablesThinkingOnBothVisualRequestsWithoutSkippingReview() = kotlinx.coroutines.runBlocking {
+        val requests = mutableListOf<ChatRequest>()
+        imageClient(onRequest = { requests += it }).recognize("https://api.deepseek.com/v1", "key", "deepseek-flash", "image")
+        assertEquals(2, requests.size)
+        requests.forEach {
+            assertEquals("disabled", it.thinking?.type)
+            assertEquals(3000, it.max_tokens)
+            assertEquals(0.1, it.temperature, 0.0)
+            assertTrue(it.messages.any { message -> message.content.any { part -> part.image_url != null } })
+        }
+    }
+
+    @Test fun wireParametersAreExplicitAndThinkingIsLimitedToOfficialFlash() = kotlinx.coroutines.runBlocking {
+        val requests = mutableListOf<org.json.JSONObject>()
+        val http = okhttp3.OkHttpClient.Builder().addInterceptor { chain ->
+            val buffer = okio.Buffer()
+            chain.request().body!!.writeTo(buffer)
+            requests += org.json.JSONObject(buffer.readUtf8())
+            okhttp3.Response.Builder().request(chain.request()).protocol(okhttp3.Protocol.HTTP_1_1)
+                .code(200).message("OK").body(okhttp3.ResponseBody.create(null,
+                    """{"choices":[{"message":{"content":"OK"}}]}""")).build()
+        }.build()
+        val testClient = FoodRecognitionClient(httpClient = http)
+        val cases = listOf(
+            Triple("https://api.deepseek.com", "deepseek-flash", true),
+            Triple("https://api.deepseek.com/v1", "deepseek-flash", true),
+            Triple("https://example.test/v1", "deepseek-flash", false),
+            Triple("https://api.deepseek.com.evil.test", "deepseek-flash", false),
+            Triple("https://api.deepseek.com", "deepseek-reasoner", false),
+            Triple("https://api.deepseek.com", "another-model", false),
+        )
+        cases.forEach { (url, model, disabled) ->
+            testClient.testConnection(url, "key", model)
+            val body = requests.last()
+            assertEquals(0.1, body.getDouble("temperature"), 0.0)
+            assertEquals(3000, body.getInt("max_tokens"))
+            if (disabled) assertEquals("disabled", body.getJSONObject("thinking").getString("type"))
+            else assertFalse(body.has("thinking"))
+        }
+    }
+
     @Test fun connectionTestUsesDraftAndRejectsEmptyRepliesAndAuthenticationFailures() = kotlinx.coroutines.runBlocking {
         var status = 200
         var content = "OK"
@@ -40,7 +81,10 @@ class FoodRecognitionClientTest {
 
     private val client = FoodRecognitionClient()
 
-    private fun imageClient(): FoodRecognitionClient {
+    private fun imageClient(
+        promptOverrides: suspend () -> Map<String, String> = { emptyMap() },
+        onRequest: (ChatRequest) -> Unit = {},
+    ): FoodRecognitionClient {
         val payload = """{"is_food_image":true,"meal_name":"午餐","overall_confidence":0.95,"confirmation_questions":[],"dishes":[{"dish_name":"米饭","dish_type":"single_food","dish_confidence":0.95,"components":[{"name":"米饭","database_query":"rice cooked","source":"visible","estimated_weight_g":200,"weight_min_g":180,"weight_max_g":220,"confidence":0.95}]}]}"""
         val body = kotlinx.serialization.json.buildJsonObject {
             put("choices", kotlinx.serialization.json.buildJsonArray {
@@ -52,10 +96,13 @@ class FoodRecognitionClientTest {
             })
         }.toString()
         val http = okhttp3.OkHttpClient.Builder().addInterceptor { chain ->
+            val buffer = okio.Buffer()
+            chain.request().body!!.writeTo(buffer)
+            onRequest(kotlinx.serialization.json.Json.decodeFromString<ChatRequest>(buffer.readUtf8()))
             okhttp3.Response.Builder().request(chain.request()).protocol(okhttp3.Protocol.HTTP_1_1)
                 .code(200).message("OK").body(okhttp3.ResponseBody.create(null, body)).build()
         }.build()
-        return FoodRecognitionClient(httpClient = http)
+        return FoodRecognitionClient(httpClient = http, promptOverrides = promptOverrides)
     }
 
     @Test fun fastPathStillCallsVisionButSkipsSecondModelReview() = kotlinx.coroutines.runBlocking {
@@ -63,10 +110,36 @@ class FoodRecognitionClientTest {
         val stages = mutableListOf<com.click.lightmemo.domain.RecognitionStage>()
         val result = imageClient().recognize("https://example.test/v1", "test", "test", "image",
             onStage = { stages += it }, fastResult = { it.copy(confirmationQuestions = listOf("核对历史组成")) },
+            onInitialResult = { error("Fast path must not start speculative matching") },
             onModelCall = { calls++ })
         assertEquals(1, calls)
         assertEquals(listOf(com.click.lightmemo.domain.RecognitionStage.RECOGNIZING), stages)
         assertEquals(listOf("核对历史组成"), result.confirmationQuestions)
+    }
+
+    @Test fun bothVisualCallsUseOnePromptSnapshotAndPrefetchStartsBeforeReview() = kotlinx.coroutines.runBlocking {
+        var reads = 0
+        var initialSeen = false
+        val prompts = mutableListOf<String>()
+        val testClient = imageClient(
+            promptOverrides = { reads++; mapOf("IMAGE" to "custom image", "REVIEW" to "custom review") },
+            onRequest = {
+                if (prompts.isNotEmpty()) assertTrue(initialSeen)
+                prompts += it.messages.first().content.first().text!!
+            },
+        )
+        testClient.recognize("https://example.test/v1", "test", "test", "image", onInitialResult = { initialSeen = true })
+        assertEquals(1, reads)
+        assertEquals(listOf("custom image", "custom review"), prompts)
+    }
+
+    @Test fun explicitPromptSnapshotUsesTheTaskConfigurationWithoutRereadingSettings() = kotlinx.coroutines.runBlocking {
+        val prompts = mutableListOf<String>()
+        val testClient = imageClient(promptOverrides = { error("Task already captured settings") },
+            onRequest = { prompts += it.messages.first().content.first().text!! })
+        testClient.recognize("https://example.test/v1", "test", "test", "image",
+            promptSnapshot = mapOf("IMAGE" to "image snapshot", "REVIEW" to "review snapshot"))
+        assertEquals(listOf("image snapshot", "review snapshot"), prompts)
     }
 
     @Test fun fastMissContinuesOriginalTwoCallWorkflow() = kotlinx.coroutines.runBlocking {

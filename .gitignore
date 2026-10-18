@@ -30,6 +30,9 @@ __pycache__/
 # Local worktrees
 .worktrees/
 
+# Local copies of chat attachments
+.codex-remote-attachments/
+
 # Local signing / secret material
 *.jks
 *.keystore
