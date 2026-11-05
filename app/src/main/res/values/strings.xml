@@ -12,4 +12,6 @@
     <string name="shortcut_gallery_long">从相册选择照片识别</string>
     <string name="shortcut_manual">文字录入</string>
     <string name="shortcut_manual_long">手动填写食物与克重</string>
+    <string name="shortcut_chat">智能识别</string>
+    <string name="shortcut_chat_long">聊聊吃了什么，智能生成饮食记录</string>
 </resources>

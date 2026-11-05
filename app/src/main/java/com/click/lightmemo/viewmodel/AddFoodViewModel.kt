@@ -613,6 +613,22 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
         )
     }
 
+    fun cancelRecognition() {
+        val task = recognitionTaskStore.state.value ?: return
+        if (task.status != RecognitionTaskStatus.RUNNING || _uiState.value.saving) return
+        RecognitionService.cancel(foodApp, task.request.id)
+        _uiState.value = _uiState.value.copy(
+            step = if (task.request.type == RecognitionRequestType.REPLACE_DISH) {
+                _uiState.value.step
+            } else {
+                AddStep.PickSource
+            },
+            error = null,
+            canRetryRecognition = false,
+        )
+        notify("已取消识别")
+    }
+
     fun backToPick() {
         if (_uiState.value.saving) return
         chatJob?.cancel()
@@ -912,6 +928,7 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun removeComponent(componentId: String) {
+        if (_uiState.value.recognizing || _uiState.value.saving) return
         val step = _uiState.value.step as? AddStep.Review ?: return
         _uiState.value = _uiState.value.copy(
             step = step.copy(
@@ -924,6 +941,7 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun removeDish(dishId: String) {
+        if (_uiState.value.recognizing || _uiState.value.saving) return
         val step = _uiState.value.step as? AddStep.Review ?: return
         val remaining = step.result.dishes.filterNot { it.id == dishId }
         if (remaining.isEmpty()) {

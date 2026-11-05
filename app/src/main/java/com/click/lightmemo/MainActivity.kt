@@ -123,6 +123,7 @@ enum class ShortcutAddAction {
     CAMERA,
     GALLERY,
     MANUAL,
+    CHAT,
 }
 
 class MainActivity : ComponentActivity() {
@@ -210,6 +211,7 @@ class MainActivity : ComponentActivity() {
             SHORTCUT_CAMERA -> openShortcutAddAction.value = ShortcutAddAction.CAMERA
             SHORTCUT_GALLERY -> openShortcutAddAction.value = ShortcutAddAction.GALLERY
             SHORTCUT_MANUAL -> openShortcutAddAction.value = ShortcutAddAction.MANUAL
+            SHORTCUT_CHAT -> openShortcutAddAction.value = ShortcutAddAction.CHAT
         }
         // Drop extras so a config change does not re-open the same destination.
         intent?.removeExtra(EXTRA_SHORTCUT)
@@ -232,6 +234,7 @@ class MainActivity : ComponentActivity() {
         private const val SHORTCUT_CAMERA = "camera"
         private const val SHORTCUT_GALLERY = "gallery"
         private const val SHORTCUT_MANUAL = "manual"
+        private const val SHORTCUT_CHAT = "chat"
     }
 }
 
@@ -618,6 +621,8 @@ fun FoodAppRoot() {
                                         scrollBehavior = scrollBehavior,
                                         listState = todayList,
                                         addState = addState,
+                                        onCancelRecognition = addVm::cancelRecognition,
+                                        onRemovePendingDish = addVm::removeDish,
                                         managementMode = false,
                                         calendarExpanded = todayCalendarExpanded,
                                         showDatePicker = showDatePicker,

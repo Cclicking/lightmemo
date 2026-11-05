@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+    <path
+        android:fillColor="@color/shortcut_background"
+        android:pathData="M24,0 A24,24 0,1 1,24,48 A24,24 0,1 1,24,0 Z" />
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M15,14 H33 Q35,14 35,16 V29 Q35,31 33,31 H22 L15,36 V31 Q13,31 13,29 V16 Q13,14 15,14 Z M19,20 H29 M19,25 H26" />
+</vector>

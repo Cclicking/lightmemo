@@ -73,6 +73,7 @@ internal fun PickSourceContent(
     onFoodChat: () -> Unit,
     canRetryRecognition: Boolean = false,
     onRetryRecognition: () -> Unit = {},
+    onCancelRecognition: (() -> Unit)? = null,
 ) {
     var showDatePicker by remember { mutableStateOf(false) }
     var showTimePicker by remember { mutableStateOf(false) }
@@ -129,7 +130,7 @@ internal fun PickSourceContent(
             modifier = Modifier.fillMaxWidth(),
         )
 
-        if (recognizing) RecognitionStatusCard(recognitionStage)
+        if (recognizing) RecognitionStatusCard(recognitionStage, onCancelRecognition)
 
         if (!configured) {
             Card(cornerRadius = 20.dp, modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(16.dp)) {

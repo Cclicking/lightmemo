@@ -202,6 +202,7 @@ fun AddFoodRoute(
             com.click.lightmemo.ShortcutAddAction.CAMERA -> withNotificationPermission(::onCameraClick)
             com.click.lightmemo.ShortcutAddAction.GALLERY -> withNotificationPermission(::onGalleryClick)
             com.click.lightmemo.ShortcutAddAction.MANUAL -> viewModel.openManual()
+            com.click.lightmemo.ShortcutAddAction.CHAT -> viewModel.openFoodChat()
             null -> return@LaunchedEffect
         }
         onPendingAddActionConsumed()
@@ -283,6 +284,7 @@ fun AddFoodRoute(
                     onFoodChat = viewModel::openFoodChat,
                     canRetryRecognition = state.canRetryRecognition,
                     onRetryRecognition = viewModel::retryRecognition,
+                    onCancelRecognition = if (state.recognizing) viewModel::cancelRecognition else null,
                 )
 
                 AddStep.Chat -> FoodChatContent(
@@ -328,6 +330,7 @@ fun AddFoodRoute(
                     onHasContentChange = viewModel::setSecondaryHasContent,
                     canRetryRecognition = state.canRetryRecognition,
                     onRetryRecognition = viewModel::retryRecognition,
+                    onCancelRecognition = if (state.recognizing) viewModel::cancelRecognition else null,
                 )
 
                 is AddStep.ManualEdit -> {
@@ -495,6 +498,7 @@ fun AddFoodRoute(
                         palette = palette,
                         canRetryRecognition = state.canRetryRecognition,
                         onRetryRecognition = viewModel::retryRecognition,
+                        onCancelRecognition = if (state.recognizing) viewModel::cancelRecognition else null,
                         memorySuggestions = step.memorySuggestions,
                         onAcceptMemory = viewModel::acceptMemorySuggestion,
                         onIgnoreMemory = viewModel::ignoreMemorySuggestion,

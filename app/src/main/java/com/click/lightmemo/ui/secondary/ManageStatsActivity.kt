@@ -8,7 +8,7 @@ import com.click.lightmemo.viewmodel.BackupViewModel
 import com.click.lightmemo.viewmodel.SettingsViewModel
 
 class ManageStatsActivity : SecondarySettingsActivity() {
-    override val pageTitle = "管理统计页"
+    override val pageTitle = "统计页管理"
 
     @Composable
     override fun PageContent(

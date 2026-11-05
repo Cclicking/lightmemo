@@ -26,6 +26,7 @@ import com.click.lightmemo.ui.secondary.AppearanceSettingsActivity
 import com.click.lightmemo.ui.secondary.CalorieTargetActivity
 import com.click.lightmemo.ui.secondary.DataManagementActivity
 import com.click.lightmemo.ui.secondary.FoodDatabaseActivity
+import com.click.lightmemo.ui.secondary.ManageStatsActivity
 import com.click.lightmemo.ui.secondary.PersonalInfoActivity
 import com.click.lightmemo.ui.secondary.PermissionManagementActivity
 import com.click.lightmemo.ui.utils.overScrollVertical
@@ -83,7 +84,6 @@ fun MineHubScreen(
                 Column(modifier = Modifier.fillMaxWidth()) {
                     ArrowPreference(
                         title = "个人信息",
-                        summary = "身高、体重、性别和运动水平",
                         endActions = {
                             Text(
                                 text = if (settings.hasPersonalProfile) "已填写" else "未填写",
@@ -95,7 +95,6 @@ fun MineHubScreen(
                     )
                     ArrowPreference(
                         title = "每日目标",
-                        summary = "每日热量与三大营养素目标",
                         endActions = {
                             Text(
                                 text = "${settings.dailyCalorieTarget.toInt()}",
@@ -123,7 +122,6 @@ fun MineHubScreen(
                 Column(modifier = Modifier.fillMaxWidth()) {
                     ArrowPreference(
                         title = "AI设置",
-                        summary = "照片识别服务与模型配置",
                         endActions = {
                             Text(
                                 text = if (settings.isRecognitionConfigured) {
@@ -139,7 +137,6 @@ fun MineHubScreen(
                     )
                     ArrowPreference(
                         title = "数据管理",
-                        summary = "备份恢复与食物数据管理",
                         endActions = {
                             Text(
                                 text = if (settings.foodDataCentralApiKey.isNotBlank()) "在线已配置" else "离线优先",
@@ -151,8 +148,35 @@ fun MineHubScreen(
                     )
                     ArrowPreference(
                         title = "数据库浏览",
-                        summary = "搜索离线食物并查看营养数据",
                         onClick = { open(FoodDatabaseActivity::class.java) },
+                    )
+                }
+            }
+        }
+
+        item {
+            Spacer(Modifier.height(4.dp))
+            SmallTitle(
+                text = "用户界面",
+                modifier = Modifier.offset(x = (-16).dp),
+            )
+            Card(
+                cornerRadius = 20.dp,
+                modifier = Modifier.fillMaxWidth(),
+                insideMargin = PaddingValues(0.dp),
+            ) {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    ArrowPreference(
+                        title = "个性化设置",
+                        onClick = { open(AppearanceSettingsActivity::class.java) },
+                    )
+                    ArrowPreference(
+                        title = "统计页管理",
+                        onClick = { open(ManageStatsActivity::class.java) },
+                    )
+                    ArrowPreference(
+                        title = "小组件设置",
+                        onClick = { open(com.click.lightmemo.widget.WidgetSettingsActivity::class.java) },
                     )
                 }
             }
@@ -171,23 +195,11 @@ fun MineHubScreen(
             ) {
                 Column(modifier = Modifier.fillMaxWidth()) {
                     ArrowPreference(
-                        title = "个性化设置",
-                        summary = "颜色主题、自动配色与顶部模糊效果",
-                        onClick = { open(AppearanceSettingsActivity::class.java) },
-                    )
-                    ArrowPreference(
-                        title = "小组件设置",
-                        summary = "桌面组件与各实例的动作、圆角和边距",
-                        onClick = { open(com.click.lightmemo.widget.WidgetSettingsActivity::class.java) },
-                    )
-                    ArrowPreference(
                         title = "权限管理",
-                        summary = "相机、通知以及照片保存设置",
                         onClick = { open(PermissionManagementActivity::class.java) },
                     )
                     ArrowPreference(
                         title = "关于",
-                        summary = "版本、开源项目与数据来源",
                         onClick = { open(AboutActivity::class.java) },
                     )
                 }

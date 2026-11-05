@@ -59,6 +59,7 @@ internal fun ManualEntryContent(
     onHasContentChange: (Boolean) -> Unit,
     canRetryRecognition: Boolean = false,
     onRetryRecognition: () -> Unit = {},
+    onCancelRecognition: (() -> Unit)? = null,
 ) {
     var name by rememberSaveable { mutableStateOf(initialName) }
     var grams by rememberSaveable { mutableStateOf(initialGrams?.formatInput() ?: "100") }
@@ -94,7 +95,7 @@ internal fun ManualEntryContent(
     ) {
         MealTypeSelector(mealType, onMealType)
 
-        if (recognizing) RecognitionStatusCard(recognitionStage)
+        if (recognizing) RecognitionStatusCard(recognitionStage, onCancelRecognition)
 
         TextField(
             value = name,

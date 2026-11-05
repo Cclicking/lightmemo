@@ -85,6 +85,7 @@ internal fun ReviewContent(
     palette: FoodPaletteColors,
     canRetryRecognition: Boolean = false,
     onRetryRecognition: () -> Unit = {},
+    onCancelRecognition: (() -> Unit)? = null,
     memorySuggestions: List<com.click.lightmemo.domain.PersonalFoodSuggestion> = emptyList(),
     onAcceptMemory: (String) -> Unit = {},
     onIgnoreMemory: (String) -> Unit = {},
@@ -138,7 +139,7 @@ internal fun ReviewContent(
         item { MealTypeSelector(mealType, onMealType) }
 
         if (recognizing) {
-            item { RecognitionStatusCard(recognitionStage) }
+            item { RecognitionStatusCard(recognitionStage, onCancelRecognition) }
         }
 
         // 总览卡片：热量 + 宏量环（进度条与圆环间距 27dp，圆环高度对齐文字）

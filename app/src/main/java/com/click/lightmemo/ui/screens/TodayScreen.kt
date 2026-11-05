@@ -99,6 +99,8 @@ fun TodayScreen(
     managementDrafts: Map<Long, FoodLog> = emptyMap(),
     onManagementDraftChange: (FoodLog) -> Unit = {},
     cardCacheVersion: Int = 0,
+    onCancelRecognition: () -> Unit = {},
+    onRemovePendingDish: (String) -> Unit = {},
 ) {
     val state by viewModel.uiState.collectAsState()
     val date by viewModel.date.collectAsState()
@@ -294,13 +296,13 @@ fun TodayScreen(
                                 text = meal.label,
                                 insideMargin = PaddingValues(start = 12.dp, top = 8.dp, end = 12.dp, bottom = 0.dp),
                             )
-                            if (recognizingHere) FoodCardRow(left = { RecognitionCard(addState.recognitionStage) })
+                            if (recognizingHere) FoodCardRow(left = { RecognitionCard(addState.recognitionStage, onCancelRecognition) })
                             pendingDishes.chunked(2).forEach { row ->
                                 androidx.compose.runtime.key("pending-${meal.name}-${row.first().id}") {
                                     FoodCardRow(
-                                        left = { PendingFoodCard(row[0].name, row[0].grams, row[0].nutrition, onAddClick) },
+                                        left = { PendingFoodCard(row[0].name, row[0].grams, row[0].nutrition, onAddClick, !addState.recognizing && !addState.saving) { onRemovePendingDish(row[0].id) } },
                                         right = row.getOrNull(1)?.let { dish ->
-                                            { PendingFoodCard(dish.name, dish.grams, dish.nutrition, onAddClick) }
+                                            { PendingFoodCard(dish.name, dish.grams, dish.nutrition, onAddClick, !addState.recognizing && !addState.saving) { onRemovePendingDish(dish.id) } }
                                         },
                                     )
                                 }
@@ -331,12 +333,8 @@ fun TodayScreen(
                                                 },
                                                 onPortionChange = onManagementDraftChange,
                                                 onLongPress = {
-                                                    if (managementMode) {
-                                                        deleteEntry = row[0]
-                                                        showDelete = true
-                                                    } else if (!selectionMode) {
-                                                        onSelectionChange(selectedEntryIds + row[0].id)
-                                                    }
+                                                    deleteEntry = row[0]
+                                                    showDelete = true
                                                 },
                                                 onToggleSelection = { toggleSelection(row[0]) },
                                             )
@@ -365,12 +363,8 @@ fun TodayScreen(
                                                     },
                                                     onPortionChange = onManagementDraftChange,
                                                     onLongPress = {
-                                                        if (managementMode) {
-                                                            deleteEntry = entry
-                                                            showDelete = true
-                                                        } else if (!selectionMode) {
-                                                            onSelectionChange(selectedEntryIds + entry.id)
-                                                        }
+                                                        deleteEntry = entry
+                                                        showDelete = true
                                                     },
                                                     onToggleSelection = { toggleSelection(entry) },
                                                 )
@@ -601,10 +595,10 @@ private fun FoodCard(
 }
 
 @Composable
-private fun RecognitionCard(stage: RecognitionStage?) {
+private fun RecognitionCard(stage: RecognitionStage?, onCancel: () -> Unit) {
     val currentStage = stage ?: RecognitionStage.PREPARING
     Card(modifier = Modifier.fillMaxWidth().heightIn(min = 132.dp), cornerRadius = 20.dp, insideMargin = PaddingValues(14.dp)) {
-        Text(currentStage.title, style = MiuixTheme.textStyles.body1)
+        RecognitionCardHeader(currentStage.title, onCancel)
         Spacer(Modifier.height(10.dp))
         LinearProgressIndicator(
             progress = currentStage.progress / 100f,
@@ -638,13 +632,38 @@ private fun FoodLog.portionScaleFrom(base: FoodLog): Float =
     }
 
 @Composable
-private fun PendingFoodCard(name: String, grams: Double, nutrition: Nutrition, onClick: () -> Unit) {
+private fun PendingFoodCard(
+    name: String,
+    grams: Double,
+    nutrition: Nutrition,
+    onClick: () -> Unit,
+    enabled: Boolean,
+    onDelete: () -> Unit,
+) {
+    var showDelete by remember { mutableStateOf(false) }
+    AnimatedOverlayDialog(
+        show = showDelete,
+        title = name,
+        summary = "要删除这张待确认的食物卡片吗？",
+        onDismissRequest = { showDelete = false },
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Button(
+                onClick = { showDelete = false; onDelete() },
+                enabled = enabled,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColorsPrimary(color = MiuixTheme.colorScheme.error),
+            ) { Text("删除") }
+            Button(onClick = { showDelete = false }, modifier = Modifier.fillMaxWidth()) { Text("取消") }
+        }
+    }
     Card(
         modifier = Modifier.fillMaxWidth().heightIn(min = 132.dp),
         cornerRadius = 20.dp,
         insideMargin = PaddingValues(14.dp),
         pressFeedbackType = PressFeedbackType.Sink,
         onClick = onClick,
+        onLongPress = { if (enabled) showDelete = true },
     ) {
         Text("待确认", style = MiuixTheme.textStyles.footnote1, color = MiuixTheme.colorScheme.primary)
         Text(name, style = MiuixTheme.textStyles.title4, maxLines = 2, overflow = TextOverflow.Ellipsis)

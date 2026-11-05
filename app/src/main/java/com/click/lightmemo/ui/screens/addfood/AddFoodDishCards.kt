@@ -72,6 +72,7 @@ internal fun DishResultCard(
     onReplaceDish: (RecognizedDish) -> Unit,
     enabled: Boolean,
 ) {
+    var showDelete by remember(dish.id) { mutableStateOf(false) }
     var expanded by remember(dish.id) { mutableStateOf(true) }
     // ArrowRight 默认向右；展开时逆时针 90°（向上），收起再转 180°（向下）
     val expandIconRotation by animateFloatAsState(
@@ -80,7 +81,25 @@ internal fun DishResultCard(
         label = "expandIconRotation",
     )
 
+    AnimatedOverlayDialog(
+        show = showDelete,
+        title = dish.name,
+        summary = "要删除这张食物卡片吗？",
+        onDismissRequest = { showDelete = false },
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Button(
+                onClick = { showDelete = false; onRemoveDish(dish.id) },
+                enabled = enabled,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColorsPrimary(color = MiuixTheme.colorScheme.error),
+            ) { Text("删除") }
+            Button(onClick = { showDelete = false }, modifier = Modifier.fillMaxWidth()) { Text("取消") }
+        }
+    }
+
     Card(
+        onLongPress = { if (enabled) showDelete = true },
         cornerRadius = 20.dp,
         modifier = Modifier.fillMaxWidth(),
         insideMargin = PaddingValues(0.dp),
@@ -194,7 +213,7 @@ internal fun DishResultCard(
                             )
                         }
                     }
-                    if (dish.uncertaintyReason != null) {
+                    if (!dish.uncertaintyReason.isNullOrBlank()) {
                         Spacer(Modifier.height(6.dp))
                         Text(
                             text = "主要误差：${dish.uncertaintyReason}",
@@ -248,12 +267,12 @@ fun ComponentResultRow(
             val noCandidates = ref == null && component.hasNutritionCandidates == false
             val highCalories = component.needsCalorieConfirmation
             Text(
-                text = if (highCalories) "需确认" else ref?.let {
+                text = ref?.let {
                     when {
                         it.dataType.contains("AI估算") -> "来自 AI 估算 · 仅供参考"
                         it.dataType.contains("中国") -> "来自 中国食物成分表 #${it.sourceId}"
                         else -> "来自 USDA #${it.sourceId}"
-                    }
+                    } + if (highCalories) " · 需确认" else ""
                 } ?: if (noCandidates) "未匹配到营养数据" else "需确认",
                 style = MiuixTheme.textStyles.footnote2,
                 color = when {
@@ -271,7 +290,7 @@ fun ComponentResultRow(
             modifier = Modifier
                 .clip(RoundedCornerShape(8.dp))
                 .background(MiuixTheme.colorScheme.onSurfaceVariantSummary.copy(alpha = 0.06f))
-                .clickable { showEdit = true }
+                .clickable(enabled = enabled) { showEdit = true }
                 .padding(horizontal = 10.dp, vertical = 6.dp),
         ) {
             Text("${input}g", style = MiuixTheme.textStyles.footnote1)
@@ -292,7 +311,7 @@ fun ComponentResultRow(
             modifier = Modifier
                 .size(24.dp)
                 .clip(CircleShape)
-                .clickable { onRemove(component.id) }
+                .clickable(enabled = enabled) { onRemove(component.id) }
                 .padding(2.dp),
         )
     }

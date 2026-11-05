@@ -183,6 +183,16 @@ class RecognitionService : Service() {
 
         val client = app.recognitionClient
         val nutritionDatabase = app.nutritionDatabase
+        suspend fun enrichWithEstimates(meal: MealRecognition): MealRecognition =
+            nutritionDatabase.enrich(meal, settings.foodDataCentralApiKey).withAiNutritionFallback { component ->
+                client.estimateNutrition(
+                    baseUrl = settings.baseUrl,
+                    apiKey = settings.apiKey,
+                    model = settings.model,
+                    foodName = component.name,
+                    estimatedWeightG = component.estimatedWeightG,
+                )
+            }
         val manualResolver = ManualNutritionResolver(
             lookupOffline = { name -> nutritionDatabase.lookupOffline(name, chineseQuery = name, originalName = name) },
             normalize = { name -> client.normalizeFoodQuery(settings.baseUrl, settings.apiKey, settings.model, name) },
@@ -249,8 +259,7 @@ class RecognitionService : Service() {
                 updateStage(request, RecognitionStage.MATCHING)
                 complete(
                     request,
-                    result = nutritionDatabase
-                        .enrich(visualResult, settings.foodDataCentralApiKey)
+                    result = enrichWithEstimates(visualResult)
                         .splitDishes()
                         .scaledForServing(servingCountFor(request.selectedTags) ?: 1.0),
                 )
@@ -279,7 +288,7 @@ class RecognitionService : Service() {
                     return
                 }
                 if (cached != null && request.reuseImageCache == true) {
-                    val validated = nutritionDatabase.enrich(cached.result.withFreshIds(), settings.foodDataCentralApiKey)
+                    val validated = enrichWithEstimates(cached.result.withFreshIds())
                     complete(request, result = validated,
                         imageUri = measureRecognitionPhase(RecognitionPhase.IMAGE_SAVE) {
                             FoodImages.persistPrepared(this, preparedImage).toString()
@@ -330,7 +339,7 @@ class RecognitionService : Service() {
                 } catch (_: Exception) { visualResult }
                 if (path != RecognitionPath.FAST && assisted != visualResult) path = RecognitionPath.ASSISTED
                 metrics?.path = path
-                val enriched = if (path == RecognitionPath.FAST) assisted else nutritionDatabase.enrich(assisted, settings.foodDataCentralApiKey)
+                val enriched = if (path == RecognitionPath.FAST) assisted else enrichWithEstimates(assisted)
                 val result = enriched.splitDishes()
                     .scaledForServing(servingCountFor(request.selectedTags) ?: 1.0)
                 val savedImageUri = measureRecognitionPhase(RecognitionPhase.IMAGE_SAVE) {
@@ -359,7 +368,7 @@ class RecognitionService : Service() {
                     plateSize = request.plateSize,
                 )
                 updateStage(request, RecognitionStage.MATCHING)
-                val replacement = nutritionDatabase.enrich(visual, settings.foodDataCentralApiKey).splitDishes()
+                val replacement = enrichWithEstimates(visual).splitDishes()
                 require(replacement.dishes.isNotEmpty() && replacement.dishes.all { it.allComponents.isNotEmpty() }) {
                     "未识别到新菜品，请重试"
                 }

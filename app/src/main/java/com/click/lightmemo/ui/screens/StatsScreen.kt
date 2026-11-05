@@ -48,9 +48,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalContext
 import com.click.lightmemo.data.StatsCard
-import com.click.lightmemo.ui.secondary.ManageStatsActivity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -115,7 +113,6 @@ fun StatsScreen(
     calendarExpanded: Boolean,
     palette: FoodPaletteColors = FoodPaletteColors.Default,
 ) {
-    val context = LocalContext.current
     val state by viewModel.uiState.collectAsState()
     val expenditure by viewModel.calorieExpenditure.collectAsState()
     androidx.lifecycle.compose.LifecycleResumeEffect(viewModel) {
@@ -255,24 +252,6 @@ fun StatsScreen(
                         }
                     }
                 }
-            }
-        }
-        item(key = "manage_stats") {
-            val interactionSource = remember { MutableInteractionSource() }
-            val pressed by interactionSource.collectIsPressedAsState()
-            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                Text(
-                    text = "管理统计页",
-                    style = MiuixTheme.textStyles.footnote2,
-                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary.copy(alpha = if (pressed) 0.45f else 1f),
-                    modifier = Modifier.clickable(
-                        interactionSource = interactionSource,
-                        indication = null,
-                        role = Role.Button,
-                    ) {
-                        context.startActivity(android.content.Intent(context, ManageStatsActivity::class.java))
-                    }.padding(horizontal = 24.dp, vertical = 16.dp),
-                )
             }
         }
     }

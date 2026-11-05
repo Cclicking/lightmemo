@@ -1,6 +1,8 @@
 package com.click.lightmemo.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.Column
@@ -14,6 +16,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.selection.toggleable
@@ -34,15 +37,20 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.disabled
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.unit.dp
 import com.click.lightmemo.viewmodel.AddFoodUiState
+import com.click.lightmemo.R
 import com.click.lightmemo.network.FoodChatQuestion
 import kotlinx.coroutines.flow.first
 import top.yukonga.miuix.kmp.basic.Button
@@ -51,6 +59,8 @@ import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.basic.Checkbox
+import top.yukonga.miuix.kmp.basic.Icon
+import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 @Composable
@@ -68,6 +78,7 @@ internal fun FoodChatContent(
     val listState = rememberLazyListState()
     val inputFocus = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
+    var inputReady by remember { mutableStateOf(false) }
     val navigationBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     val keyboardBottom = WindowInsets.ime.asPaddingValues().calculateBottomPadding()
     // 浮层尺寸固定，只在内容内部避开键盘；偏移量由页面宿主一并传入。
@@ -84,8 +95,12 @@ internal fun FoodChatContent(
             listState.animateScrollToItem(target)
         }
     }
-    LaunchedEffect(state.chatAddingFood) {
-        if (state.chatAddingFood) inputFocus.requestFocus()
+    LaunchedEffect(inputReady, configured, state.chatAddingFood) {
+        if (inputReady && configured && !state.chatSending &&
+            (state.chatMessages.isEmpty() || state.chatAddingFood)) {
+            inputFocus.requestFocus()
+            keyboard?.show()
+        }
     }
     Column(
         modifier = Modifier.fillMaxWidth().height(AddFoodSheetHeight)
@@ -159,30 +174,56 @@ internal fun FoodChatContent(
                 }
             }
             if (state.chatMessages.isEmpty() && state.chatInput.isBlank()) {
-                Box(Modifier.fillMaxSize().padding(top = 32.dp), contentAlignment = Alignment.CenterStart) {
-                    Text("吃了什么？尽管说", style = MiuixTheme.textStyles.title1,
-                        textAlign = TextAlign.Start)
+                Box(Modifier.fillMaxSize().padding(start = 24.dp, top = 32.dp), contentAlignment = Alignment.CenterStart) {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text("轻食记", style = MiuixTheme.textStyles.body1,
+                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
+                        Text("吃了什么？尽管说", style = MiuixTheme.textStyles.title2,
+                            fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Start)
+                    }
                 }
             }
         }
-        Row(verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            TextField(
-                value = state.chatInput,
-                onValueChange = onInputChange,
-                label = if (state.chatAddingFood) "补充吃过的食物和份量" else "描述食物，或输入其他答案",
-                enabled = configured && !state.chatSending,
-                singleLine = false,
-                maxLines = 3,
-                colors = sheetFieldColors(),
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                keyboardActions = KeyboardActions(onSend = { onSend() }),
-                modifier = Modifier.weight(1f).focusRequester(inputFocus),
-            )
-            Button(onClick = onSend,
-                enabled = configured && !state.chatSending && state.chatInput.isNotBlank(),
-                colors = ButtonDefaults.buttonColorsPrimary()) { Text("发送") }
-        }
+        val canSend = configured && !state.chatSending && state.chatInput.isNotBlank()
+        TextField(
+            value = state.chatInput,
+            onValueChange = onInputChange,
+            label = if (state.chatAddingFood) "补充吃过的食物和份量" else "描述食物，或输入其他答案",
+            useLabelAsPlaceholder = true,
+            enabled = configured && !state.chatSending,
+            singleLine = false,
+            maxLines = 3,
+            colors = sheetFieldColors(),
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+            keyboardActions = KeyboardActions(onSend = { if (canSend) onSend() }),
+            trailingIcon = if (state.chatInput.isBlank()) null else ({
+                IconButton(
+                    onClick = onSend,
+                    enabled = canSend,
+                    cornerRadius = 24.dp,
+                    minWidth = 48.dp,
+                    minHeight = 48.dp,
+                    modifier = Modifier.padding(end = 6.dp, top = 4.dp, bottom = 4.dp)
+                        .size(48.dp).semantics { if (!canSend) disabled() },
+                ) {
+                    Box(
+                        modifier = Modifier.size(24.dp).background(
+                            color = if (canSend) MiuixTheme.colorScheme.primary
+                                else MiuixTheme.colorScheme.onSurfaceVariantSummary.copy(alpha = 0.3f),
+                            shape = CircleShape,
+                        ),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(painter = painterResource(R.drawable.ic_chat_send),
+                            contentDescription = "发送",
+                            tint = MiuixTheme.colorScheme.onPrimary,
+                            modifier = Modifier.size(14.dp))
+                    }
+                }
+            }),
+            modifier = Modifier.fillMaxWidth().focusRequester(inputFocus)
+                .onGloballyPositioned { inputReady = true },
+        )
     }
 }
 
