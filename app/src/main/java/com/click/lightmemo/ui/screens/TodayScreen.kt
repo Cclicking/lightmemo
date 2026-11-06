@@ -304,16 +304,14 @@ fun TodayScreen(
                                     modifier = Modifier.weight(1f).alignByBaseline(),
                                     insideMargin = PaddingValues(0.dp),
                                 )
-                                Text(
-                                    text = "${mealCalories.toInt()} kcal",
-                                    modifier = Modifier.alignByBaseline(),
-                                    style = MiuixTheme.textStyles.subtitle,
-                                    color = if (state.targetSettings.mealCaloriesMatchTitleColor) {
-                                        MiuixTheme.colorScheme.onBackgroundVariant
-                                    } else {
-                                        MiuixTheme.colorScheme.onSurfaceVariantSummary
-                                    },
-                                )
+                                if (state.targetSettings.showMealCalories) {
+                                    Text(
+                                        text = "${mealCalories.toInt()} kcal",
+                                        modifier = Modifier.alignByBaseline(),
+                                        style = MiuixTheme.textStyles.subtitle,
+                                        color = MiuixTheme.colorScheme.onBackgroundVariant,
+                                    )
+                                }
                             }
                             if (recognizingHere) FoodCardRow(left = { RecognitionCard(addState.recognitionStage, onCancelRecognition) })
                             pendingDishes.chunked(2).forEach { row ->

@@ -196,8 +196,8 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
         repo.updateGlassEffectsEnabled(value)
     }
 
-    fun setMealCaloriesMatchTitleColor(value: Boolean) = saveSetting {
-        repo.updateMealCaloriesMatchTitleColor(value)
+    fun setShowMealCalories(value: Boolean) = saveSetting {
+        repo.updateShowMealCalories(value)
     }
 
     fun setTopGradientBlurEnabled(value: Boolean) = saveSetting {

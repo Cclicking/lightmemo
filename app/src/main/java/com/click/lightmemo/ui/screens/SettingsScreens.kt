@@ -738,15 +738,15 @@ fun AppearanceSettingsScreen(
                     insideMargin = PaddingValues(0.dp),
                 ) {
                     SwitchPreference(
+                        checked = settings.showMealCalories,
+                        onCheckedChange = viewModel::setShowMealCalories,
+                        title = "显示餐次热量",
+                        summary = "在首页餐次标题右侧显示热量",
+                    )
+                    SwitchPreference(
                         checked = settings.glassEffectsEnabled,
                         onCheckedChange = { viewModel.setGlassEffectsEnabled(it) },
                         title = "玻璃特效",
-                    )
-                    SwitchPreference(
-                        checked = settings.mealCaloriesMatchTitleColor,
-                        onCheckedChange = viewModel::setMealCaloriesMatchTitleColor,
-                        title = "餐次热量同色",
-                        summary = "首页餐次右侧热量文字与餐次标题颜色一致",
                     )
                     SwitchPreference(
                         checked = settings.topGradientBlurEnabled && settings.glassEffectsEnabled,

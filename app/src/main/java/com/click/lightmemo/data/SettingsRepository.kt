@@ -94,7 +94,7 @@ data class AppSettings(
     val colorTheme: ColorThemePreset = ColorThemePreset.MULTICOLOR,
     val colorSeed: Long = ColorThemePreset.MULTICOLOR.seedColor,
     val colorHarmony: Float = 1f,
-    val mealCaloriesMatchTitleColor: Boolean = false,
+    val showMealCalories: Boolean = false,
     /** 总开关：默认关闭玻璃特效，避免弱 GPU/模拟器冷启动首帧 ANR */
     val glassEffectsEnabled: Boolean = false,
     val topGradientBlurEnabled: Boolean = false,
@@ -349,7 +349,7 @@ class SettingsRepository(
                 put("colorTheme", current.colorTheme.name)
                 put("colorSeed", current.colorSeed)
                 put("colorHarmony", current.colorHarmony.toDouble())
-                put("mealCaloriesMatchTitleColor", current.mealCaloriesMatchTitleColor)
+                put("showMealCalories", current.showMealCalories)
                 put("glassEffectsEnabled", current.glassEffectsEnabled)
                 put("topGradientBlurEnabled", current.topGradientBlurEnabled)
                 put("topGradientBlurRangeDp", current.topGradientBlurRangeDp)
@@ -459,8 +459,8 @@ class SettingsRepository(
             prefs[Keys.COLOR_HARMONY] = settingsJsonObject.optDouble("colorHarmony", 1.0)
                 .toFloat().takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: 1f
             prefs[Keys.GLASS_EFFECTS] = settingsJsonObject.optBoolean("glassEffectsEnabled", defaults.glassEffectsEnabled)
-            prefs[Keys.MEAL_CALORIES_MATCH_TITLE_COLOR] = settingsJsonObject.optBoolean(
-                "mealCaloriesMatchTitleColor", defaults.mealCaloriesMatchTitleColor,
+            prefs[Keys.SHOW_MEAL_CALORIES] = settingsJsonObject.optBoolean(
+                "showMealCalories", defaults.showMealCalories,
             )
             prefs[Keys.TOP_GRADIENT_BLUR] = settingsJsonObject.optBoolean(
                 "topGradientBlurEnabled",
@@ -525,7 +525,7 @@ class SettingsRepository(
         val COLOR_SEED = longPreferencesKey("color_seed")
         val COLOR_HARMONY = floatPreferencesKey("color_harmony")
         val GLASS_EFFECTS = booleanPreferencesKey("glass_effects_enabled")
-        val MEAL_CALORIES_MATCH_TITLE_COLOR = booleanPreferencesKey("meal_calories_match_title_color")
+        val SHOW_MEAL_CALORIES = booleanPreferencesKey("show_meal_calories")
         val TOP_GRADIENT_BLUR = booleanPreferencesKey("top_gradient_blur_enabled")
         val TOP_GRADIENT_BLUR_RANGE = intPreferencesKey("top_gradient_blur_range_dp")
         val SAVE_PHOTOS_TO_GALLERY = booleanPreferencesKey("save_photos_to_gallery")
@@ -614,7 +614,7 @@ class SettingsRepository(
             colorSeed = storedSeed,
             colorHarmony = prefs[Keys.COLOR_HARMONY] ?: 1f,
             glassEffectsEnabled = prefs[Keys.GLASS_EFFECTS] ?: false,
-            mealCaloriesMatchTitleColor = prefs[Keys.MEAL_CALORIES_MATCH_TITLE_COLOR] ?: false,
+            showMealCalories = prefs[Keys.SHOW_MEAL_CALORIES] ?: false,
             topGradientBlurEnabled = prefs[Keys.TOP_GRADIENT_BLUR] ?: false,
             topGradientBlurRangeDp = (prefs[Keys.TOP_GRADIENT_BLUR_RANGE] ?: 72).coerceIn(0, 240),
             savePhotosToGallery = prefs[Keys.SAVE_PHOTOS_TO_GALLERY] ?: true,
@@ -951,8 +951,8 @@ class SettingsRepository(
         store.edit { it[Keys.GLASS_EFFECTS] = value }
     }
 
-    suspend fun updateMealCaloriesMatchTitleColor(value: Boolean) {
-        store.edit { it[Keys.MEAL_CALORIES_MATCH_TITLE_COLOR] = value }
+    suspend fun updateShowMealCalories(value: Boolean) {
+        store.edit { it[Keys.SHOW_MEAL_CALORIES] = value }
     }
 
     suspend fun updateTopGradientBlurEnabled(value: Boolean) {
