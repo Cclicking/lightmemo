@@ -86,7 +86,6 @@ fun PersonalFoodMemoryScreen(
             Card(cornerRadius = 20.dp, modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(0.dp)) {
                 BasicComponent(
                     title = "清空个人记忆",
-                    summary = "保留饮食记录，之后重新学习",
                     enabled = !state.busy && state.memories.isNotEmpty(),
                     endActions = {
                         MemoryDeleteButton(
@@ -110,7 +109,7 @@ fun PersonalFoodMemoryScreen(
                 SmallTitle(text = if (state.loading) "正在读取…" else "已记住的食物 · 0 条", modifier = Modifier.offset(x = (-16).dp))
                 if (!state.loading && state.error == null) {
                     Card(cornerRadius = 20.dp, modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(0.dp)) {
-                        BasicComponent(title = "暂无食物记忆", summary = "确认保存食物后，会在这里积累历史建议")
+                        BasicComponent(title = "暂无食物记忆")
                     }
                 }
             }

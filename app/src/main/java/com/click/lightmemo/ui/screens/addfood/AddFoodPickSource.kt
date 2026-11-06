@@ -15,6 +15,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import com.click.lightmemo.ui.components.AiConfigurationBanner
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -118,7 +119,7 @@ internal fun PickSourceContent(
         TextField(
             value = quickInput,
             onValueChange = onQuickInputChange,
-            label = "点击输入，快速识别",
+            label = "吃了什么",
             singleLine = true,
             enabled = !recognizing,
             colors = sheetFieldColors(),
@@ -133,17 +134,7 @@ internal fun PickSourceContent(
         if (recognizing) RecognitionStatusCard(recognitionStage, onCancelRecognition)
 
         if (!configured) {
-            Card(cornerRadius = 20.dp, modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(16.dp)) {
-                Column {
-                    Text("尚未配置识别 API", style = MiuixTheme.textStyles.title4)
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        text = "请到「我的 → 识别 API」填写 Base URL 与 API Key。文字录入不依赖网络。",
-                        style = MiuixTheme.textStyles.subtitle,
-                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                    )
-                }
-            }
+            AiConfigurationBanner()
         }
 
         // 本餐说明 + 时间
@@ -212,7 +203,7 @@ internal fun PickSourceContent(
                         modifier = Modifier.size(width = 24.dp, height = 28.dp),
                     )
                 },
-                label = if (configured) "拍照识别" else "拍照识别（需先配置 API）",
+                label = "拍照识别",
                 enabled = configured && !recognizing,
                 onClick = onCamera,
             )

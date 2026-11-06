@@ -25,6 +25,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import com.click.lightmemo.ui.components.AiConfigurationBanner
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
@@ -117,8 +118,7 @@ internal fun FoodChatContent(
                 contentPadding = PaddingValues(top = 96.dp, bottom = 8.dp),
             ) {
                 if (!configured) item {
-                    Text("请先到「我的 → 识别 API」配置服务，再开始对话。",
-                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
+                    AiConfigurationBanner()
                 }
                 itemsIndexed(state.chatMessages) { index, message ->
                     ChatBubble(

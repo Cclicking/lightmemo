@@ -982,6 +982,9 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
         val originalResult = (_uiState.value.step as? AddStep.Review)?.originalResult
         save(onSaved) {
             require(result.dishes.isNotEmpty()) { "请先添加食物" }
+            require(result.dishes.all { it.nutritionLabel == null || (it.grams.isFinite() && it.grams > 0.0) }) {
+                "请填写食用重量（克）"
+            }
             require(result.dishes.all { dish -> dish.allComponents.all { it.nutritionReference != null } }) {
                 "请先匹配所有食物组成的营养数据"
             }
@@ -1014,6 +1017,7 @@ class AddFoodViewModel(app: Application) : AndroidViewModel(app) {
             }
 
             logs.zip(result.dishes).forEach { (log, dish) ->
+                if (dish.nutritionLabel != null) return@forEach
                 val original = originalResult?.dishes?.find { it.id == dish.id }?.let {
                     log.copy(name = it.name, grams = it.grams, nutrition = it.nutrition, components = it.allComponents)
                 }

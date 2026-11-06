@@ -12,4 +12,6 @@
     <string name="shortcut_gallery_long">Pick a photo to recognize</string>
     <string name="shortcut_manual">Text entry</string>
     <string name="shortcut_manual_long">Manually enter food and grams</string>
+    <string name="shortcut_chat">AI recognition</string>
+    <string name="shortcut_chat_long">Describe your meal to create a food log</string>
 </resources>

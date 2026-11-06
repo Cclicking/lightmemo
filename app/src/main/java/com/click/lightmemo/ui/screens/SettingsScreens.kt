@@ -25,6 +25,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.border
+import com.click.lightmemo.ui.components.AiConfigurationBanner
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -36,8 +37,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -46,13 +45,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -67,8 +64,7 @@ import top.yukonga.miuix.kmp.basic.ProgressIndicatorDefaults
 import androidx.core.graphics.drawable.toBitmap
 import com.click.lightmemo.data.ActivityLevel
 import com.click.lightmemo.data.ColorThemePreset
-import com.click.lightmemo.data.FoodPaletteGenerator
-import com.click.lightmemo.data.HsvColor
+import com.click.lightmemo.data.FitnessGoal
 import com.click.lightmemo.data.Gender
 import com.click.lightmemo.data.DEFAULT_PROFILE_AGE_YEARS
 import com.click.lightmemo.data.DEFAULT_PROFILE_HEIGHT_CM
@@ -120,12 +116,7 @@ fun ApiSettingsScreen(
     AiSettingsList(contentPadding, scrollBehavior, listState) {
         item {
             if (!settings.isRecognitionConfigured) {
-                Text(
-                    text = "尚未配置识别服务，点击新增配置，填写 Base URL 与 API Key 后即可识别",
-                    style = MiuixTheme.textStyles.subtitle,
-                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                    modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 16.dp, bottom = 20.dp),
-                )
+                AiConfigurationBanner(modifier = Modifier.padding(top = 12.dp))
             }
             SmallTitle("模型配置", modifier = Modifier.offset(x = (-16).dp))
             Card(modifier = Modifier.fillMaxWidth()) {
@@ -161,7 +152,6 @@ fun ApiSettingsScreen(
             Card(modifier = Modifier.fillMaxWidth()) {
                 ArrowPreference(
                     title = "Prompt 修改",
-                    summary = "编辑、测试识别提示词与大模型背景信息",
                     onClick = { context.startActivity(android.content.Intent(context, com.click.lightmemo.ui.secondary.PromptSettingsActivity::class.java)) },
                 )
             }
@@ -170,7 +160,6 @@ fun ApiSettingsScreen(
             Card(modifier = Modifier.fillMaxWidth()) {
                 ArrowPreference(
                     title = "MCP 服务",
-                    summary = "连接超级小爱，查询当天营养摄入",
                     onClick = { context.startActivity(Intent(context, com.click.lightmemo.ui.secondary.McpSettingsActivity::class.java)) },
                 )
             }
@@ -343,10 +332,6 @@ fun CalorieTargetScreen(
                     }
                 }, modifier = Modifier.fillMaxWidth(), enabled = !saving && settings.recommendedNutrients != null,
             ) { Text("填入推荐值") }
-            Spacer(Modifier.height(12.dp))
-            Button(onClick = {
-                context.startActivity(Intent(context, com.click.lightmemo.ui.secondary.PersonalInfoActivity::class.java))
-            }, modifier = Modifier.fillMaxWidth(), enabled = !saving) { Text("修改个人信息与健身目标") }
         }
     }
     AnimatedOverlayDialog(
@@ -422,12 +407,19 @@ private fun InputDialogPreferenceRow(
     range: IntRange,
     summary: String? = null,
     dialogTitle: String = "${title}目标",
+    content: (@Composable (onClick: () -> Unit) -> Unit)? = null,
     onValueChange: (Int) -> Unit,
 ) {
     var showDialog by remember { mutableStateOf(false) }
     var draft by remember { mutableStateOf(value.toString()) }
 
-    ArrowPreference(
+    val openDialog = {
+        draft = value.toString()
+        showDialog = true
+    }
+    if (content != null) {
+        content(openDialog)
+    } else ArrowPreference(
         title = title,
         summary = summary,
         endActions = {
@@ -437,10 +429,7 @@ private fun InputDialogPreferenceRow(
                 color = MiuixTheme.colorScheme.onSurfaceVariantActions,
             )
         },
-        onClick = {
-            draft = value.toString()
-            showDialog = true
-        },
+        onClick = openDialog,
     )
     AnimatedOverlayDialog(
         title = dialogTitle,
@@ -577,13 +566,6 @@ fun PersonalInfoScreen(
                     )
                 }
 
-                Spacer(Modifier.height(12.dp))
-                Text(
-                    text = "基于 Mifflin-St Jeor 公式、运动强度与健身目标估算，可在每日目标页自行调整",
-                    style = MiuixTheme.textStyles.footnote2,
-                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                    modifier = Modifier.padding(horizontal = FootnoteHorizontalPadding),
-                )
 
             }
         } else {
@@ -650,8 +632,8 @@ private fun formatMacro(value: Float): String =
 @Composable
 private fun StatusRow(
     title: String,
-    summary: String,
-    status: String,
+    summary: String? = null,
+    status: String? = null,
     onClick: (() -> Unit)? = null,
 ) {
     if (onClick != null) {
@@ -660,11 +642,9 @@ private fun StatusRow(
             summary = summary,
             onClick = onClick,
             endActions = {
-                Text(
-                    text = status,
-                    fontSize = 14.5.sp,
-                    color = MiuixTheme.colorScheme.onSurfaceVariantActions,
-                )
+                if (!status.isNullOrBlank()) {
+                    Text(text = status, fontSize = 14.5.sp, color = MiuixTheme.colorScheme.onSurfaceVariantActions)
+                }
             },
         )
     } else {
@@ -672,11 +652,9 @@ private fun StatusRow(
             title = title,
             summary = summary,
             endActions = {
-                Text(
-                    text = status,
-                    fontSize = 14.5.sp,
-                    color = MiuixTheme.colorScheme.onSurfaceVariantActions,
-                )
+                if (!status.isNullOrBlank()) {
+                    Text(text = status, fontSize = 14.5.sp, color = MiuixTheme.colorScheme.onSurfaceVariantActions)
+                }
             },
         )
     }
@@ -763,13 +741,17 @@ fun AppearanceSettingsScreen(
                         checked = settings.glassEffectsEnabled,
                         onCheckedChange = { viewModel.setGlassEffectsEnabled(it) },
                         title = "玻璃特效",
-                        summary = "控制顶部渐变模糊等高开销特效。Android 12 上自动降级为高斯模糊",
+                    )
+                    SwitchPreference(
+                        checked = settings.mealCaloriesMatchTitleColor,
+                        onCheckedChange = viewModel::setMealCaloriesMatchTitleColor,
+                        title = "餐次热量同色",
+                        summary = "首页餐次右侧热量文字与餐次标题颜色一致",
                     )
                     SwitchPreference(
                         checked = settings.topGradientBlurEnabled && settings.glassEffectsEnabled,
                         onCheckedChange = { viewModel.setTopGradientBlurEnabled(it) },
                         title = "顶部渐变模糊",
-                        summary = "顶栏下方的 miuix 渐进模糊；Android 12 上降级为软渐变",
                         enabled = settings.glassEffectsEnabled,
                     )
                     InputDialogPreferenceRow(
@@ -777,7 +759,6 @@ fun AppearanceSettingsScreen(
                         unit = "dp",
                         value = settings.topGradientBlurRangeDp,
                         range = 0..240,
-                        summary = "控制顶部模糊从标题栏向下延伸的高度",
                         dialogTitle = "渐变模糊范围",
                         onValueChange = viewModel::setTopGradientBlurRangeDp,
                     )
@@ -786,9 +767,10 @@ fun AppearanceSettingsScreen(
         }
     }
 
-    ColorPickerDialog(
+    CustomPaletteDialog(
         show = showColorPicker,
         selected = settings.colorSeed,
+        selectedHarmony = settings.colorHarmony,
         onSelect = viewModel::setCustomColorTheme,
         onDismiss = { showColorPicker = false },
     )
@@ -1067,192 +1049,6 @@ private fun ThemeChip(
 }
 
 @Composable
-private fun ColorPickerDialog(
-    show: Boolean,
-    selected: Long,
-    onSelect: (Long) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    var hsv by remember(show, selected) { mutableStateOf(FoodPaletteGenerator.argbToHsv(selected)) }
-    val selectedColor = FoodPaletteGenerator.hsvToArgb(hsv)
-    val generated = remember(selectedColor) { FoodPaletteGenerator.fromSeed(selectedColor).toComposeColors() }
-    AnimatedOverlayDialog(
-        title = "自定义配色",
-        summary = "选择主色后自动生成协调的热量、营养素和饮食结构颜色",
-        show = show,
-        onDismissRequest = onDismiss,
-    ) {
-        Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            SaturationValuePicker(
-                hsv = hsv,
-                onHsvChange = { hsv = it },
-            )
-            HuePicker(
-                hue = hsv.hue,
-                onHueChange = { hsv = hsv.copy(hue = it) },
-            )
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Box(
-                    Modifier
-                        .size(34.dp)
-                        .clip(androidx.compose.foundation.shape.CircleShape)
-                        .background(Color(selectedColor)),
-                )
-                Column {
-                    Text("主色  ${selectedColor.toHexString()}", style = MiuixTheme.textStyles.body2)
-                    Text(
-                        "已生成 ${generated.previewColors.size} 个应用颜色",
-                        style = MiuixTheme.textStyles.footnote2,
-                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                    )
-                }
-            }
-            Text("预览", style = MiuixTheme.textStyles.footnote2, color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
-            PaletteStrip(colors = generated.previewColors)
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Button(onClick = onDismiss, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors()) {
-                    Text("取消")
-                }
-                Button(
-                    onClick = {
-                        onSelect(selectedColor)
-                        onDismiss()
-                    },
-                    modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.buttonColorsPrimary(),
-                ) {
-                    Text("应用配色")
-                }
-            }
-            Text(
-                text = "拖动上方色板选择明度/饱和度，拖动色相条选择色相。",
-                style = MiuixTheme.textStyles.footnote2,
-                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-            )
-        }
-    }
-}
-
-private val HueColors = listOf(
-    Color.Red,
-    Color.Yellow,
-    Color.Green,
-    Color.Cyan,
-    Color.Blue,
-    Color.Magenta,
-    Color.Red,
-)
-
-private val FoodPaletteColors.previewColors: List<Color>
-    get() = listOf(calorie, protein, carbs, fat) + structure
-
-@Composable
-private fun PaletteStrip(colors: List<Color>, selected: Boolean = false) {
-    Row(
-        modifier = Modifier.width(96.dp),
-        horizontalArrangement = Arrangement.spacedBy(3.dp),
-    ) {
-        colors.take(8).forEach { color ->
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .height(24.dp)
-                    .clip(androidx.compose.foundation.shape.RoundedCornerShape(6.dp))
-                    .background(color),
-            )
-        }
-        if (selected) {
-            Box(
-                modifier = Modifier
-                    .size(8.dp)
-                    .clip(androidx.compose.foundation.shape.CircleShape)
-                    .background(MiuixTheme.colorScheme.primary)
-                    .align(Alignment.CenterVertically),
-            )
-        }
-    }
-}
-
-@Composable
-private fun SaturationValuePicker(
-    hsv: HsvColor,
-    onHsvChange: (HsvColor) -> Unit,
-) {
-    androidx.compose.foundation.layout.BoxWithConstraints {
-        val widthPx = with(androidx.compose.ui.platform.LocalDensity.current) { maxWidth.toPx() }
-        val heightPx = with(androidx.compose.ui.platform.LocalDensity.current) { 180.dp.toPx() }
-        fun update(offset: Offset) {
-            onHsvChange(
-                hsv.copy(
-                    saturation = (offset.x / widthPx).coerceIn(0f, 1f),
-                    value = (1f - offset.y / heightPx).coerceIn(0f, 1f),
-                ),
-            )
-        }
-        Canvas(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(180.dp)
-                .clip(androidx.compose.foundation.shape.RoundedCornerShape(14.dp))
-                .pointerInput(widthPx, heightPx, hsv.hue) {
-                    detectTapGestures(onTap = ::update)
-                }
-                .pointerInput(widthPx, heightPx, hsv.hue) {
-                    detectDragGestures(
-                        onDragStart = ::update,
-                        onDrag = { change, _ -> update(change.position) },
-                    )
-                },
-        ) {
-            val hueColor = Color(FoodPaletteGenerator.hsvToArgb(HsvColor(hsv.hue, 1f, 1f)))
-            drawRect(Brush.horizontalGradient(listOf(Color.White, hueColor)))
-            drawRect(Brush.verticalGradient(listOf(Color.Transparent, Color.Black)))
-            val x = hsv.saturation * size.width
-            val y = (1f - hsv.value) * size.height
-            drawCircle(Color.Black, radius = 9.dp.toPx(), center = Offset(x, y))
-            drawCircle(Color.White, radius = 6.dp.toPx(), center = Offset(x, y))
-        }
-    }
-}
-
-@Composable
-private fun HuePicker(
-    hue: Float,
-    onHueChange: (Float) -> Unit,
-) {
-    androidx.compose.foundation.layout.BoxWithConstraints {
-        val widthPx = with(androidx.compose.ui.platform.LocalDensity.current) { maxWidth.toPx() }
-        val heightPx = with(androidx.compose.ui.platform.LocalDensity.current) { 28.dp.toPx() }
-        fun update(offset: Offset) {
-            onHueChange((offset.x / widthPx * 360f).coerceIn(0f, 360f))
-        }
-        Canvas(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(28.dp)
-                .clip(androidx.compose.foundation.shape.RoundedCornerShape(14.dp))
-                .pointerInput(widthPx, heightPx) {
-                    detectTapGestures(onTap = ::update)
-                }
-                .pointerInput(widthPx, heightPx) {
-                    detectDragGestures(
-                        onDragStart = ::update,
-                        onDrag = { change, _ -> update(change.position) },
-                    )
-                },
-        ) {
-            drawRect(Brush.horizontalGradient(HueColors))
-            val x = hue / 360f * size.width
-            drawCircle(Color.White, radius = 10.dp.toPx(), center = Offset(x, size.height / 2f))
-            drawCircle(Color.Black, radius = 7.dp.toPx(), center = Offset(x, size.height / 2f))
-        }
-    }
-}
-
-private fun Long.toHexString(): String =
-    "#%06X".format(java.util.Locale.ROOT, this and 0xFFFFFF)
-
-@Composable
 fun AboutScreen(
     contentPadding: PaddingValues,
     scrollBehavior: ScrollBehavior?,
@@ -1273,6 +1069,7 @@ fun AboutScreen(
     val versionName = packageInfo?.versionName ?: "—"
     val githubUrl = "https://github.com/Cclicking/lightmemo"
     val feedbackUrl = "https://f.wps.cn/g/VMFqSZv8/"
+    val authorUrl = "https://www.coolapk.com/u/1176902"
     val appIcon = remember(context) {
         runCatching {
             context.packageManager
@@ -1381,7 +1178,7 @@ fun AboutScreen(
                 Spacer(Modifier.height(20.dp))
                 SmallTitle(text = "本地统计", modifier = Modifier.offset(x = (-16).dp))
                 Card(cornerRadius = 20.dp, modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(0.dp)) {
-                    ArrowPreference(title = "诊断信息", summary = "近 30 天识别、营养匹配与推荐统计",
+                    ArrowPreference(title = "诊断信息",
                         onClick = { context.startActivity(Intent(context, com.click.lightmemo.ui.secondary.DiagnosticsActivity::class.java)) })
                 }
 
@@ -1400,7 +1197,6 @@ fun AboutScreen(
                         StatusRow(
                             title = "GitHub",
                             summary = "Cclicking/lightmemo",
-                            status = "打开",
                             onClick = {
                                 runCatching {
                                     context.startActivity(
@@ -1415,12 +1211,12 @@ fun AboutScreen(
                                 updateState.checking -> "正在检查最新版本"
                                 updateState.error != null -> updateState.error.orEmpty()
                                 updateState.available != null -> "发现新版本 ${updateState.available?.versionName}"
-                                else -> updateState.message ?: "从 Gitee 检查最新版本"
+                                else -> updateState.message
                             },
                             status = when {
                                 updateState.checking -> "检查中…"
                                 updateState.available != null -> "有更新"
-                                else -> "检查"
+                                else -> null
                             },
                             onClick = {
                                 if (updateState.available != null) {
@@ -1447,8 +1243,6 @@ fun AboutScreen(
                     Column(modifier = Modifier.fillMaxWidth()) {
                         StatusRow(
                             title = "意见与反馈",
-                            summary = "反馈问题或提出建议",
-                            status = "打开",
                             onClick = {
                                 runCatching {
                                     context.startActivity(
@@ -1456,6 +1250,18 @@ fun AboutScreen(
                                     )
                                 }.onFailure {
                                     Toast.makeText(context, "无法打开反馈页面", Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                        )
+                        StatusRow(
+                            title = "作者主页",
+                            onClick = {
+                                runCatching {
+                                    context.startActivity(
+                                        Intent(Intent.ACTION_VIEW, Uri.parse(authorUrl)),
+                                    )
+                                }.onFailure {
+                                    Toast.makeText(context, "无法打开作者主页", Toast.LENGTH_SHORT).show()
                                 }
                             },
                         )
@@ -1675,15 +1481,12 @@ internal fun PersonalProfileFields(
 
         Spacer(Modifier.height(FieldToTitleSpacing))
         SmallTitle("健身目标", modifier = Modifier.offset(x = (-16).dp))
-        Card(modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(0.dp)) {
-            DropdownPref(
-                title = "目标方向",
-                summary = settings.fitnessGoal.summary,
-                items = com.click.lightmemo.data.FitnessGoal.entries.map { it.label },
-                selectedIndex = com.click.lightmemo.data.FitnessGoal.entries.indexOf(settings.fitnessGoal),
-                onSelectedIndexChange = { onChange(settings.copy(fitnessGoal = com.click.lightmemo.data.FitnessGoal.entries[it])) },
-            )
-        }
+        Spacer(Modifier.height(TitleToFieldSpacing))
+        GlassTabs(
+            tabs = FitnessGoal.entries.map { it.label },
+            selectedTabIndex = FitnessGoal.entries.indexOf(settings.fitnessGoal).coerceAtLeast(0),
+            onTabSelected = { index -> onChange(settings.copy(fitnessGoal = FitnessGoal.entries[index])) },
+        )
         Spacer(Modifier.height(FieldToTitleSpacing))
         SmallTitle(
             text = "每周运动强度",
@@ -1713,16 +1516,48 @@ internal fun DailyTargetFields(
     targets: com.click.lightmemo.data.DailyTargets,
     onChange: (com.click.lightmemo.data.DailyTargets) -> Unit,
 ) {
-    Card(modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(0.dp)) {
-        InputDialogPreferenceRow("每日热量", "kcal", targets.calories.toInt(), 500..10000,
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        EditableTargetCard("热量", "kcal", targets.calories.toInt(), 500..10000,
+            modifier = Modifier.weight(1f),
             onValueChange = { onChange(targets.copy(calories = it.toFloat())) })
-        InputDialogPreferenceRow("蛋白质", "g", targets.proteinG.toInt(), 1..500,
+        EditableTargetCard("蛋白质", "g", targets.proteinG.toInt(), 1..500,
+            modifier = Modifier.weight(1f),
             onValueChange = { onChange(targets.copy(proteinG = it.toFloat())) })
-        InputDialogPreferenceRow("脂肪", "g", targets.fatG.toInt(), 1..300,
+        EditableTargetCard("脂肪", "g", targets.fatG.toInt(), 1..300,
+            modifier = Modifier.weight(1f),
             onValueChange = { onChange(targets.copy(fatG = it.toFloat())) })
-        InputDialogPreferenceRow("碳水", "g", targets.carbsG.toInt(), 1..800,
+        EditableTargetCard("碳水", "g", targets.carbsG.toInt(), 1..800,
+            modifier = Modifier.weight(1f),
             onValueChange = { onChange(targets.copy(carbsG = it.toFloat())) })
     }
+}
+
+@Composable
+private fun EditableTargetCard(
+    title: String,
+    unit: String,
+    value: Int,
+    range: IntRange,
+    modifier: Modifier = Modifier,
+    onValueChange: (Int) -> Unit,
+) {
+    InputDialogPreferenceRow(
+        title = title,
+        unit = unit,
+        value = value,
+        range = range,
+        content = { openDialog ->
+            RecommendCard(
+                label = title,
+                value = value.toString(),
+                unit = unit,
+                modifier = modifier.clip(RoundedCornerShape(12.dp))
+                    .clickable(role = Role.Button, onClickLabel = "修改${title}目标", onClick = openDialog)
+                    .padding(vertical = 12.dp),
+            )
+        },
+        onValueChange = onValueChange,
+    )
 }
 
 @Composable

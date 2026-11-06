@@ -169,11 +169,6 @@ fun NotificationSettingsScreen(
             ) {
                 ArrowPreference(
                     title = "允许通知",
-                    summary = when {
-                        !notificationSupported -> "当前 Android 版本不需要单独申请"
-                        notificationGranted -> "已允许通知，可正常接收三餐提醒"
-                        else -> "允许后才能接收三餐记录提醒，点击申请"
-                    },
                     endActions = {
                         Text(
                             text = when {
@@ -188,12 +183,6 @@ fun NotificationSettingsScreen(
                     onClick = ::requestNotificationPermission,
                 )
             }
-            Text(
-                text = "如果系统不再弹窗，请点击上方入口到系统设置中开启通知。",
-                style = MiuixTheme.textStyles.footnote2,
-                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-            )
 
             Spacer(Modifier.height(8.dp))
             SmallTitle(
@@ -209,14 +198,10 @@ fun NotificationSettingsScreen(
                     checked = settings.mealRemindersEnabled,
                     onCheckedChange = ::setMealRemindersEnabled,
                     title = "三餐记录提醒",
-                    summary = if (settings.mealRemindersEnabled) {
-                        when {
-                            !notificationGranted -> "已开启提醒，但需要先允许通知权限"
-                            !exactAlarmGranted -> "已开启提醒，但需要允许精确闹钟才能准时提醒"
-                            else -> "每天按下方时间提醒记录一餐"
-                        }
-                    } else {
-                        "关闭后不会在早餐、午餐和晚餐时间发送通知"
+                    summary = when {
+                        settings.mealRemindersEnabled && !notificationGranted -> "需要通知权限"
+                        settings.mealRemindersEnabled && !exactAlarmGranted -> "需要精确闹钟权限"
+                        else -> null
                     },
                 )
                 ReminderTimePreference(
@@ -253,7 +238,6 @@ private fun ReminderTimePreference(
 ) {
     ArrowPreference(
         title = title,
-        summary = "每天提醒时间",
         endActions = {
             Text(
                 text = formatReminderTime(minuteOfDay),

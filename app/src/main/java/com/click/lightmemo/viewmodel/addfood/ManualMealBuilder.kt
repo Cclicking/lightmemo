@@ -59,6 +59,7 @@ internal fun buildManualMealRecognition(
 }
 
 internal fun RecognizedDish.updateWeight(componentId: String, grams: Double): RecognizedDish = copy(
+    nutritionLabel = nutritionLabel?.let { if (id == componentId) it.copy(weightG = grams) else it },
     components = components.map { component ->
         if (component.id == componentId) component.withWeight(grams) else component
     },

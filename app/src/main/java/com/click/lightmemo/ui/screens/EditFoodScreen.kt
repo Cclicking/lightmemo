@@ -1,5 +1,6 @@
 package com.click.lightmemo.ui.screens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -41,6 +42,10 @@ import com.click.lightmemo.domain.FoodComponent
 import com.click.lightmemo.domain.FoodLog
 import com.click.lightmemo.domain.MealType
 import com.click.lightmemo.domain.Nutrition
+import com.click.lightmemo.domain.completeNutrition
+import com.click.lightmemo.domain.hasManualNutrition
+import com.click.lightmemo.domain.withComponentNutrition
+import com.click.lightmemo.domain.withEditedComponents
 import com.click.lightmemo.ui.basic.SharedScrollBehavior
 import com.click.lightmemo.ui.components.AnimatedOverlayDialog
 import com.click.lightmemo.ui.components.ComponentDatabaseOverlay
@@ -79,9 +84,12 @@ fun EditFoodScreen(
     fatTarget: Float,
     palette: FoodPaletteColors,
     onSaved: () -> Unit,
+    onExit: () -> Unit,
 ) {
     val state by viewModel.uiState.collectAsState()
     val entry = state.entry
+
+    BackHandler { viewModel.requestBack(onExit) }
 
     if (state.loading) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -102,12 +110,11 @@ fun EditFoodScreen(
     val safeEntryDate = remember(entry.id, entry.dateEpochDay) {
         entry.dateEpochDay.toSafeEditDate()
     }
-    var draft by remember(entry.id) { mutableStateOf(entry) }
-    var gramsInput by remember(entry.id) { mutableStateOf(entry.grams.formatEditNumber()) }
-    var dateInput by remember(entry.id) { mutableStateOf(safeEntryDate.toString()) }
-    var timeInput by remember(entry.id) {
-        mutableStateOf(entry.mealMinuteOfDay?.let { "%02d:%02d".format(Locale.ROOT, it / 60, it % 60) }.orEmpty())
-    }
+    val editor = state.draft ?: return
+    val draft = editor.food
+    val gramsInput = editor.grams
+    val dateInput = editor.date
+    val timeInput = editor.time
     var nutritionField by remember { mutableStateOf<NutritionField?>(null) }
     var textEditField by remember { mutableStateOf<TextEditField?>(null) }
     var showWeightDialog by remember { mutableStateOf(false) }
@@ -115,22 +122,16 @@ fun EditFoodScreen(
     var showDatePicker by remember { mutableStateOf(false) }
     var showTimePicker by remember { mutableStateOf(false) }
 
-    val busy = state.saving
+    val busy = state.saving || state.pinning
     val databaseSearch = state.databaseSearch
     val editingAddComponent = databaseSearch?.componentId == EditFoodViewModel.NewComponentId
-    val parsedWeight = gramsInput.toDoubleOrNull()
     val parsedDate = runCatching { LocalDate.parse(dateInput) }.getOrNull()
     val parsedTime = runCatching { LocalTime.parse(timeInput) }.getOrNull()
-    val valid = draft.name.isNotBlank() &&
-        parsedWeight?.let { it.isFinite() && it > 0 } == true &&
-        parsedDate != null && (timeInput.isBlank() || parsedTime != null) &&
-        draft.nutrition.isValidEditNutrition()
-    val componentNutrition = completeComponentNutrition(draft.components)
-    val hasManualNutritionOverride = componentNutrition != null && draft.nutrition != componentNutrition
+    val valid = editor.validatedFood() != null
 
     fun updateWeight(value: String) {
-        gramsInput = value
         val nextWeight = value.toDoubleOrNull()
+        var nextDraft = draft
         if (nextWeight != null && nextWeight.isFinite() && nextWeight > 0 && draft.grams > 0) {
             val ratio = nextWeight / draft.grams
             val componentsAreSource = completeComponentNutrition(draft.components)?.let {
@@ -141,7 +142,7 @@ fun EditFoodScreen(
             } else {
                 draft.components
             }
-            draft = draft.copy(
+            nextDraft = draft.copy(
                 grams = nextWeight,
                 components = nextComponents,
                 nutrition = if (nextComponents.isNotEmpty()) {
@@ -155,6 +156,27 @@ fun EditFoodScreen(
                 },
             )
         }
+        viewModel.updateDraft { it.copy(food = nextDraft, grams = value) }
+    }
+
+    AnimatedOverlayDialog(
+        show = state.showLeaveConfirm,
+        title = "保存修改？",
+        onDismissRequest = { if (!busy) viewModel.dismissLeaveConfirm() },
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            state.error?.let { Text(it, color = MiuixTheme.colorScheme.error) }
+            Button(
+                onClick = { viewModel.saveDraft(onSaved) },
+                enabled = valid && !busy,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColorsPrimary(),
+            ) { Text(if (state.saving) "保存中…" else "保存并返回") }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Button(onClick = viewModel::dismissLeaveConfirm, enabled = !busy, modifier = Modifier.weight(1f)) { Text("继续编辑") }
+                Button(onClick = { viewModel.discardDraft(onExit) }, enabled = !busy, modifier = Modifier.weight(1f)) { Text("放弃修改") }
+            }
+        }
     }
 
     MealDatePickerOverlay(
@@ -162,7 +184,7 @@ fun EditFoodScreen(
         date = parsedDate ?: safeEntryDate,
         onDismiss = { showDatePicker = false },
         onConfirm = {
-            dateInput = it.toString()
+            viewModel.updateDraft { current -> current.copy(date = it.toString()) }
             showDatePicker = false
         },
     )
@@ -173,11 +195,11 @@ fun EditFoodScreen(
             ?: LocalTime.now().let { it.hour * 60 + it.minute },
         onDismiss = { showTimePicker = false },
         onConfirm = { minute ->
-            timeInput = "%02d:%02d".format(Locale.ROOT, minute / 60, minute % 60)
+            viewModel.updateDraft { it.copy(time = "%02d:%02d".format(Locale.ROOT, minute / 60, minute % 60)) }
             showTimePicker = false
         },
         onClear = {
-            timeInput = ""
+            viewModel.updateDraft { it.copy(time = "") }
             showTimePicker = false
         },
     )
@@ -187,7 +209,7 @@ fun EditFoodScreen(
         nutrition = draft.nutrition,
         onDismiss = { nutritionField = null },
         onConfirm = { field, value ->
-            draft = draft.copy(nutrition = draft.nutrition.withField(field, value))
+            viewModel.updateFoodDraft(draft.copy(nutrition = draft.nutrition.withField(field, value)))
             nutritionField = null
         },
     )
@@ -214,8 +236,8 @@ fun EditFoodScreen(
         onDismiss = { textEditField = null },
         onConfirm = { field, value ->
             when (field) {
-                TextEditField.FOOD_NAME -> draft = draft.copy(name = value)
-                TextEditField.NOTE -> draft = draft.copy(note = value.trim().ifBlank { null })
+                TextEditField.FOOD_NAME -> viewModel.updateFoodDraft(draft.copy(name = value))
+                TextEditField.NOTE -> viewModel.updateFoodDraft(draft.copy(note = value.trim().ifBlank { null }))
             }
             textEditField = null
         },
@@ -235,12 +257,8 @@ fun EditFoodScreen(
                 val weight = grams.toDoubleOrNull()
                 if (weight != null && weight.isFinite() && weight > 0 && query.isNotBlank()) {
                     val next = draft.components + newFoodComponent(query, weight, reference)
-                    draft = draft.copy(
-                        components = next,
-                        grams = next.sumOf { it.estimatedWeightG },
-                        nutrition = completeComponentNutrition(next) ?: draft.nutrition,
-                    )
-                    gramsInput = draft.grams.formatEditNumber()
+                    val nextDraft = draft.withEditedComponents(next)
+                    viewModel.updateDraft { it.copy(food = nextDraft, grams = nextDraft.grams.formatEditNumber()) }
                     showAddComponent = false
                     viewModel.closeComponentSearch()
                 }
@@ -263,10 +281,7 @@ fun EditFoodScreen(
                     component
                 }
                 }
-                draft = draft.copy(
-                    components = next,
-                    nutrition = completeComponentNutrition(next) ?: draft.nutrition,
-                )
+                viewModel.updateFoodDraft(draft.withEditedComponents(next, updateGrams = false))
                 viewModel.closeComponentSearch()
             }
         },
@@ -277,12 +292,8 @@ fun EditFoodScreen(
             if (componentId == EditFoodViewModel.NewComponentId) {
                 val safeWeight = weight.takeIf { it.isFinite() && it > 0.0 } ?: 100.0
                 val next = draft.components + newFoodComponent(query, safeWeight, reference)
-                draft = draft.copy(
-                    components = next,
-                    grams = next.sumOf { it.estimatedWeightG },
-                    nutrition = completeComponentNutrition(next) ?: draft.nutrition,
-                )
-                gramsInput = draft.grams.formatEditNumber()
+                val nextDraft = draft.withEditedComponents(next)
+                viewModel.updateDraft { it.copy(food = nextDraft, grams = nextDraft.grams.formatEditNumber()) }
             } else {
                 val selectedQuery = query.trim()
                 val replacingName = databaseSearch?.replaceComponentName == true && selectedQuery.isNotBlank()
@@ -298,10 +309,7 @@ fun EditFoodScreen(
                         component
                     }
                 }
-                draft = draft.copy(
-                    components = next,
-                    nutrition = completeComponentNutrition(next) ?: draft.nutrition,
-                )
+                viewModel.updateFoodDraft(draft.withEditedComponents(next, updateGrams = false))
             }
         },
         estimatingComponentId = state.aiEstimatingComponentId,
@@ -324,7 +332,7 @@ fun EditFoodScreen(
         item {
             MealTypeSelector(
                 selected = draft.mealType,
-                onSelect = { if (!busy) draft = draft.copy(mealType = it) },
+                onSelect = { if (!busy) viewModel.updateFoodDraft(draft.copy(mealType = it)) },
             )
         }
 
@@ -364,6 +372,11 @@ fun EditFoodScreen(
                 enabled = !busy,
                 onNutritionField = { nutritionField = it },
             )
+            if (draft.hasManualNutrition) {
+                ManualNutritionControl(enabled = !busy && draft.components.completeNutrition() != null, onUseComponents = {
+                    viewModel.updateFoodDraft(draft.withComponentNutrition())
+                })
+            }
         }
 
         item {
@@ -426,27 +439,15 @@ fun EditFoodScreen(
                                             val next = draft.components.map {
                                                 if (it.id == componentId) it.withEditWeight(weight) else it
                                             }
-                                            draft = draft.copy(
-                                                components = next,
-                                                grams = next.sumOf { it.estimatedWeightG },
-                                                nutrition = completeComponentNutrition(next) ?: draft.nutrition,
-                                            )
-                                            gramsInput = draft.grams.formatEditNumber()
+                                            val nextDraft = draft.withEditedComponents(next)
+                                            viewModel.updateDraft { it.copy(food = nextDraft, grams = nextDraft.grams.formatEditNumber()) }
                                         }
                                     },
                                     onRemove = { componentId ->
                                         if (!busy) {
                                             val next = draft.components.filterNot { it.id == componentId }
-                                            draft = if (next.isEmpty()) {
-                                                draft.copy(components = emptyList())
-                                            } else {
-                                                draft.copy(
-                                                    components = next,
-                                                    grams = next.sumOf { it.estimatedWeightG },
-                                                    nutrition = completeComponentNutrition(next) ?: draft.nutrition,
-                                                )
-                                            }
-                                            if (next.isNotEmpty()) gramsInput = draft.grams.formatEditNumber()
+                                            val nextDraft = draft.withEditedComponents(next)
+                                            viewModel.updateDraft { it.copy(food = nextDraft, grams = nextDraft.grams.formatEditNumber()) }
                                         }
                                     },
                                 )
@@ -468,44 +469,29 @@ fun EditFoodScreen(
             }
         }
 
-        if (hasManualNutritionOverride) {
-            item {
-                Text(
-                    "手动修改了总营养后，保存时将移除组成部分；如需保留组成，请修改克重或数据库匹配。",
-                    style = MiuixTheme.textStyles.footnote2,
-                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                )
-            }
-        }
         state.error?.let { message ->
             item { Text(message, color = MiuixTheme.colorScheme.error) }
         }
         item {
             Button(
-                onClick = {
-                    if (parsedWeight != null && parsedDate != null) {
-                        val saved = draft.copy(
-                            name = draft.name.trim(),
-                            grams = parsedWeight,
-                            dateEpochDay = parsedDate.toEpochDay(),
-                            mealMinuteOfDay = parsedTime?.let { it.hour * 60 + it.minute },
-                            note = draft.note?.trim()?.ifBlank { null },
-                        ).let { candidate ->
-                            val nutritionFromComponents = completeComponentNutrition(candidate.components)
-                            if (nutritionFromComponents != null && candidate.nutrition != nutritionFromComponents) {
-                                candidate.copy(components = emptyList())
-                            } else {
-                                candidate
-                            }
-                        }
-                        viewModel.save(saved, onSaved)
-                    }
-                },
+                onClick = { viewModel.saveDraft(onSaved) },
                 enabled = valid && !busy,
                 modifier = Modifier.fillMaxWidth().navigationBarsPadding(),
                 colors = ButtonDefaults.buttonColorsPrimary(),
             ) { Text(if (busy) "保存中…" else "保存修改") }
         }
+    }
+}
+
+@Composable
+internal fun ManualNutritionControl(enabled: Boolean, onUseComponents: () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text("手动数值", style = MiuixTheme.textStyles.footnote1, color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
+        Button(onClick = onUseComponents, enabled = enabled) { Text("按组成计算") }
     }
 }
 
@@ -702,10 +688,7 @@ internal fun FoodComponent.withEditWeight(weight: Double): FoodComponent {
     )
 }
 
-internal fun completeComponentNutrition(components: List<FoodComponent>): Nutrition? {
-    if (components.isEmpty() || components.any { it.nutritionReference == null }) return null
-    return components.fold(Nutrition()) { total, component -> total + component.nutrition }
-}
+internal fun completeComponentNutrition(components: List<FoodComponent>): Nutrition? = components.completeNutrition()
 
 internal fun Nutrition.withField(field: NutritionField, value: Double): Nutrition = when (field) {
     NutritionField.CALORIES -> copy(caloriesKcal = value)

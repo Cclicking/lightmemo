@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
@@ -37,12 +36,12 @@ import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CircularProgressIndicator
 import top.yukonga.miuix.kmp.basic.InputField
 import top.yukonga.miuix.kmp.basic.SearchBar
-import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 
 private val databaseSources = listOf("全部离线食物", "中国食物成分表", "USDA 全部", "USDA Foundation", "USDA SR Legacy", "USDA FNDDS")
+private const val DatabaseResultLimit = 120
 
 @Composable
 fun FoodDatabaseScreen(
@@ -61,6 +60,7 @@ fun FoodDatabaseScreen(
     var foods by remember { mutableStateOf<List<NutritionReference>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
+    var hasMore by remember { mutableStateOf(false) }
 
     LaunchedEffect(query, sourceIndex) {
         delay(180)
@@ -77,9 +77,12 @@ fun FoodDatabaseScreen(
                     5 -> FoodDataCentralClient.DatabaseSource.USDA_FNDDS
                     else -> FoodDataCentralClient.DatabaseSource.ALL
                 },
-                limit = 120,
+                limit = DatabaseResultLimit + 1,
             )
-        }.onSuccess { result -> foods = result }
+        }.onSuccess { result ->
+            hasMore = result.size > DatabaseResultLimit
+            foods = result.take(DatabaseResultLimit)
+        }
             .onFailure { failure -> error = failure.message ?: "数据库读取失败" }
         loading = false
     }
@@ -99,7 +102,7 @@ fun FoodDatabaseScreen(
         contentPadding = PaddingValues(
             start = 16.dp,
             end = 16.dp,
-            top = contentPadding.calculateTopPadding(),
+            top = contentPadding.calculateTopPadding() + 16.dp,
             bottom = contentPadding.calculateBottomPadding() + 12.dp,
         ),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -129,10 +132,6 @@ fun FoodDatabaseScreen(
         }
 
         item {
-            SmallTitle(
-                text = "筛选数据库",
-                modifier = Modifier.offset(x = (-16).dp),
-            )
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 cornerRadius = 20.dp,
@@ -140,7 +139,6 @@ fun FoodDatabaseScreen(
             ) {
                 DropdownPref(
                     title = "数据源",
-                    summary = "选择要浏览的本地数据库",
                     items = databaseSources,
                     selectedIndex = sourceIndex,
                     onSelectedIndexChange = { sourceIndex = it },
@@ -150,7 +148,11 @@ fun FoodDatabaseScreen(
 
         item {
             Text(
-                text = if (loading) "正在读取…" else "显示 ${foods.size} 条 · 点击条目查看营养素",
+                text = when {
+                    loading -> "正在读取…"
+                    hasMore -> "前 ${foods.size} 条"
+                    else -> "${foods.size} 条"
+                },
                 style = MiuixTheme.textStyles.footnote2,
                 color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                 modifier = Modifier.padding(start = 12.dp),
@@ -182,10 +184,6 @@ fun FoodDatabaseScreen(
         }
 
         item {
-            SmallTitle(
-                text = "食物列表",
-                modifier = Modifier.offset(x = (-16).dp),
-            )
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 cornerRadius = 20.dp,

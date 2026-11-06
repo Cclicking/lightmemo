@@ -52,12 +52,10 @@ fun HealthConnectSettingsScreen(
             ) {
                 ArrowPreference(
                     title = "Health Connect 权限管理",
-                    summary = "在 Health Connect 中管理总消耗热量和历史数据读取权限",
                     onClick = { openHealthConnectPermissions(context) },
                 )
                 ArrowPreference(
                     title = "小米运动健康指南",
-                    summary = "查看小米运动健康连接 Health Connect 的方法",
                     onClick = {
                         openHealthIntent(context, Intent(Intent.ACTION_VIEW, Uri.parse(XiaomiHealthGuideUrl)))
                     },

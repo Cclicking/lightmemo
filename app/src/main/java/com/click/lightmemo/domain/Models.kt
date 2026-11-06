@@ -84,6 +84,14 @@ data class FoodComponent(
 }
 
 @kotlinx.serialization.Serializable
+data class NutritionLabel(
+    val per100g: Nutrition,
+    val weightG: Double = 0.0,
+) {
+    val nutrition: Nutrition get() = per100g * (weightG / 100.0)
+}
+
+@kotlinx.serialization.Serializable
 data class RecognizedDish(
     val id: String,
     val name: String,
@@ -93,14 +101,15 @@ data class RecognizedDish(
     val needsConfirmation: Boolean = false,
     val uncertaintyReason: String? = null,
     val children: List<RecognizedDish> = emptyList(),
+    val nutritionLabel: NutritionLabel? = null,
 ) {
     val allComponents: List<FoodComponent>
         get() = components + children.flatMap { it.allComponents }
 
-    val grams: Double get() = allComponents.sumOf { it.estimatedWeightG }
-    val nutrition: Nutrition get() = allComponents.fold(Nutrition()) { total, item -> total + item.nutrition }
-    val nutritionMin: Nutrition get() = allComponents.fold(Nutrition()) { total, item -> total + item.nutritionMin }
-    val nutritionMax: Nutrition get() = allComponents.fold(Nutrition()) { total, item -> total + item.nutritionMax }
+    val grams: Double get() = nutritionLabel?.weightG ?: allComponents.sumOf { it.estimatedWeightG }
+    val nutrition: Nutrition get() = nutritionLabel?.nutrition ?: allComponents.fold(Nutrition()) { total, item -> total + item.nutrition }
+    val nutritionMin: Nutrition get() = nutritionLabel?.nutrition ?: allComponents.fold(Nutrition()) { total, item -> total + item.nutritionMin }
+    val nutritionMax: Nutrition get() = nutritionLabel?.nutrition ?: allComponents.fold(Nutrition()) { total, item -> total + item.nutritionMax }
 }
 
 @kotlinx.serialization.Serializable
@@ -112,6 +121,7 @@ data class MealRecognition(
     val confirmationQuestions: List<String>,
     val imageQualityIssues: List<String> = emptyList(),
 ) {
+    val isNutritionLabel: Boolean get() = dishes.any { it.nutritionLabel != null }
     val nutrition: Nutrition get() = dishes.fold(Nutrition()) { total, dish -> total + dish.nutrition }
     val nutritionMin: Nutrition get() = dishes.fold(Nutrition()) { total, dish -> total + dish.nutritionMin }
     val nutritionMax: Nutrition get() = dishes.fold(Nutrition()) { total, dish -> total + dish.nutritionMax }
@@ -124,6 +134,7 @@ fun MealRecognition.scaledForServing(servingCount: Double): MealRecognition {
 }
 
 private fun RecognizedDish.scaledForServing(servingCount: Double): RecognizedDish = copy(
+    nutritionLabel = nutritionLabel?.let { it.copy(weightG = it.weightG / servingCount) },
     components = components.map { component ->
         component.copy(
             estimatedWeightG = component.estimatedWeightG / servingCount,

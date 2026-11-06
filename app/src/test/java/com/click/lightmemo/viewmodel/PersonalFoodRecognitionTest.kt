@@ -17,6 +17,30 @@ import org.robolectric.annotation.Config
 class PersonalFoodRecognitionTest {
     private val reference = NutritionReference("user", "鸡蛋", "中国库", Nutrition(140.0))
 
+    @Test fun nutritionLabelOpensReviewWithoutMemoryAndSupportsWeightEditing() = runBlocking {
+        val labelDish = RecognizedDish(
+            id = "label", name = "饼干", type = DishType.SINGLE_FOOD, confidence = 1.0,
+            components = emptyList(), nutritionLabel = NutritionLabel(Nutrition(200.0, 8.0, 30.0, 6.0)),
+        )
+        val result = meal(labelDish)
+        val state = MutableStateFlow(AddFoodUiState())
+        coordinator(state) { error("Nutrition labels must bypass food memory") }.sync(
+            RecognitionTaskRecord(request(), RecognitionTaskStatus.COMPLETED, result = result),
+        )
+        val review = state.value.step as AddStep.Review
+        assertEquals(result, review.result)
+        assertTrue(review.memorySuggestions.isEmpty())
+        assertFalse(state.value.recognizing)
+        val weighed = review.result.dishes.single().updateWeight("label", 250.0)
+        assertTrue(weighed.components.isEmpty())
+        assertEquals(250.0, weighed.grams, 0.0)
+        assertEquals(Nutrition(500.0, 20.0, 75.0, 15.0), weighed.nutrition)
+        val shared = meal(weighed).scaledForServing(2.0).dishes.single()
+        assertEquals(125.0, shared.grams, 0.0)
+        assertEquals(weighed.nutrition * 0.5, shared.nutrition)
+        assertEquals(Nutrition(), weighed.updateWeight("label", 0.0).nutrition)
+    }
+
     @Test fun cacheHitWaitsForUserChoiceAndSurvivesTaskStoreRecreation() = runBlocking {
         val app = ApplicationProvider.getApplicationContext<FoodApp>()
         val store = RecognitionTaskStore(app)

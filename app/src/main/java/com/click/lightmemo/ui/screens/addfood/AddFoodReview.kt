@@ -142,6 +142,10 @@ internal fun ReviewContent(
             item { RecognitionStatusCard(recognitionStage, onCancelRecognition) }
         }
 
+        items(result.dishes.filter { it.nutritionLabel != null }, key = { "label-${it.id}" }) { dish ->
+            NutritionLabelResultCard(dish, !recognizing, onWeightChange)
+        }
+
         // 总览卡片：热量 + 宏量环（进度条与圆环间距 27dp，圆环高度对齐文字）
         item {
             Card(cornerRadius = 20.dp, modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(16.dp)) {
@@ -189,7 +193,7 @@ internal fun ReviewContent(
         }
 
         // 每道菜一张可折叠卡片
-        items(result.dishes, key = { it.id }) { dish ->
+        items(result.dishes.filter { it.nutritionLabel == null }, key = { it.id }) { dish ->
             memorySuggestions.find { it.dishId == dish.id }?.let { suggestion ->
                 val memory = suggestion.match.memory
                 Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -269,12 +273,13 @@ internal fun ReviewContent(
                 Button(
                     onClick = onSave,
                     enabled = !recognizing && result.dishes.isNotEmpty() && result.dishes.all { dish ->
-                        dish.allComponents.isNotEmpty()
+                        dish.nutritionLabel?.let { dish.grams.isFinite() && dish.grams > 0.0 }
+                            ?: dish.allComponents.isNotEmpty()
                     },
                     modifier = Modifier.fillMaxWidth(),
                     colors = ButtonDefaults.buttonColorsPrimary(),
                 ) {
-                    Text("保存 ${result.dishes.size} 道菜")
+                    Text(if (result.isNutritionLabel) "保存记录" else "保存 ${result.dishes.size} 道菜")
                 }
             }
         }

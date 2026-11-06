@@ -289,6 +289,7 @@ internal class RecognitionCoordinator(
         result: MealRecognition,
         originalResult: MealRecognition? = null,
     ): AddStep.Review {
+        if (result.isNutritionLabel) return AddStep.Review(imageUri, result, originalResult ?: result)
         return try {
             val memories = loadMemories()
             val suggestions = result.dishes.mapNotNull { dish ->

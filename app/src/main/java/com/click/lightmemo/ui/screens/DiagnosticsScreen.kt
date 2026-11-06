@@ -67,11 +67,10 @@ fun DiagnosticsScreen(viewModel: DiagnosticsViewModel, contentPadding: PaddingVa
         item {
             DiagnosticSection("识别日志") {
                 SwitchPreference(title = "日志模式", checked = logs.enabled,
-                    enabled = !state.busy && !logState.loading, onCheckedChange = viewModel::setLogEnabled,
-                    summary = "开启后重新识别，记录各阶段与模型请求耗时；关闭后保留已有日志")
+                    enabled = !state.busy && !logState.loading, onCheckedChange = viewModel::setLogEnabled)
                 if (logState.storageError) BasicComponent(title = "日志文件读写失败",
                     summary = "当前日志仍可尝试导出，请检查存储空间；重启后可能无法保留")
-                BasicComponent(title = "导出识别日志", summary = "导出全部日志 JSON，最多保留最新 300 条",
+                BasicComponent(title = "导出识别日志", summary = "JSON · 最近 300 条",
                     enabled = !state.busy && !logState.loading && logs.events.isNotEmpty(),
                     onClick = { exportLogs.launch("LightMemo-recognition-log-${state.endDate}.json") })
                 BasicComponent(title = "清空识别日志", enabled = !state.busy && !logState.loading && logs.events.isNotEmpty(),
@@ -84,7 +83,7 @@ fun DiagnosticsScreen(viewModel: DiagnosticsViewModel, contentPadding: PaddingVa
                 BasicComponent(title = "统计范围", summary = "${state.endDate.minusDays(29)} 至 ${state.endDate}")
                 if (state.loading) BasicComponent(title = "正在读取…")
                 else if (state.error == null && totals == com.click.lightmemo.data.LocalDiagnosticsEntity(0))
-                    BasicComponent(title = "暂无诊断数据", summary = "从本版本开始统计，识别或推荐操作后会更新")
+                    BasicComponent(title = "暂无诊断数据")
             }
         }
         state.error?.let { error -> item {
@@ -140,10 +139,10 @@ fun DiagnosticsScreen(viewModel: DiagnosticsViewModel, contentPadding: PaddingVa
         }
         item {
             DiagnosticSection("诊断管理") {
-                BasicComponent(title = "导出诊断信息", summary = "导出最近 30 天的数值统计 JSON",
+                BasicComponent(title = "导出诊断信息",
                     enabled = !state.busy && !state.loading && state.error == null,
                     onClick = { export.launch("LightMemo-diagnostics-${state.endDate}.json") })
-                BasicComponent(title = "清空诊断统计", summary = "清空全部日期的本地统计", enabled = !state.busy,
+                BasicComponent(title = "清空诊断统计", enabled = !state.busy,
                     endActions = {
                         IconButton(onClick = { showClear = true }, enabled = !state.busy, modifier = Modifier.size(48.dp)) {
                             Icon(MiuixIcons.Os4.Delete, contentDescription = "清空诊断统计", modifier = Modifier.size(24.dp))

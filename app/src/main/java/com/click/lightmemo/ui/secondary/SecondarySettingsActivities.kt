@@ -7,6 +7,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.viewModels
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -66,6 +67,7 @@ import top.yukonga.miuix.kmp.icon.os4.Unpin
 abstract class SecondarySettingsActivity : ComponentActivity() {
     protected abstract val pageTitle: String
     protected open val hasPageEndAction: Boolean = false
+    protected open fun onPageBack() = finish()
 
     @Composable
     protected open fun PageEndAction(
@@ -128,7 +130,7 @@ abstract class SecondarySettingsActivity : ComponentActivity() {
                     ) {
                         SecondaryPageShell(
                             title = pageTitle,
-                            onBack = { finish() },
+                            onBack = ::onPageBack,
                             endAction = if (hasPageEndAction) {
                                 { backdrop, backdropAlpha, shadowAlpha ->
                                     PageEndAction(backdrop, backdropAlpha, shadowAlpha)
@@ -416,8 +418,9 @@ class EditFoodActivity : SecondarySettingsActivity() {
     override val pageTitle = "编辑记录"
     override val hasPageEndAction: Boolean = true
 
-    // 必须用 Compose 状态持有 VM，否则顶栏 endAction 首帧后不会因 holder 赋值而重组
-    private val editVmState = mutableStateOf<EditFoodViewModel?>(null)
+    private val editVm: EditFoodViewModel by viewModels()
+
+    override fun onPageBack() = editVm.requestBack { finish() }
 
     companion object {
         const val EXTRA_ENTRY_ID = "entry_id"
@@ -429,16 +432,11 @@ class EditFoodActivity : SecondarySettingsActivity() {
         backdropAlpha: Float,
         shadowAlpha: Float,
     ) {
-        val editVm = editVmState.value ?: return
         val state by editVm.uiState.collectAsState()
-        val name = state.entry?.name?.trim().orEmpty()
+        val name = state.draft?.food?.name?.trim().orEmpty()
         val pinned = name.isNotEmpty() && state.pinnedNames.contains(name)
         LiquidTopBarButton(
-            onClick = {
-                val entry = state.entry ?: return@LiquidTopBarButton
-                if (pinned) editVm.unpinEntryPreset(entry.name)
-                else editVm.pinEntryAsPreset(entry)
-            },
+            onClick = editVm::toggleDraftPreset,
             backdrop = backdrop,
             icon = if (pinned) MiuixIcons.Os4.Unpin else MiuixIcons.Os4.Pin,
             contentDescription = if (pinned) "取消预设" else "加入预设",
@@ -455,8 +453,6 @@ class EditFoodActivity : SecondarySettingsActivity() {
         contentPadding: PaddingValues,
         scrollBehavior: SharedScrollBehavior,
     ) {
-        val editVm: EditFoodViewModel = viewModel()
-        editVmState.value = editVm
         val settings by settingsVm.settings.collectAsState()
         val entryId = intent.getLongExtra(EXTRA_ENTRY_ID, -1L)
         LaunchedEffect(entryId) {
@@ -473,6 +469,7 @@ class EditFoodActivity : SecondarySettingsActivity() {
             fatTarget = settings.effectiveFatG.takeIf { it > 0f } ?: 60f,
             palette = settings.colorPalette.toComposeColors(),
             onSaved = { finish() },
+            onExit = { finish() },
         )
     }
 }

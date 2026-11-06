@@ -84,8 +84,9 @@ class FoodRecognitionClientTest {
     private fun imageClient(
         promptOverrides: suspend () -> Map<String, String> = { emptyMap() },
         onRequest: (ChatRequest) -> Unit = {},
+        payloadOverride: String? = null,
     ): FoodRecognitionClient {
-        val payload = """{"is_food_image":true,"meal_name":"午餐","overall_confidence":0.95,"confirmation_questions":[],"dishes":[{"dish_name":"米饭","dish_type":"single_food","dish_confidence":0.95,"components":[{"name":"米饭","database_query":"rice cooked","source":"visible","estimated_weight_g":200,"weight_min_g":180,"weight_max_g":220,"confidence":0.95}]}]}"""
+        val payload = payloadOverride ?: """{"is_food_image":true,"meal_name":"午餐","overall_confidence":0.95,"confirmation_questions":[],"dishes":[{"dish_name":"米饭","dish_type":"single_food","dish_confidence":0.95,"components":[{"name":"米饭","database_query":"rice cooked","source":"visible","estimated_weight_g":200,"weight_min_g":180,"weight_max_g":220,"confidence":0.95}]}]}"""
         val body = kotlinx.serialization.json.buildJsonObject {
             put("choices", kotlinx.serialization.json.buildJsonArray {
                 add(kotlinx.serialization.json.buildJsonObject {
@@ -103,6 +104,58 @@ class FoodRecognitionClientTest {
                 .code(200).message("OK").body(okhttp3.ResponseBody.create(null, body)).build()
         }.build()
         return FoodRecognitionClient(httpClient = http, promptOverrides = promptOverrides)
+    }
+
+    private fun labelPayload(basis: Double = 100.0, unit: String = "kJ", weight: String = "250") =
+        """{"nutrition_label":{"food_name":"饼干","basis_weight_g":$basis,"energy":836.8,"energy_unit":"$unit","protein_g":8,"carbs_g":30,"fat_g":6,"weight_g":$weight}}"""
+
+    @Test fun nutritionLabelConvertsKilojoulesAndPackageWeightWithoutIngredients() {
+        val result = imageClient().parseVisualJson(labelPayload())
+        assertTrue(result.isNutritionLabel)
+        assertTrue(result.isFoodImage)
+        val dish = result.dishes.single()
+        assertTrue(dish.allComponents.isEmpty())
+        assertEquals(250.0, dish.grams, 0.001)
+        assertEquals(500.0, result.nutrition.caloriesKcal, 0.001)
+        assertEquals(20.0, result.nutrition.proteinG, 0.001)
+        assertEquals(75.0, result.nutrition.carbsG, 0.001)
+        assertEquals(15.0, result.nutrition.fatG, 0.001)
+    }
+
+    @Test fun perServingLabelKeepsNutritionWhenWeightIsMissingAndRecalculatesOnEntry() {
+        val result = imageClient().parseVisualJson(labelPayload(basis = 40.0, unit = "kcal", weight = "null"))
+        val dish = result.dishes.single()
+        val label = requireNotNull(dish.nutritionLabel)
+        assertEquals(0.0, dish.grams, 0.0)
+        assertEquals(0.0, result.nutrition.caloriesKcal, 0.0)
+        assertEquals(2092.0, label.per100g.caloriesKcal, 0.001)
+        val weighed = dish.copy(nutritionLabel = label.copy(weightG = 80.0))
+        assertEquals(1673.6, weighed.nutrition.caloriesKcal, 0.001)
+        assertEquals(16.0, weighed.nutrition.proteinG, 0.001)
+        val restored = kotlinx.serialization.json.Json.decodeFromString<com.click.lightmemo.domain.MealRecognition>(
+            kotlinx.serialization.json.Json.encodeToString(com.click.lightmemo.domain.MealRecognition.serializer(), result),
+        )
+        assertEquals(result, restored)
+    }
+
+    @Test fun nutritionLabelSkipsReviewMemoryAndPrefetch() = kotlinx.coroutines.runBlocking {
+        var calls = 0
+        val result = imageClient(onRequest = { calls++ }, payloadOverride = labelPayload()).recognize(
+            "https://example.test/v1", "test", "test", "image",
+            fastResult = { error("Must not replace label with food memory") },
+            onInitialResult = { error("Must not prefetch food database") },
+        )
+        assertEquals(1, calls)
+        assertTrue(result.isNutritionLabel)
+    }
+
+    @Test fun nutritionLabelRejectsInvalidBasisUnitsAndNegativeNutrients() {
+        listOf(
+            labelPayload(basis = 0.0), labelPayload(unit = "%"),
+            labelPayload().replace("\"protein_g\":8", "\"protein_g\":-8"),
+        ).forEach { payload ->
+            assertTrue(runCatching { imageClient().parseVisualJson(payload) }.exceptionOrNull() is RecognitionException)
+        }
     }
 
     @Test fun fastPathStillCallsVisionButSkipsSecondModelReview() = kotlinx.coroutines.runBlocking {

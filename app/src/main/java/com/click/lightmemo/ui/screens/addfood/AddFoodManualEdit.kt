@@ -28,6 +28,10 @@ import com.click.lightmemo.domain.NutritionReference
 import com.click.lightmemo.viewmodel.NewComponentId
 import com.click.lightmemo.viewmodel.newFoodComponent
 import com.click.lightmemo.domain.FoodLog
+import com.click.lightmemo.domain.completeNutrition
+import com.click.lightmemo.domain.hasManualNutrition
+import com.click.lightmemo.domain.withComponentNutrition
+import com.click.lightmemo.domain.withEditedComponents
 import com.click.lightmemo.domain.FoodComponent
 import com.click.lightmemo.ui.components.AnimatedOverlayDialog
 import com.click.lightmemo.ui.components.ComponentDatabaseOverlay
@@ -151,8 +155,6 @@ internal fun ManualEditContent(
         parsedWeight?.let { it.isFinite() && it > 0 } == true &&
         parsedDate != null &&
         draft.nutrition.isValidEditNutrition()
-    val componentNutrition = completeComponentNutrition(draft.components)
-    val hasManualNutritionOverride = componentNutrition != null && draft.nutrition != componentNutrition
 
     fun updateWeight(value: String) {
         gramsInput = value
@@ -256,11 +258,7 @@ internal fun ManualEditContent(
                 val weight = grams.toDoubleOrNull()
                 if (weight != null && weight.isFinite() && weight > 0 && query.isNotBlank()) {
                     val next = draft.components + newFoodComponent(query, weight, reference)
-                    draft = draft.copy(
-                        components = next,
-                        grams = next.sumOf { it.estimatedWeightG },
-                        nutrition = completeComponentNutrition(next) ?: draft.nutrition,
-                    )
+                    draft = draft.withEditedComponents(next)
                     gramsInput = draft.grams.formatEditNumber()
                     showAddComponent = false
                     onCloseComponentSearch()
@@ -284,10 +282,7 @@ internal fun ManualEditContent(
                         component
                     }
                 }
-                draft = draft.copy(
-                    components = next,
-                    nutrition = completeComponentNutrition(next) ?: draft.nutrition,
-                )
+                draft = draft.withEditedComponents(next, updateGrams = false)
                 onCloseComponentSearch()
             }
         },
@@ -296,11 +291,7 @@ internal fun ManualEditContent(
             if (componentId == NewComponentId) {
                 val safeWeight = weight.takeIf { it.isFinite() && it > 0.0 } ?: 100.0
                 val next = draft.components + newFoodComponent(query, safeWeight, reference)
-                draft = draft.copy(
-                    components = next,
-                    grams = next.sumOf { it.estimatedWeightG },
-                    nutrition = completeComponentNutrition(next) ?: draft.nutrition,
-                )
+                draft = draft.withEditedComponents(next)
                 gramsInput = draft.grams.formatEditNumber()
             } else {
                 val selectedQuery = query.trim()
@@ -317,10 +308,7 @@ internal fun ManualEditContent(
                         component
                     }
                 }
-                draft = draft.copy(
-                    components = next,
-                    nutrition = completeComponentNutrition(next) ?: draft.nutrition,
-                )
+                draft = draft.withEditedComponents(next, updateGrams = false)
             }
         },
         estimatingComponentId = estimatingComponentId,
@@ -385,6 +373,9 @@ internal fun ManualEditContent(
                 enabled = !busy,
                 onNutritionField = { nutritionField = it },
             )
+            if (draft.hasManualNutrition) {
+                ManualNutritionControl(enabled = !busy && draft.components.completeNutrition() != null, onUseComponents = { draft = draft.withComponentNutrition() })
+            }
         }
 
         if (showMealInfo) {
@@ -449,26 +440,14 @@ internal fun ManualEditContent(
                                             val next = draft.components.map {
                                                 if (it.id == componentId) it.withEditWeight(weight) else it
                                             }
-                                            draft = draft.copy(
-                                                components = next,
-                                                grams = next.sumOf { it.estimatedWeightG },
-                                                nutrition = completeComponentNutrition(next) ?: draft.nutrition,
-                                            )
+                                            draft = draft.withEditedComponents(next)
                                             gramsInput = draft.grams.formatEditNumber()
                                         }
                                     },
                                     onRemove = { componentId ->
                                         if (!busy) {
                                             val next = draft.components.filterNot { it.id == componentId }
-                                            draft = if (next.isEmpty()) {
-                                                draft.copy(components = emptyList())
-                                            } else {
-                                                draft.copy(
-                                                    components = next,
-                                                    grams = next.sumOf { it.estimatedWeightG },
-                                                    nutrition = completeComponentNutrition(next) ?: draft.nutrition,
-                                                )
-                                            }
+                                            draft = draft.withEditedComponents(next)
                                             if (next.isNotEmpty()) gramsInput = draft.grams.formatEditNumber()
                                         }
                                     },
@@ -492,15 +471,6 @@ internal fun ManualEditContent(
             }
         }
 
-        if (hasManualNutritionOverride) {
-            item {
-                Text(
-                    "手动修改了总营养后，保存时将移除组成部分；如需保留组成，请修改克重或数据库匹配。",
-                    style = MiuixTheme.textStyles.footnote2,
-                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                )
-            }
-        }
         error?.let { message ->
             item { Text(message, color = MiuixTheme.colorScheme.error) }
         }
@@ -514,14 +484,7 @@ internal fun ManualEditContent(
                             dateEpochDay = parsedDate.toEpochDay(),
                             mealMinuteOfDay = parsedTime?.let { it.hour * 60 + it.minute },
                             note = draft.note?.trim()?.ifBlank { null },
-                        ).let { candidate ->
-                            val nutritionFromComponents = completeComponentNutrition(candidate.components)
-                            if (nutritionFromComponents != null && candidate.nutrition != nutritionFromComponents) {
-                                candidate.copy(components = emptyList())
-                            } else {
-                                candidate
-                            }
-                        }
+                        )
                         onSave(saved)
                     }
                 },

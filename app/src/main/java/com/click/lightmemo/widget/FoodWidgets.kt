@@ -60,6 +60,13 @@ enum class WidgetKind(
     QUICK("快捷记录 · 2×1", R.layout.widget_quick, QuickWidget::class.java, WidgetAction.CAMERA, WidgetPreferences.DEFAULT_STANDARD_RADIUS_DP),
 }
 
+internal data class WidgetAppearance(
+    val cornerRadiusDp: Float,
+    val marginPreset: WidgetMarginPreset,
+    val marginTopDp: Int,
+    val marginBottomDp: Int,
+)
+
 class StreakWidget : FoodWidgetProvider()
 class IntakeWidget : FoodWidgetProvider()
 class SuggestionWidget : FoodWidgetProvider()
@@ -170,16 +177,17 @@ object FoodWidgets {
     }
 
     internal fun render(context: Context, id: Int, kind: WidgetKind, size: SizeF, settings: AppSettings,
-        totals: Map<Long, Nutrition>, total: Nutrition, today: LocalDate, dish: String): RemoteViews {
+        totals: Map<Long, Nutrition>, total: Nutrition, today: LocalDate, dish: String,
+        appearance: WidgetAppearance? = null): RemoteViews {
         val views = RemoteViews(context.packageName, kind.layout)
         WidgetTextSizes.apply(views, kind)
         val preferences = WidgetPreferences(context)
         val density = context.resources.displayMetrics.density
         val cardWidth = size.width * density
-        val (marginTopPx, marginBottomPx) = when (preferences.marginPreset(id)) {
+        val (marginTopPx, marginBottomPx) = when (appearance?.marginPreset ?: preferences.marginPreset(id)) {
             WidgetMarginPreset.DESKTOP_4X6 -> BASE_OUTER_TOP_PX to BASE_OUTER_BOTTOM_PX
-            else -> (preferences.marginTop(id) * density).toInt() to
-                (preferences.marginBottom(id) * density).toInt()
+            else -> ((appearance?.marginTopDp ?: preferences.marginTop(id)) * density).toInt() to
+                ((appearance?.marginBottomDp ?: preferences.marginBottom(id)) * density).toInt()
         }
         val cardHeight = (size.height * density - marginTopPx - marginBottomPx).toInt().coerceAtLeast(1)
         views.setViewPadding(R.id.widget_outer, 0, marginTopPx, 0, marginBottomPx)
@@ -188,7 +196,7 @@ object FoodWidgets {
             roundedBackground(
                 width = cardWidth.toInt().coerceAtLeast(1),
                 height = cardHeight,
-                radius = preferences.cornerRadius(id, kind) * density,
+                radius = (appearance?.cornerRadiusDp ?: preferences.cornerRadius(id, kind)) * density,
                 color = ContextCompat.getColor(
                     context,
                     if (kind == WidgetKind.QUICK) R.color.widget_quick else R.color.widget_surface,

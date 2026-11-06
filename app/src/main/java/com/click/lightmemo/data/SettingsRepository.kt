@@ -93,6 +93,8 @@ data class AppSettings(
     val snackColor: Long = FoodColorPalette.Multicolor.snack,
     val colorTheme: ColorThemePreset = ColorThemePreset.MULTICOLOR,
     val colorSeed: Long = ColorThemePreset.MULTICOLOR.seedColor,
+    val colorHarmony: Float = 1f,
+    val mealCaloriesMatchTitleColor: Boolean = false,
     /** 总开关：默认关闭玻璃特效，避免弱 GPU/模拟器冷启动首帧 ANR */
     val glassEffectsEnabled: Boolean = false,
     val topGradientBlurEnabled: Boolean = false,
@@ -346,6 +348,8 @@ class SettingsRepository(
                 put("snackColor", current.snackColor)
                 put("colorTheme", current.colorTheme.name)
                 put("colorSeed", current.colorSeed)
+                put("colorHarmony", current.colorHarmony.toDouble())
+                put("mealCaloriesMatchTitleColor", current.mealCaloriesMatchTitleColor)
                 put("glassEffectsEnabled", current.glassEffectsEnabled)
                 put("topGradientBlurEnabled", current.topGradientBlurEnabled)
                 put("topGradientBlurRangeDp", current.topGradientBlurRangeDp)
@@ -452,7 +456,12 @@ class SettingsRepository(
             prefs[Keys.SNACK] = settingsJsonObject.optLong("snackColor", defaults.snackColor)
             prefs[Keys.COLOR_THEME] = colorTheme.name
             prefs[Keys.COLOR_SEED] = settingsJsonObject.optLong("colorSeed", defaults.colorSeed)
+            prefs[Keys.COLOR_HARMONY] = settingsJsonObject.optDouble("colorHarmony", 1.0)
+                .toFloat().takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: 1f
             prefs[Keys.GLASS_EFFECTS] = settingsJsonObject.optBoolean("glassEffectsEnabled", defaults.glassEffectsEnabled)
+            prefs[Keys.MEAL_CALORIES_MATCH_TITLE_COLOR] = settingsJsonObject.optBoolean(
+                "mealCaloriesMatchTitleColor", defaults.mealCaloriesMatchTitleColor,
+            )
             prefs[Keys.TOP_GRADIENT_BLUR] = settingsJsonObject.optBoolean(
                 "topGradientBlurEnabled",
                 defaults.topGradientBlurEnabled,
@@ -514,7 +523,9 @@ class SettingsRepository(
         val SNACK = longPreferencesKey("snack_color")
         val COLOR_THEME = stringPreferencesKey("color_theme")
         val COLOR_SEED = longPreferencesKey("color_seed")
+        val COLOR_HARMONY = floatPreferencesKey("color_harmony")
         val GLASS_EFFECTS = booleanPreferencesKey("glass_effects_enabled")
+        val MEAL_CALORIES_MATCH_TITLE_COLOR = booleanPreferencesKey("meal_calories_match_title_color")
         val TOP_GRADIENT_BLUR = booleanPreferencesKey("top_gradient_blur_enabled")
         val TOP_GRADIENT_BLUR_RANGE = intPreferencesKey("top_gradient_blur_range_dp")
         val SAVE_PHOTOS_TO_GALLERY = booleanPreferencesKey("save_photos_to_gallery")
@@ -548,7 +559,8 @@ class SettingsRepository(
         )
         val storedPalette = when {
             !hasNewPalette && (prefs.contains(Keys.PROTEIN_RING) || prefs.contains(Keys.CARBS_RING) || prefs.contains(Keys.FAT_RING)) -> legacyPalette
-            storedTheme == ColorThemePreset.CUSTOM -> FoodColorPalette.forPreset(ColorThemePreset.CUSTOM, storedSeed)
+            storedTheme == ColorThemePreset.CUSTOM && !prefs.contains(Keys.CALORIE_PROGRESS) ->
+                FoodColorPalette.forPreset(ColorThemePreset.CUSTOM, storedSeed)
             hasNewPalette -> FoodColorPalette.Multicolor.copy(
                 calorie = prefs[Keys.CALORIE_PROGRESS] ?: FoodColorPalette.Multicolor.calorie,
                 overTarget = prefs[Keys.OVER_TARGET] ?: FoodColorPalette.Multicolor.overTarget,
@@ -600,7 +612,9 @@ class SettingsRepository(
                 ColorThemePreset.MULTICOLOR
             },
             colorSeed = storedSeed,
+            colorHarmony = prefs[Keys.COLOR_HARMONY] ?: 1f,
             glassEffectsEnabled = prefs[Keys.GLASS_EFFECTS] ?: false,
+            mealCaloriesMatchTitleColor = prefs[Keys.MEAL_CALORIES_MATCH_TITLE_COLOR] ?: false,
             topGradientBlurEnabled = prefs[Keys.TOP_GRADIENT_BLUR] ?: false,
             topGradientBlurRangeDp = (prefs[Keys.TOP_GRADIENT_BLUR_RANGE] ?: 72).coerceIn(0, 240),
             savePhotosToGallery = prefs[Keys.SAVE_PHOTOS_TO_GALLERY] ?: true,
@@ -896,10 +910,17 @@ class SettingsRepository(
     }
 
     suspend fun updateCustomColorTheme(seedColor: Long) {
+        updateColorPalette(ColorThemePreset.CUSTOM, seedColor,
+            FoodColorPalette.forPreset(ColorThemePreset.CUSTOM, seedColor))
+    }
+
+    suspend fun updateCustomColorTheme(seedColor: Long, harmony: Float) {
+        require(harmony.isFinite())
         updateColorPalette(
             theme = ColorThemePreset.CUSTOM,
             seedColor = seedColor,
-            palette = FoodColorPalette.forPreset(ColorThemePreset.CUSTOM, seedColor),
+            palette = FoodPaletteGenerator.fromCustom(seedColor, harmony),
+            harmony = harmony.coerceIn(0f, 1f),
         )
     }
 
@@ -907,10 +928,13 @@ class SettingsRepository(
         theme: ColorThemePreset,
         seedColor: Long,
         palette: FoodColorPalette,
+        harmony: Float? = null,
     ) {
         store.edit { prefs ->
             prefs[Keys.COLOR_THEME] = theme.name
             prefs[Keys.COLOR_SEED] = seedColor
+            if (harmony != null) prefs[Keys.COLOR_HARMONY] = harmony
+            else prefs.remove(Keys.COLOR_HARMONY)
             prefs[Keys.CALORIE_PROGRESS] = palette.calorie
             prefs[Keys.OVER_TARGET] = palette.overTarget
             prefs[Keys.PROTEIN_RING] = palette.protein
@@ -925,6 +949,10 @@ class SettingsRepository(
 
     suspend fun updateGlassEffectsEnabled(value: Boolean) {
         store.edit { it[Keys.GLASS_EFFECTS] = value }
+    }
+
+    suspend fun updateMealCaloriesMatchTitleColor(value: Boolean) {
+        store.edit { it[Keys.MEAL_CALORIES_MATCH_TITLE_COLOR] = value }
     }
 
     suspend fun updateTopGradientBlurEnabled(value: Boolean) {

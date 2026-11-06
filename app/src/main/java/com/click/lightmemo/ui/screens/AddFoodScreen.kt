@@ -225,6 +225,8 @@ fun AddFoodRoute(
     Box(modifier = Modifier.fillMaxWidth()) {
         AnimatedContent(
             targetState = state.step,
+            // Editing a result updates its data, but must preserve field focus and input state.
+            contentKey = { it::class },
             transitionSpec = {
                 val from = stepOrder(initialState)
                 val to = stepOrder(targetState)

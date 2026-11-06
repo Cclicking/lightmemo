@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
+import com.click.lightmemo.ui.components.AiConfigurationBanner
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -84,20 +85,13 @@ fun MineHubScreen(
                 Column(modifier = Modifier.fillMaxWidth()) {
                     ArrowPreference(
                         title = "个人信息",
-                        endActions = {
-                            Text(
-                                text = if (settings.hasPersonalProfile) "已填写" else "未填写",
-                                fontSize = 14.5.sp,
-                                color = MiuixTheme.colorScheme.onSurfaceVariantActions,
-                            )
-                        },
                         onClick = { open(PersonalInfoActivity::class.java) },
                     )
                     ArrowPreference(
                         title = "每日目标",
                         endActions = {
                             Text(
-                                text = "${settings.dailyCalorieTarget.toInt()}",
+                                text = "${settings.dailyCalorieTarget.toInt()} kcal",
                                 fontSize = 14.5.sp,
                                 color = MiuixTheme.colorScheme.onSurfaceVariantActions,
                             )
@@ -106,6 +100,10 @@ fun MineHubScreen(
                     )
                 }
             }
+        }
+
+        if (!settings.isRecognitionConfigured) {
+            item { AiConfigurationBanner() }
         }
 
         item {
@@ -123,27 +121,18 @@ fun MineHubScreen(
                     ArrowPreference(
                         title = "AI设置",
                         endActions = {
-                            Text(
-                                text = if (settings.isRecognitionConfigured) {
-                                    settings.model.ifBlank { "已配置" }
-                                } else {
-                                    "未配置"
-                                },
-                                fontSize = 14.5.sp,
-                                color = MiuixTheme.colorScheme.onSurfaceVariantActions,
-                            )
+                            if (settings.isRecognitionConfigured) {
+                                Text(
+                                    text = settings.model,
+                                    fontSize = 14.5.sp,
+                                    color = MiuixTheme.colorScheme.onSurfaceVariantActions,
+                                )
+                            }
                         },
                         onClick = { open(ApiSettingsActivity::class.java) },
                     )
                     ArrowPreference(
                         title = "数据管理",
-                        endActions = {
-                            Text(
-                                text = if (settings.foodDataCentralApiKey.isNotBlank()) "在线已配置" else "离线优先",
-                                fontSize = 14.5.sp,
-                                color = MiuixTheme.colorScheme.onSurfaceVariantActions,
-                            )
-                        },
                         onClick = { open(DataManagementActivity::class.java) },
                     )
                     ArrowPreference(

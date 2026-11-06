@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import com.click.lightmemo.ui.components.AiConfigurationBanner
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -195,11 +196,7 @@ internal fun ManualEntryContent(
         )
 
         if (!configured) {
-            Text(
-                text = "自动识别需要先在「我的 → 识别 API」配置服务；也可以手动录入填写营养。",
-                style = MiuixTheme.textStyles.subtitle,
-                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-            )
+            AiConfigurationBanner()
         }
         RecognitionErrorRow(
             error = error,

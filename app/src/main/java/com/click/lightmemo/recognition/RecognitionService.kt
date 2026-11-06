@@ -184,7 +184,7 @@ class RecognitionService : Service() {
         val client = app.recognitionClient
         val nutritionDatabase = app.nutritionDatabase
         suspend fun enrichWithEstimates(meal: MealRecognition): MealRecognition =
-            nutritionDatabase.enrich(meal, settings.foodDataCentralApiKey).withAiNutritionFallback { component ->
+            if (meal.isNutritionLabel) meal else nutritionDatabase.enrich(meal, settings.foodDataCentralApiKey).withAiNutritionFallback { component ->
                 client.estimateNutrition(
                     baseUrl = settings.baseUrl,
                     apiKey = settings.apiKey,
@@ -331,10 +331,10 @@ class RecognitionService : Service() {
                 val strategy = preparedRecognition.strategy
                 if (preparedRecognition.fast) path = RecognitionPath.FAST
                 if (!visualResult.isFoodImage || visualResult.dishes.isEmpty()) {
-                    throw RecognitionException("图片中没有识别到可记录的食物")
+                    throw RecognitionException(visualResult.imageQualityIssues.firstOrNull() ?: "图片中没有识别到可记录的食物")
                 }
-                updateStage(request, RecognitionStage.MATCHING)
-                val assisted = if (path == RecognitionPath.FAST) visualResult else try {
+                if (!visualResult.isNutritionLabel) updateStage(request, RecognitionStage.MATCHING)
+                val assisted = if (visualResult.isNutritionLabel || path == RecognitionPath.FAST) visualResult else try {
                     strategy.assist(visualResult)
                 } catch (_: Exception) { visualResult }
                 if (path != RecognitionPath.FAST && assisted != visualResult) path = RecognitionPath.ASSISTED

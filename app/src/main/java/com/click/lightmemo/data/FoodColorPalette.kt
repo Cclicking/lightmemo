@@ -62,17 +62,24 @@ data class HsvColor(
 
 /** Pure color math so palette generation remains deterministic and easy to test. */
 object FoodPaletteGenerator {
-    fun fromSeed(seedColor: Long): FoodColorPalette {
+    fun fromSeed(seedColor: Long): FoodColorPalette = generate(seedColor, 1f, custom = false)
+
+    /** Spread controls the hue distance between series; seed saturation/value remain editable. */
+    fun fromCustom(seedColor: Long, hueSpread: Float): FoodColorPalette =
+        generate(seedColor, hueSpread.coerceIn(0f, 1f), custom = true)
+
+    private fun generate(seedColor: Long, hueSpread: Float, custom: Boolean): FoodColorPalette {
         val seed = argbToHsv(seedColor)
         val hue = seed.hue
-        val saturation = max(seed.saturation, 0.58f)
-        val value = max(seed.value, 0.72f)
+        val saturation = if (custom) seed.saturation else max(seed.saturation, 0.58f)
+        val value = if (custom) seed.value else max(seed.value, 0.72f)
 
         fun tone(offset: Float, saturationScale: Float, valueScale: Float): Long = hsvToArgb(
             HsvColor(
-                hue = (hue + offset).mod(360f),
-                saturation = (saturation * saturationScale).coerceIn(0.48f, 0.92f),
-                value = (value * valueScale).coerceIn(0.68f, 0.98f),
+                // Use the shortest path around the hue wheel as colors converge.
+                hue = (hue + (if (custom && offset > 180f) offset - 360f else offset) * hueSpread).mod(360f),
+                saturation = (saturation * saturationScale).coerceIn(if (custom) 0f else 0.48f, 0.92f),
+                value = (value * valueScale).coerceIn(if (custom) 0.2f else 0.68f, 0.98f),
             ),
         )
 

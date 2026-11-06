@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyListState
+import com.click.lightmemo.ui.components.AiConfigurationBanner
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -57,19 +58,13 @@ fun PromptSettingsScreen(
     }
     AiSettingsList(contentPadding, scrollBehavior, listState) {
         item {
-            SmallTitle("大模型背景信息", modifier = Modifier.offset(x = (-16).dp))
+            SmallTitle("饮食偏好与过敏原", modifier = Modifier.offset(x = (-16).dp))
             TextField(
                 value = background,
                 onValueChange = { background = it; viewModel.setSystemBackground(it) },
                 minLines = 2,
                 maxLines = 3,
                 modifier = Modifier.fillMaxWidth(),
-            )
-            Text(
-                "可填写饮食偏好、过敏原等，修改后自动保存。",
-                style = MiuixTheme.textStyles.footnote2,
-                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                modifier = Modifier.padding(12.dp),
             )
             SmallTitle("Prompt", modifier = Modifier.offset(x = (-16).dp))
             Card(modifier = Modifier.fillMaxWidth()) {
@@ -79,7 +74,7 @@ fun PromptSettingsScreen(
                     selectedIndex = kind.ordinal,
                     enabled = !testing,
                     onSelectedIndexChange = { if (!testing) selected = RecognitionPrompt.entries[it].name },
-                    summary = if (settings.promptOverrides.containsKey(kind.name)) "当前使用已验证的自定义版本" else "当前使用默认版本",
+                    summary = if (settings.promptOverrides.containsKey(kind.name)) "自定义" else null,
                 )
             }
             Spacer(Modifier.height(12.dp))
@@ -92,7 +87,7 @@ fun PromptSettingsScreen(
                 modifier = Modifier.fillMaxWidth(),
             )
             Text(
-                "修改后点击“测试并应用”，通过后用于后续识别。测试失败继续使用上次有效版本；请保留 JSON 字段和重量规则。测试会调用当前模型接口，可能产生费用。",
+                "请保留 JSON 字段和重量规则。测试会调用当前模型接口，可能产生费用。",
                 style = MiuixTheme.textStyles.footnote2,
                 color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                 modifier = Modifier.padding(12.dp),
@@ -121,12 +116,7 @@ fun PromptSettingsScreen(
                 modifier = Modifier.fillMaxWidth(),
             ) { Text("恢复默认 Prompt") }
             if (!settings.isRecognitionConfigured) {
-                Text(
-                    text = "尚未配置识别服务，请先返回 AI 设置添加配置。",
-                    style = MiuixTheme.textStyles.footnote2,
-                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
-                )
+                AiConfigurationBanner()
             }
             result?.let { Text(it, modifier = Modifier.padding(12.dp)) }
             response?.let {

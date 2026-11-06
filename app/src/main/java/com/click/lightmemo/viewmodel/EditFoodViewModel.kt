@@ -1,12 +1,16 @@
 package com.click.lightmemo.viewmodel
 
 import android.app.Application
+import android.os.Bundle
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
 import com.click.lightmemo.FoodApp
 import com.click.lightmemo.data.AppSettings
 import com.click.lightmemo.data.FoodLogRepository
 import com.click.lightmemo.data.PresetFood
+import com.click.lightmemo.data.parseFoodLog
+import com.click.lightmemo.data.toJsonLog
 import com.click.lightmemo.domain.FoodComponent
 import com.click.lightmemo.domain.FoodLog
 import com.click.lightmemo.domain.NutritionReference
@@ -19,9 +23,11 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import org.json.JSONObject
 
 data class EditFoodUiState(
     val entry: FoodLog? = null,
+    val draft: FoodEditorDraft? = null,
     val loading: Boolean = true,
     val saving: Boolean = false,
     val error: String? = null,
@@ -29,10 +35,12 @@ data class EditFoodUiState(
     val aiEstimatingComponentId: String? = null,
     val pinnedNames: Set<String> = emptySet(),
     val pinMessage: String? = null,
+    val pinning: Boolean = false,
+    val showLeaveConfirm: Boolean = false,
 )
 
 /** State holder for the full-screen food-log editor. */
-class EditFoodViewModel(app: Application) : AndroidViewModel(app) {
+class EditFoodViewModel(app: Application, private val savedState: SavedStateHandle = SavedStateHandle()) : AndroidViewModel(app) {
     private val foodApp = app as FoodApp
     private val repo: FoodLogRepository = foodApp.foodLogRepository
     private val nutritionDatabase = foodApp.nutritionDatabase
@@ -62,21 +70,31 @@ class EditFoodViewModel(app: Application) : AndroidViewModel(app) {
         return trimmed.isNotEmpty() && _uiState.value.pinnedNames.contains(trimmed)
     }
 
-    /** 编辑记录页顶栏：把当前记录加入预设 */
-    fun pinEntryAsPreset(entry: FoodLog) {
+    /** The toolbar and save button commit the same validated draft. */
+    fun toggleDraftPreset() {
+        val state = _uiState.value
+        if (state.loading || state.saving || state.pinning) return
+        val entry = state.draft?.validatedFood()
+        if (entry == null) {
+            _uiState.value = state.copy(error = "请先填写有效的名称、重量、日期和营养数值")
+            return
+        }
+        if (isPinned(entry.name)) unpinEntryPreset(entry.name) else pinEntryAsPreset(entry)
+    }
+
+    private fun pinEntryAsPreset(entry: FoodLog) {
         val name = entry.name.trim()
         if (name.isEmpty()) return
         if (isPinned(name)) return
         val preset = PresetFood(
             id = java.util.UUID.randomUUID().toString(),
             name = name,
-            defaultGrams = entry.grams.takeIf { it.isFinite() && it > 0.0 } ?: 100.0,
+            defaultGrams = entry.grams,
             portionLabel = "",
-            nutrition = entry.nutrition.takeIf {
-                it.caloriesKcal > 0.0 || it.proteinG > 0.0 || it.carbsG > 0.0 || it.fatG > 0.0
-            },
+            nutrition = entry.nutrition,
             components = entry.components,
         )
+        _uiState.value = _uiState.value.copy(pinning = true, error = null)
         viewModelScope.launch {
             try {
                 settingsRepo.updateFoodPreset(preset)
@@ -85,14 +103,17 @@ class EditFoodViewModel(app: Application) : AndroidViewModel(app) {
                 throw e
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(error = e.message ?: "加入预设失败")
+            } finally {
+                _uiState.value = _uiState.value.copy(pinning = false)
             }
         }
     }
 
     /** 编辑记录页顶栏：按名称取消预设 */
-    fun unpinEntryPreset(name: String) {
+    private fun unpinEntryPreset(name: String) {
         val trimmed = name.trim()
         if (trimmed.isEmpty()) return
+        _uiState.value = _uiState.value.copy(pinning = true, error = null)
         viewModelScope.launch {
             try {
                 val target = settingsRepo.foodPresets.first().firstOrNull { it.name == trimmed } ?: return@launch
@@ -102,6 +123,8 @@ class EditFoodViewModel(app: Application) : AndroidViewModel(app) {
                 throw e
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(error = e.message ?: "取消预设失败")
+            } finally {
+                _uiState.value = _uiState.value.copy(pinning = false)
             }
         }
     }
@@ -110,6 +133,55 @@ class EditFoodViewModel(app: Application) : AndroidViewModel(app) {
         _uiState.value = _uiState.value.copy(pinMessage = null)
     }
 
+    fun updateDraft(transform: (FoodEditorDraft) -> FoodEditorDraft) {
+        val state = _uiState.value
+        val current = state.draft ?: return
+        if (state.saving || state.pinning) return
+        val next = transform(current)
+        savedState[DraftKey] = Bundle().apply {
+            putString("food", next.food.toJsonLog().toString())
+            putString("grams", next.grams)
+            putString("date", next.date)
+            putString("time", next.time)
+        }
+        _uiState.value = state.copy(draft = next, error = null)
+    }
+
+    fun updateFoodDraft(food: FoodLog) = updateDraft { it.copy(food = food) }
+
+    fun requestBack(onExit: () -> Unit) {
+        val state = _uiState.value
+        if (state.saving || state.pinning) return
+        if (state.databaseSearch != null) {
+            closeComponentSearch()
+        } else if (state.entry != null && state.draft != FoodEditorDraft.from(state.entry)) {
+            _uiState.value = state.copy(showLeaveConfirm = true)
+        } else {
+            onExit()
+        }
+    }
+
+    fun dismissLeaveConfirm() {
+        _uiState.value = _uiState.value.copy(showLeaveConfirm = false)
+    }
+
+    fun discardDraft(onExit: () -> Unit) {
+        if (_uiState.value.saving || _uiState.value.pinning) return
+        savedState.remove<Bundle>(DraftKey)
+        _uiState.value = _uiState.value.copy(showLeaveConfirm = false)
+        onExit()
+    }
+
+    private fun restoredDraft(entryId: Long): FoodEditorDraft? = runCatching {
+        val bundle = savedState.get<Bundle>(DraftKey) ?: return null
+        FoodEditorDraft(
+            food = parseFoodLog(JSONObject(requireNotNull(bundle.getString("food")))),
+            grams = requireNotNull(bundle.getString("grams")),
+            date = requireNotNull(bundle.getString("date")),
+            time = requireNotNull(bundle.getString("time")),
+        ).takeIf { it.food.id == entryId }
+    }.getOrNull()
+
     fun load(entryId: Long) {
         if (loadedEntryId == entryId) return
         loadedEntryId = entryId
@@ -117,9 +189,9 @@ class EditFoodViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 val entry = repo.getById(entryId)
                 _uiState.value = if (entry == null) {
-                    EditFoodUiState(loading = false, error = "找不到这条食物记录，可能已被删除")
+                    _uiState.value.copy(entry = null, draft = null, loading = false, error = "找不到这条食物记录，可能已被删除")
                 } else {
-                    EditFoodUiState(entry = entry, loading = false)
+                    _uiState.value.copy(entry = entry, draft = restoredDraft(entryId) ?: FoodEditorDraft.from(entry), loading = false)
                 }
             } catch (e: CancellationException) {
                 throw e
@@ -297,8 +369,13 @@ class EditFoodViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun save(updated: FoodLog, onSaved: () -> Unit) {
-        if (_uiState.value.saving) return
+    fun saveDraft(onSaved: () -> Unit) {
+        if (_uiState.value.saving || _uiState.value.pinning) return
+        val updated = _uiState.value.draft?.validatedFood()
+        if (updated == null) {
+            _uiState.value = _uiState.value.copy(error = "请先填写有效的名称、重量、日期和营养数值")
+            return
+        }
         val original = _uiState.value.entry
         _uiState.value = _uiState.value.copy(saving = true, error = null)
         viewModelScope.launch {
@@ -309,7 +386,8 @@ class EditFoodViewModel(app: Application) : AndroidViewModel(app) {
                 if (original != null && com.click.lightmemo.domain.foodWasCorrected(updated, original)) {
                     foodApp.personalFoodMemoryRepository.learnAfterSave(updated, original)
                 }
-                _uiState.value = _uiState.value.copy(entry = updated)
+                savedState.remove<Bundle>(DraftKey)
+                _uiState.value = _uiState.value.copy(entry = updated, draft = FoodEditorDraft.from(updated), showLeaveConfirm = false)
                 onSaved()
             } catch (e: CancellationException) {
                 throw e
@@ -332,6 +410,7 @@ class EditFoodViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     companion object {
+        private const val DraftKey = "food_editor_draft"
         const val NewComponentId = "__new_food_component__"
     }
 }

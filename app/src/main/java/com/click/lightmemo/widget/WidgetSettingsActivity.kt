@@ -11,10 +11,10 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -27,6 +27,8 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.click.lightmemo.ui.basic.SharedScrollBehavior
+import com.click.lightmemo.FoodApp
+import com.click.lightmemo.domain.Nutrition
 import com.click.lightmemo.ui.components.DropdownPref
 import com.click.lightmemo.ui.secondary.SecondarySettingsActivity
 import com.click.lightmemo.ui.utils.overScrollVertical
@@ -38,9 +40,7 @@ import top.yukonga.miuix.kmp.basic.Button
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Slider
-import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import kotlin.math.roundToInt
 
@@ -61,6 +61,12 @@ class WidgetSettingsActivity : SecondarySettingsActivity() {
         scrollBehavior: SharedScrollBehavior,
     ) {
         val instances = remember(revision) { FoodWidgets.instances(this) }
+        val settings by settingsVm.settings.collectAsState()
+        val repository = (application as FoodApp).foodLogRepository
+        val logs by remember(repository) { repository.allLogs() }.collectAsState(initial = emptyList())
+        val totals = remember(logs) {
+            logs.groupBy { it.dateEpochDay }.mapValues { (_, entries) -> entries.fold(Nutrition()) { total, entry -> total + entry.nutrition } }
+        }
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
@@ -74,17 +80,6 @@ class WidgetSettingsActivity : SecondarySettingsActivity() {
             ),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            item {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    cornerRadius = 20.dp,
-                ) {
-                    BasicComponent(
-                        title = "每个小组件独立设置",
-                        summary = "选择一个桌面实例进入编辑页。点击动作、圆角大小和桌面边距都会按实例保存。",
-                    )
-                }
-            }
             if (instances.isEmpty()) {
                 item {
                     Card(
@@ -93,24 +88,22 @@ class WidgetSettingsActivity : SecondarySettingsActivity() {
                     ) {
                         BasicComponent(
                             title = "尚未添加小组件",
-                            summary = "在桌面长按空白处，进入小组件列表，选择轻食记的连续记录、今日摄入、饮食建议或快捷记录。",
+                            summary = "长按桌面添加小组件",
                         )
                     }
                 }
             }
             instances.forEach { (id, kind) ->
                 item(key = id) {
-                    Card(modifier = Modifier.fillMaxWidth(), cornerRadius = 20.dp) {
-                        ArrowPreference(
-                            title = kind.title,
-                            summary = "实例 #$id · 点击进入独立编辑页",
-                            onClick = {
-                                startActivity(
-                                    Intent(this@WidgetSettingsActivity, WidgetEditActivity::class.java)
-                                        .putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, id),
-                                )
-                            },
-                        )
+                    val sameKind = instances.filter { it.second == kind }
+                    val title = if (sameKind.size > 1) "${kind.title} · ${sameKind.indexOfFirst { it.first == id } + 1}" else kind.title
+                    Card(modifier = Modifier.fillMaxWidth(), cornerRadius = 20.dp,
+                        onClick = {
+                            startActivity(Intent(this@WidgetSettingsActivity, WidgetEditActivity::class.java)
+                                .putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, id))
+                        }) {
+                        BasicComponent(title = title)
+                        WidgetInstancePreview(id, kind, settings, totals, revision)
                     }
                 }
             }
@@ -153,6 +146,12 @@ class WidgetEditActivity : SecondarySettingsActivity() {
         }
 
         val preferences = remember { WidgetPreferences(this) }
+        val settings by settingsVm.settings.collectAsState()
+        val repository = (application as FoodApp).foodLogRepository
+        val logs by remember(repository) { repository.allLogs() }.collectAsState(initial = emptyList())
+        val totals = remember(logs) {
+            logs.groupBy { it.dateEpochDay }.mapValues { (_, entries) -> entries.fold(Nutrition()) { total, entry -> total + entry.nutrition } }
+        }
         val scope = rememberCoroutineScope()
         var savedRevision by remember { mutableIntStateOf(0) }
         var radius by remember(id, savedRevision) {
@@ -196,10 +195,10 @@ class WidgetEditActivity : SecondarySettingsActivity() {
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             item {
-                SmallTitle(
-                    text = "点击跳转",
-                    modifier = Modifier.offset(x = (-16).dp),
-                )
+                WidgetInstancePreview(id, kind, settings, totals, savedRevision,
+                    WidgetAppearance(radius, marginPreset, marginTop.roundToInt(), marginBottom.roundToInt()))
+            }
+            item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     cornerRadius = 20.dp,
@@ -228,25 +227,9 @@ class WidgetEditActivity : SecondarySettingsActivity() {
                             },
                         )
                     }
-                    if (kind == WidgetKind.SUGGESTION) {
-                        BasicComponent(
-                            title = "刷新按钮",
-                            summary = "点击右侧箭头切换饮食建议。",
-                        )
-                    }
-                    if (kind == WidgetKind.STREAK) {
-                        BasicComponent(
-                            title = "连续记录规则",
-                            summary = "每天至少一条记录；热力图展示最近五周。",
-                        )
-                    }
                 }
             }
             item {
-                SmallTitle(
-                    text = "卡片圆角",
-                    modifier = Modifier.offset(x = (-16).dp),
-                )
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     cornerRadius = 20.dp,
@@ -256,7 +239,7 @@ class WidgetEditActivity : SecondarySettingsActivity() {
                         title = "圆角大小",
                         endActions = {
                             Text(
-                                text = "${radius.roundToInt()}dp",
+                                text = "${radius.roundToInt()}",
                                 fontSize = 16.sp,
                                 color = MiuixTheme.colorScheme.primary,
                             )
@@ -276,10 +259,6 @@ class WidgetEditActivity : SecondarySettingsActivity() {
                 }
             }
             item {
-                SmallTitle(
-                    text = "桌面边距预设",
-                    modifier = Modifier.offset(x = (-16).dp),
-                )
                 Card(modifier = Modifier.fillMaxWidth(), cornerRadius = 20.dp) {
                     DropdownPref(
                         title = "边距预设",
@@ -303,10 +282,6 @@ class WidgetEditActivity : SecondarySettingsActivity() {
             }
             if (marginPreset == WidgetMarginPreset.CUSTOM) {
                 item {
-                    SmallTitle(
-                        text = "自定义上下外边距",
-                        modifier = Modifier.offset(x = (-16).dp),
-                    )
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         cornerRadius = 20.dp,
@@ -365,7 +340,7 @@ private fun MarginSlider(
             title = title,
             endActions = {
                 Text(
-                    text = "${value.roundToInt()}dp",
+                    text = "${value.roundToInt()}",
                     fontSize = 16.sp,
                     color = MiuixTheme.colorScheme.primary,
                 )

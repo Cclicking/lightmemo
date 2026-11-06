@@ -14,10 +14,10 @@ enum class WidgetMarginPreset(
     val topDp: Int?,
     val bottomDp: Int?,
 ) {
-    STANDARD("标准（不增加外边距）", 0, 0),
-    DESKTOP_4X6("4×6 桌面（顶部 36px，底部 42px）", null, null),
-    DESKTOP_4X7("4×7 桌面（顶部 12dp）", 12, 0),
-    CUSTOM("自定义上下外边距", null, null),
+    STANDARD("标准", 0, 0),
+    DESKTOP_4X6("4×6 桌面", null, null),
+    DESKTOP_4X7("4×7 桌面", 12, 0),
+    CUSTOM("自定义", null, null),
 }
 
 class WidgetPreferences(context: Context) {

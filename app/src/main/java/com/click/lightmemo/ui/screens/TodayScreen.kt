@@ -292,10 +292,29 @@ fun TodayScreen(
                         val recognizingHere = pendingForDate && addState.recognizing && addState.mealType == meal
                         val pendingDishes = if (pendingForDate && addState.mealType == meal) pendingStep?.result?.dishes.orEmpty() else emptyList()
                         if (saved.isNotEmpty() || recognizingHere || pendingDishes.isNotEmpty()) {
-                            SmallTitle(
-                                text = meal.label,
-                                insideMargin = PaddingValues(start = 12.dp, top = 8.dp, end = 12.dp, bottom = 0.dp),
-                            )
+                            val mealCalories = saved.sumOf { entry ->
+                                (managementDrafts[entry.id] ?: entry).nutrition.caloriesKcal
+                            } + pendingDishes.sumOf { it.nutrition.caloriesKcal }
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(start = 12.dp, top = 8.dp, end = 12.dp),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            ) {
+                                SmallTitle(
+                                    text = meal.label,
+                                    modifier = Modifier.weight(1f).alignByBaseline(),
+                                    insideMargin = PaddingValues(0.dp),
+                                )
+                                Text(
+                                    text = "${mealCalories.toInt()} kcal",
+                                    modifier = Modifier.alignByBaseline(),
+                                    style = MiuixTheme.textStyles.subtitle,
+                                    color = if (state.targetSettings.mealCaloriesMatchTitleColor) {
+                                        MiuixTheme.colorScheme.onBackgroundVariant
+                                    } else {
+                                        MiuixTheme.colorScheme.onSurfaceVariantSummary
+                                    },
+                                )
+                            }
                             if (recognizingHere) FoodCardRow(left = { RecognitionCard(addState.recognitionStage, onCancelRecognition) })
                             pendingDishes.chunked(2).forEach { row ->
                                 androidx.compose.runtime.key("pending-${meal.name}-${row.first().id}") {
@@ -333,8 +352,12 @@ fun TodayScreen(
                                                 },
                                                 onPortionChange = onManagementDraftChange,
                                                 onLongPress = {
-                                                    deleteEntry = row[0]
-                                                    showDelete = true
+                                                    if (managementMode) {
+                                                        deleteEntry = row[0]
+                                                        showDelete = true
+                                                    } else {
+                                                        onSelectionChange(selectedEntryIds + row[0].id)
+                                                    }
                                                 },
                                                 onToggleSelection = { toggleSelection(row[0]) },
                                             )
@@ -363,8 +386,12 @@ fun TodayScreen(
                                                     },
                                                     onPortionChange = onManagementDraftChange,
                                                     onLongPress = {
-                                                        deleteEntry = entry
-                                                        showDelete = true
+                                                        if (managementMode) {
+                                                            deleteEntry = entry
+                                                            showDelete = true
+                                                        } else {
+                                                            onSelectionChange(selectedEntryIds + entry.id)
+                                                        }
                                                     },
                                                     onToggleSelection = { toggleSelection(entry) },
                                                 )

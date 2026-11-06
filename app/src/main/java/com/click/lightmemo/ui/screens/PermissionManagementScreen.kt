@@ -180,15 +180,9 @@ fun PermissionManagementScreen(
                     checked = settings.savePhotosToGallery,
                     onCheckedChange = viewModel::setSavePhotosToGallery,
                     title = "拍照后保存到相册",
-                    summary = "关闭后，照片只保留在应用内，不写入系统相册",
                 )
                 DropdownPref(
                     title = "保存位置",
-                    summary = if (settings.savePhotosToGallery) {
-                        "下一次拍照保存到 ${settings.gallerySaveLocation.label}"
-                    } else {
-                        "开启上方开关后可选择相册位置"
-                    },
                     items = GallerySaveLocation.entries.map { it.label },
                     selectedIndex = GallerySaveLocation.entries.indexOf(settings.gallerySaveLocation)
                         .coerceAtLeast(0),
@@ -204,12 +198,6 @@ fun PermissionManagementScreen(
                     onClick = { showClearPhotoCacheConfirm = true },
                 )
             }
-            Text(
-                text = "位置选择只影响之后拍摄的照片，已有照片不会移动。清理缓存会删除应用内的临时拍摄文件和本地照片，不影响系统相册。",
-                style = MiuixTheme.textStyles.footnote2,
-                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-            )
 
             Spacer(Modifier.height(8.dp))
             SmallTitle(
@@ -223,11 +211,6 @@ fun PermissionManagementScreen(
             ) {
                 PermissionStatusRow(
                     title = "相机",
-                    summary = if (cameraGranted) {
-                        "用于拍照识别食物"
-                    } else {
-                        "拍照识别需要相机权限，点击申请"
-                    },
                     status = if (cameraGranted) "已允许" else "未允许",
                     onClick = {
                         if (cameraGranted) openAppSettings()
@@ -236,13 +219,6 @@ fun PermissionManagementScreen(
                 )
                 PermissionStatusRow(
                     title = "通知",
-                    summary = if (!notificationSupported) {
-                        "当前 Android 版本不需要单独申请"
-                    } else if (notificationGranted) {
-                        "进入通知设置，调整三餐记录提醒时间"
-                    } else {
-                        "进入通知设置并申请权限，调整三餐记录提醒时间"
-                    },
                     status = when {
                         !notificationSupported -> "系统管理"
                         notificationGranted -> "已允许"
@@ -252,19 +228,14 @@ fun PermissionManagementScreen(
                 )
                 ArrowPreference(
                     title = "Health Connect",
-                    summary = "管理健康数据权限，查看小米运动健康接入指南",
                     onClick = onHealthConnectClick,
                 )
             }
-            Text(
-                text = "未允许的权限可点击申请；如果系统不再弹窗，请点击下方按钮到系统设置中开启。",
-                style = MiuixTheme.textStyles.footnote2,
-                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-            )
+        }
+        item {
             Button(
                 onClick = ::openAppSettings,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
             ) {
                 Text("打开系统权限设置")
             }
@@ -274,9 +245,9 @@ fun PermissionManagementScreen(
 
 private fun photoCacheSummary(bytes: Long?, clearing: Boolean): String = when {
     clearing -> "正在清理…"
-    bytes == null -> "统计临时拍摄与应用内本地照片"
-    bytes <= 0L -> "暂无可清理缓存 · 点击重新统计"
-    else -> "当前约 ${formatPhotoCacheBytes(bytes)} · 点击清理应用内照片缓存"
+    bytes == null -> "正在统计…"
+    bytes <= 0L -> "0 B"
+    else -> formatPhotoCacheBytes(bytes)
 }
 
 private fun formatPhotoCacheBytes(bytes: Long): String {
@@ -291,7 +262,6 @@ private fun formatPhotoCacheBytes(bytes: Long): String {
 @Composable
 private fun PermissionStatusRow(
     title: String,
-    summary: String,
     status: String,
     onClick: (() -> Unit)? = null,
 ) {
@@ -305,13 +275,11 @@ private fun PermissionStatusRow(
     if (onClick == null) {
         ArrowPreference(
             title = title,
-            summary = summary,
             endActions = endActions,
         )
     } else {
         ArrowPreference(
             title = title,
-            summary = summary,
             endActions = endActions,
             onClick = onClick,
         )

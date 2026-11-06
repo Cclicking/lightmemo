@@ -189,10 +189,15 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setColorTheme(theme: ColorThemePreset) = saveSetting { repo.updateColorTheme(theme) }
 
-    fun setCustomColorTheme(seedColor: Long) = saveSetting { repo.updateCustomColorTheme(seedColor) }
+    fun setCustomColorTheme(seedColor: Long, harmony: Float = 1f) =
+        saveSetting { repo.updateCustomColorTheme(seedColor, harmony) }
 
     fun setGlassEffectsEnabled(value: Boolean) = saveSetting {
         repo.updateGlassEffectsEnabled(value)
+    }
+
+    fun setMealCaloriesMatchTitleColor(value: Boolean) = saveSetting {
+        repo.updateMealCaloriesMatchTitleColor(value)
     }
 
     fun setTopGradientBlurEnabled(value: Boolean) = saveSetting {

@@ -15,6 +15,33 @@ import org.junit.Rule
 import org.junit.rules.TemporaryFolder
 
 class SettingsRepositoryTest {
+    @Test fun customColorRelationshipSurvivesReopeningAndBackupRestore() = runBlocking {
+        val file = folder.newFolder().resolve("custom-relationship.preferences_pb").toOkioPath()
+        suspend fun useStore(block: suspend (SettingsRepository) -> Unit) {
+            val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+            val store = PreferenceDataStoreFactory.create(scope = scope,
+                storage = OkioStorage(FileSystem.SYSTEM, PreferencesSerializer) { file })
+            try { block(SettingsRepository(store)) }
+            finally { scope.coroutineContext[Job]!!.cancelAndJoin() }
+        }
+        val seed = 0xFFADB9CFL
+        val harmony = 0.35f
+        useStore { it.updateCustomColorTheme(seed, harmony) }
+        useStore { repo ->
+            val saved = repo.settings.first()
+            assertEquals(harmony, saved.colorHarmony)
+            assertEquals(FoodPaletteGenerator.fromCustom(seed, harmony), saved.colorPalette)
+            val backup = repo.exportBackupJson()
+            repo.updateColorTheme(ColorThemePreset.ORANGE)
+            repo.importBackupJson(backup.getJSONObject("settings"), backup.getJSONArray("foodPresets"))
+            val restored = repo.settings.first()
+            assertEquals(saved.colorPalette, restored.colorPalette)
+            assertEquals(seed, restored.colorSeed)
+            assertEquals(harmony, restored.colorHarmony)
+            assertEquals(ColorThemePreset.CUSTOM, restored.colorTheme)
+        }
+    }
+
     @Test fun databaseSwitchesPersistIndependentlyAndRoundTripInBackup() = runBlocking {
         val file = folder.newFolder().resolve("database-switches.preferences_pb").toOkioPath()
         suspend fun useStore(block: suspend (SettingsRepository) -> Unit) {

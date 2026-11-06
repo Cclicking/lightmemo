@@ -108,6 +108,28 @@ class FoodLogRepositoryTest {
     }
 
     @Test
+    fun manualTotalsAndCompositionSurviveStorageAndExportImport() = withRepository { repo ->
+        val component = com.click.lightmemo.domain.FoodComponent(
+            id = "rice", name = "米饭", databaseQuery = "rice",
+            source = com.click.lightmemo.domain.ComponentSource.USER_PROVIDED,
+            estimatedWeightG = 100.0, weightMinG = 100.0, weightMaxG = 100.0, confidence = 1.0,
+            nutritionReference = com.click.lightmemo.domain.NutritionReference(
+                "rice", "米饭", "测试", Nutrition(116.0, 3.0, 26.0, 1.0)),
+        )
+        val id = repo.insert(log().copy(components = listOf(component)))
+        val manual = repo.getById(id)!!.copy(nutrition = Nutrition(180.0, 5.0, 30.0, 2.0))
+        repo.update(manual)
+        assertEquals(manual, repo.getById(id))
+        val exported = repo.exportJson()
+        repo.deleteById(id)
+        assertEquals(1, repo.importJson(exported))
+        val restored = repo.readAll().single()
+        assertEquals(manual.nutrition, restored.nutrition)
+        assertEquals(manual.components, restored.components)
+        assertEquals(manual.grams, restored.grams, 0.0)
+    }
+
+    @Test
     fun exportImportIsIdempotentAndOmitsLocalImageUris() = withRepository { repo ->
         repo.insert(log().copy(imageUri = "content://local/image"))
         val exported = repo.exportJson()

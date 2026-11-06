@@ -10,6 +10,9 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -38,6 +41,7 @@ import com.click.lightmemo.ui.secondary.PersonalFoodMemoryActivity
 import com.click.lightmemo.data.NutritionDatabase
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.basic.Button
+import top.yukonga.miuix.kmp.basic.BasicComponent
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.SmallTitle
@@ -61,6 +65,7 @@ fun DataManagementScreen(
     val backupMessage by backupViewModel.message.collectAsState()
     var showReset by remember { mutableStateOf(false) }
     var showFdcApiDialog by remember { mutableStateOf(false) }
+    var showDatabaseDetails by remember { mutableStateOf(false) }
     var fdcApiKey by remember(settings.foodDataCentralApiKey) {
         mutableStateOf(settings.foodDataCentralApiKey)
     }
@@ -161,6 +166,23 @@ fun DataManagementScreen(
         }
     }
 
+    AnimatedOverlayDialog(
+        show = showDatabaseDetails,
+        title = "数据源详情",
+        onDismissRequest = { showDatabaseDetails = false },
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(Modifier.heightIn(max = 380.dp).verticalScroll(rememberScrollState())) {
+                BasicComponent(title = "USDA SR Legacy", summary = "本地 SR Legacy 宏量营养素库")
+                BasicComponent(title = "USDA Foundation", summary = "2026-04 基础食物离线库")
+                BasicComponent(title = "USDA FNDDS", summary = "2021–2023 食物与饮料离线库")
+                BasicComponent(title = "中国食物成分表", summary = "第 6 版离线库")
+                BasicComponent(title = "USDA 在线 API", summary = "离线未命中时补充检索，需要 API Key")
+            }
+            Button(onClick = { showDatabaseDetails = false }, modifier = Modifier.fillMaxWidth()) { Text("完成") }
+        }
+    }
+
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -176,17 +198,15 @@ fun DataManagementScreen(
         contentPadding = PaddingValues(
             start = 16.dp,
             end = 16.dp,
-            top = contentPadding.calculateTopPadding(),
+            top = contentPadding.calculateTopPadding() + 12.dp,
             bottom = contentPadding.calculateBottomPadding() + 12.dp,
         ),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
-            SmallTitle(text = "个人食物记忆", modifier = Modifier.offset(x = (-16).dp))
             Card(cornerRadius = 20.dp, modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(0.dp)) {
                 ArrowPreference(
                     title = "个人食物记忆",
-                    summary = "查看历史份量、组成与食物匹配",
                     onClick = { context.startActivity(Intent(context, PersonalFoodMemoryActivity::class.java)) },
                 )
             }
@@ -194,7 +214,7 @@ fun DataManagementScreen(
         item {
             Spacer(Modifier.height(4.dp))
             SmallTitle(
-                text = "连接情况",
+                text = "营养数据源",
                 modifier = Modifier.offset(x = (-16).dp),
             )
             Card(
@@ -205,43 +225,37 @@ fun DataManagementScreen(
                 Column(modifier = Modifier.fillMaxWidth()) {
                     SwitchPreference(
                         title = "USDA SR Legacy",
-                        summary = if (offlineStatus?.srLegacyAvailable == true) "本地 SR Legacy 宏量营养素库" else "离线库不可用",
+                        summary = if (offlineStatus?.srLegacyAvailable == false) "离线库不可用" else null,
                         checked = settings.nutritionDatabases.enabled(NutritionDatabase.SR_LEGACY),
                         onCheckedChange = { viewModel.setNutritionDatabase(NutritionDatabase.SR_LEGACY, it) },
                     )
                     SwitchPreference(
                         title = "USDA Foundation",
-                        summary = if (offlineStatus?.foundationAvailable == true) "2026-04 基础食物离线库" else "离线库不可用",
+                        summary = if (offlineStatus?.foundationAvailable == false) "离线库不可用" else null,
                         checked = settings.nutritionDatabases.enabled(NutritionDatabase.FOUNDATION),
                         onCheckedChange = { viewModel.setNutritionDatabase(NutritionDatabase.FOUNDATION, it) },
                     )
                     SwitchPreference(
                         title = "USDA FNDDS",
-                        summary = if (offlineStatus?.fnddsAvailable == true) "2021–2023 食物与饮料离线库" else "离线库不可用",
+                        summary = if (offlineStatus?.fnddsAvailable == false) "离线库不可用" else null,
                         checked = settings.nutritionDatabases.enabled(NutritionDatabase.FNDDS),
                         onCheckedChange = { viewModel.setNutritionDatabase(NutritionDatabase.FNDDS, it) },
                     )
                     SwitchPreference(
                         title = "中国食物成分表",
-                        summary = if (offlineStatus?.chinaAvailable == true) "本地第 6 版离线库" else "离线库不可用",
+                        summary = if (offlineStatus?.chinaAvailable == false) "离线库不可用" else null,
                         checked = settings.nutritionDatabases.enabled(NutritionDatabase.CHINA),
                         onCheckedChange = { viewModel.setNutritionDatabase(NutritionDatabase.CHINA, it) },
                     )
                     SwitchPreference(
                         title = "USDA 在线 API",
-                        summary = if (settings.foodDataCentralApiKey.isNotBlank()) "离线未命中时的可选补充" else "请先在下方配置 API Key",
+                        summary = if (settings.foodDataCentralApiKey.isBlank() && settings.nutritionDatabases.online) "需要 API Key" else null,
                         checked = settings.nutritionDatabases.enabled(NutritionDatabase.ONLINE),
                         onCheckedChange = { viewModel.setNutritionDatabase(NutritionDatabase.ONLINE, it) },
                     )
+                    ArrowPreference(title = "数据源详情", onClick = { showDatabaseDetails = true })
                 }
             }
-            Spacer(Modifier.height(12.dp))
-            Text(
-                text = "开关决定食物搜索与营养匹配使用哪些数据库，设置会自动保存。",
-                style = MiuixTheme.textStyles.footnote2,
-                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                modifier = Modifier.padding(horizontal = 16.dp),
-            )
         }
 
         item {
@@ -257,20 +271,13 @@ fun DataManagementScreen(
             ) {
                 ArrowPreference(
                     title = "USDA FoodData Central API",
-                    summary = if (fdcApiKey.isBlank()) "未配置，点击输入 API Key" else "已配置，点击修改 API Key",
+                    summary = if (fdcApiKey.isBlank()) "未配置" else null,
                     onClick = {
                         fdcApiDraft = fdcApiKey
                         showFdcApiDialog = true
                     },
                 )
             }
-            Spacer(Modifier.height(12.dp))
-            Text(
-                text = "可留空。填写后仅在本地库未命中时调用在线检索。",
-                style = MiuixTheme.textStyles.footnote2,
-                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                modifier = Modifier.padding(horizontal = 16.dp),
-            )
         }
 
         item {
@@ -331,7 +338,6 @@ fun DataManagementScreen(
             ) {
                 ArrowPreference(
                     title = "恢复默认食物预设",
-                    summary = "恢复常用食物的初始名称、重量和营养",
                     enabled = !backupBusy,
                     onClick = { showReset = true },
                 )

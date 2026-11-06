@@ -67,6 +67,7 @@ import java.time.LocalDate
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import kotlin.math.roundToInt
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.basic.CircularProgressIndicator
@@ -964,7 +965,8 @@ private fun MacroProgress(
     modifier: Modifier,
 ) {
     val safeTarget = target.coerceAtLeast(1f)
-    val progress = (value / safeTarget).toFloat().coerceIn(0f, 1f)
+    val ratio = com.click.lightmemo.domain.nutritionTargetRatio(value, target)
+    val progress = ratio.coerceIn(0.0, 1.0).toFloat()
     Column(
         modifier = modifier,
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -979,7 +981,7 @@ private fun MacroProgress(
                 size = 60.dp,
                 strokeWidth = 6.dp,
             )
-            Text("${(progress * 100).toInt()}%", style = MiuixTheme.textStyles.body1)
+            Text("${(ratio * 100).roundToInt()}%", style = MiuixTheme.textStyles.body1)
         }
         Spacer(Modifier.height(4.dp))
         Text(

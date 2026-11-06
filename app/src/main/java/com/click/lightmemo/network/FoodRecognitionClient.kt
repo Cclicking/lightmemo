@@ -85,6 +85,7 @@ data class ImageUrl(val url: String)
 
 @Serializable
 internal data class VisualMealDto(
+    @SerialName("nutrition_label") val nutritionLabel: NutritionLabelDto? = null,
     @SerialName("is_food_image") val isFoodImage: Boolean = false,
     @SerialName("meal_name") val mealName: String = "餐食",
     val dishes: List<VisualDishDto> = emptyList(),
@@ -92,6 +93,38 @@ internal data class VisualMealDto(
     @SerialName("confirmation_questions") val confirmationQuestions: List<String> = emptyList(),
     @SerialName("image_quality_issues") val imageQualityIssues: List<String> = emptyList(),
 )
+
+@Serializable
+internal data class NutritionLabelDto(
+    @SerialName("food_name") val foodName: String = "营养成分表食品",
+    @SerialName("basis_weight_g") val basisWeightG: Double,
+    val energy: Double,
+    @SerialName("energy_unit") val energyUnit: String,
+    @SerialName("protein_g") val proteinG: Double,
+    @SerialName("carbs_g") val carbsG: Double,
+    @SerialName("fat_g") val fatG: Double,
+    @SerialName("weight_g") val weightG: Double? = null,
+) {
+    fun toDish(): RecognizedDish {
+        require(basisWeightG.isFinite() && basisWeightG > 0.0) { "营养成分表缺少有效计量基准" }
+        require(listOf(energy, proteinG, carbsG, fatG).all { it.isFinite() && it >= 0.0 }) {
+            "营养成分表数值无效"
+        }
+        val kcal = when (energyUnit.lowercase(java.util.Locale.ROOT)) {
+            "kj" -> energy / 4.184
+            "kcal" -> energy
+            else -> error("无法识别营养成分表能量单位")
+        }
+        return RecognizedDish(
+            id = UUID.randomUUID().toString(), name = foodName.ifBlank { "营养成分表食品" },
+            type = DishType.SINGLE_FOOD, confidence = 1.0, components = emptyList(),
+            nutritionLabel = com.click.lightmemo.domain.NutritionLabel(
+                per100g = com.click.lightmemo.domain.Nutrition(kcal, proteinG, carbsG, fatG) * (100.0 / basisWeightG),
+                weightG = weightG?.takeIf { it.isFinite() && it > 0.0 } ?: 0.0,
+            ),
+        )
+    }
+}
 
 @Serializable
 internal data class VisualDishDto(
@@ -452,7 +485,7 @@ class FoodRecognitionClient(
         )
         val initialJson = extractJson(initialContent)
         val initial = parseVisualJson(initialJson)
-        if (!initial.isFoodImage || initial.dishes.isEmpty()) return@withContext initial
+        if (initial.isNutritionLabel || !initial.isFoodImage || initial.dishes.isEmpty()) return@withContext initial
         fastResult(initial)?.let { return@withContext it }
         onInitialResult(initial)
 
@@ -635,9 +668,9 @@ class FoodRecognitionClient(
 }
 
 private fun VisualMealDto.toDomain() = MealRecognition(
-    isFoodImage = isFoodImage,
+    isFoodImage = nutritionLabel != null || isFoodImage,
     mealName = mealName,
-    dishes = dishes.map { it.toDomain() },
+    dishes = nutritionLabel?.let { listOf(it.toDish()) } ?: dishes.map { it.toDomain() },
     overallConfidence = overallConfidence.coerceIn(0.0, 1.0),
     confirmationQuestions = confirmationQuestions.take(3),
     imageQualityIssues = imageQualityIssues,
